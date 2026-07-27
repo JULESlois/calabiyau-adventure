@@ -26,8 +26,10 @@ export class AudioSys {
   private musicGain: GainNode | null = null;
   muted = false;
   private musicTimer: number | null = null;
+  private fadeTimeout: number | null = null;
   private musicStep = 0;
   private currentSong = -1;
+  private readonly TARGET_MUSIC_VOL = 0.35;
 
   unlock(): void {
     if (this.ctx) {
@@ -40,7 +42,7 @@ export class AudioSys {
       this.master.gain.value = 0.5;
       this.master.connect(this.ctx.destination);
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.value = 0.35;
+      this.musicGain.gain.value = this.TARGET_MUSIC_VOL;
       this.musicGain.connect(this.master);
     } catch {
       this.ctx = null;
@@ -129,9 +131,48 @@ export class AudioSys {
     }
   }
 
-  /** songId: 0 标题, 1..3 关卡, 4 Boss, -1 停止 */
-  playSong(songId: number): void {
+  /** songId: 0 标题, 1..3 关卡, 4 Boss, -1 停止 (带 Crossfade 渐入渐出) */
+  playSong(songId: number, fadeTime = 0.5): void {
     if (songId === this.currentSong) return;
+
+    if (this.fadeTimeout !== null) {
+      window.clearTimeout(this.fadeTimeout);
+      this.fadeTimeout = null;
+    }
+
+    const t0 = this.ctx ? this.ctx.currentTime : 0;
+
+    // 无上下文或当前无音乐播放时直接平滑渐入
+    if (!this.ctx || !this.musicGain || this.currentSong === -1) {
+      this.startSong(songId);
+      if (this.musicGain && this.ctx) {
+        this.musicGain.gain.cancelScheduledValues(t0);
+        this.musicGain.gain.setValueAtTime(0.001, t0);
+        this.musicGain.gain.linearRampToValueAtTime(this.TARGET_MUSIC_VOL, t0 + fadeTime);
+      }
+      return;
+    }
+
+    // 切换音乐: 渐出旧曲 -> 换曲 -> 渐入新曲
+    const halfFade = fadeTime / 2;
+    this.musicGain.gain.cancelScheduledValues(t0);
+    this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, t0);
+    this.musicGain.gain.linearRampToValueAtTime(0.001, t0 + halfFade);
+
+    this.fadeTimeout = window.setTimeout(() => {
+      this.fadeTimeout = null;
+      this.startSong(songId);
+
+      if (this.ctx && this.musicGain && songId >= 0) {
+        const t1 = this.ctx.currentTime;
+        this.musicGain.gain.cancelScheduledValues(t1);
+        this.musicGain.gain.setValueAtTime(0.001, t1);
+        this.musicGain.gain.linearRampToValueAtTime(this.TARGET_MUSIC_VOL, t1 + halfFade);
+      }
+    }, halfFade * 1000);
+  }
+
+  private startSong(songId: number): void {
     this.currentSong = songId;
     if (this.musicTimer !== null) {
       window.clearInterval(this.musicTimer);
@@ -197,6 +238,7 @@ export class AudioSys {
 
   dispose(): void {
     if (this.musicTimer !== null) window.clearInterval(this.musicTimer);
+    if (this.fadeTimeout !== null) window.clearTimeout(this.fadeTimeout);
     if (this.ctx) void this.ctx.close();
   }
 }

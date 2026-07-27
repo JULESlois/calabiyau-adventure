@@ -43,13 +43,3 @@ canvas.game-canvas {
   border-radius: 4px;
   outline: none;
 }
-
-.footer-hint {
-  font-size: 12px;
-  color: #6f7ba6;
-  padding: 6px 12px 10px;
-  text-align: center;
-  user-select: none;
-}
-
-.footer-hint b { color: #9fb4ff; font-weight: 600; }

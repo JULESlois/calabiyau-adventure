@@ -1,5 +1,4 @@
 import { VIEW_H, VIEW_W } from '../constants';
-import { LEVELS } from '../levels/levels';
 import { drawChar } from '../render/sprites';
 import { makeRng } from '../utils';
 import type { Engine, GameState } from '../Engine';
@@ -21,7 +20,7 @@ interface Spire {
   lit: number[];
 }
 
-type Menu = 'main' | 'levels' | 'help';
+type Menu = 'main' | 'help' | 'confirmNew';
 
 const F_SERIF = '"SimSun", "Songti SC", serif';
 
@@ -31,6 +30,7 @@ export class TitleState implements GameState {
   private time = 0;
   private ash: Ash[] = [];
   private spires: Spire[] = [];
+  private hasSave = false;
 
   constructor(private engine: Engine) {
     const rng = makeRng(97);
@@ -60,6 +60,11 @@ export class TitleState implements GameState {
     this.engine.audio.playSong(0);
     this.menu = 'main';
     this.sel = 0;
+    this.hasSave = this.engine.hasSave();
+  }
+
+  private mainItems(): string[] {
+    return this.hasSave ? ['继续冒险', '新的冒险', '操作说明'] : ['开始冒险', '操作说明'];
   }
 
   update(dt: number): void {
@@ -76,7 +81,7 @@ export class TitleState implements GameState {
     }
 
     const input = this.engine.input;
-    const nOptions = this.menu === 'main' ? 3 : this.menu === 'levels' ? this.unlockedCount() + 1 : 1;
+    const nOptions = this.menu === 'main' ? this.mainItems().length : this.menu === 'confirmNew' ? 2 : 1;
 
     if (input.pressed('up')) {
       this.sel = (this.sel - 1 + nOptions) % nOptions;
@@ -89,23 +94,26 @@ export class TitleState implements GameState {
     if (input.pressed('confirm') || input.pressed('shoot')) {
       this.engine.audio.sfx('pickup');
       if (this.menu === 'main') {
-        if (this.sel === 0) this.engine.startLevel(1);
-        else if (this.sel === 1) {
-          this.menu = 'levels';
-          this.sel = 0;
+        const items = this.mainItems();
+        const it = items[this.sel];
+        if (it === '继续冒险') this.engine.continueGame();
+        else if (it === '开始冒险') this.engine.newGame();
+        else if (it === '新的冒险') {
+          this.menu = 'confirmNew';
+          this.sel = 1;
         } else {
           this.menu = 'help';
           this.sel = 0;
         }
-      } else if (this.menu === 'levels') {
-        if (this.sel < this.unlockedCount()) this.engine.startLevel(this.sel + 1);
+      } else if (this.menu === 'confirmNew') {
+        if (this.sel === 0) this.engine.newGame();
         else {
           this.menu = 'main';
-          this.sel = 1;
+          this.sel = 0;
         }
       } else {
         this.menu = 'main';
-        this.sel = 2;
+        this.sel = 0;
       }
     }
     if (input.pressed('pause') || input.pressed('skill')) {
@@ -115,10 +123,6 @@ export class TitleState implements GameState {
         this.engine.audio.sfx('ui');
       }
     }
-  }
-
-  private unlockedCount(): number {
-    return Math.min(this.engine.save.unlocked, LEVELS.length);
   }
 
   render(ctx: CanvasRenderingContext2D): void {
@@ -212,7 +216,6 @@ export class TitleState implements GameState {
     ctx.textBaseline = 'top';
     const titleY = 38;
     ctx.font = `bold 32px ${F_SERIF}`;
-    // 厚描边
     ctx.fillStyle = '#0e0a14';
     for (const [ox, oy] of [
       [-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, 1], [-1, 1], [1, -1],
@@ -225,7 +228,6 @@ export class TitleState implements GameState {
     tg.addColorStop(1, '#8a5c28');
     ctx.fillStyle = tg;
     ctx.fillText('卡拉比丘', VIEW_W / 2, titleY);
-    // 标题闪光
     const sparkT = (t * 0.6) % 1;
     if (sparkT < 0.35) {
       const sx2 = VIEW_W / 2 - 58 + sparkT * 330;
@@ -242,7 +244,6 @@ export class TitleState implements GameState {
     ctx.font = '7px monospace';
     ctx.fillStyle = '#564468';
     ctx.fillText('~ STRINOVA FAN GAME ~', VIEW_W / 2, 93);
-    // 金饰分隔线
     ctx.fillStyle = '#a8823c';
     ctx.fillRect(VIEW_W / 2 - 70, 106, 140, 1);
     ctx.fillRect(VIEW_W / 2 - 2, 104, 4, 4);
@@ -273,13 +274,13 @@ export class TitleState implements GameState {
     drawChar(ctx, 'michele', VIEW_W / 2 - 66, pedY, 1, idlePose);
     drawChar(ctx, 'kanami', VIEW_W / 2 + 66, pedY, -1, { ...idlePose, time: t + 1.3 });
 
-    // ---- 菜单(半透明暗板保证可读性)----
+    // ---- 菜单 ----
     const panel =
       this.menu === 'main'
         ? { x: VIEW_W / 2 - 66, y: 119, w: 132, h: 62 }
-        : this.menu === 'levels'
-          ? { x: VIEW_W / 2 - 96, y: 109, w: 192, h: 92 }
-          : { x: VIEW_W / 2 - 118, y: 106, w: 236, h: 134 };
+        : this.menu === 'confirmNew'
+          ? { x: VIEW_W / 2 - 96, y: 112, w: 192, h: 74 }
+          : { x: VIEW_W / 2 - 122, y: 104, w: 244, h: 140 };
     ctx.fillStyle = 'rgba(6,4,12,0.62)';
     ctx.fillRect(panel.x, panel.y, panel.w, panel.h);
     ctx.strokeStyle = 'rgba(168,130,60,0.35)';
@@ -288,9 +289,9 @@ export class TitleState implements GameState {
 
     ctx.font = `10px ${F_SERIF}`;
     if (this.menu === 'main') {
-      const items = ['开始冒险', '选择关卡', '操作说明'];
+      const items = this.mainItems();
       items.forEach((it, i) => {
-        const y = 126 + i * 18;
+        const y = items.length === 3 ? 126 + i * 18 : 134 + i * 20;
         const selected = i === this.sel;
         if (selected) {
           ctx.fillStyle = '#f0e0b0';
@@ -300,35 +301,33 @@ export class TitleState implements GameState {
           ctx.fillText(it, VIEW_W / 2, y);
         }
       });
-    } else if (this.menu === 'levels') {
-      const n = this.unlockedCount();
-      for (let i = 0; i < n; i++) {
-        const y = 116 + i * 15;
+    } else if (this.menu === 'confirmNew') {
+      ctx.fillStyle = '#d8ccb0';
+      ctx.fillText('开始新的冒险将覆盖现有进度,确定吗?', VIEW_W / 2, 120);
+      const opts = ['覆盖并重新开始', '返回'];
+      opts.forEach((o, i) => {
+        const y = 142 + i * 17;
         const selected = i === this.sel;
-        ctx.fillStyle = selected ? '#f0e0b0' : '#6a6080';
-        ctx.fillText(selected ? `✦ ${LEVELS[i].name} ✦` : LEVELS[i].name, VIEW_W / 2, y);
-      }
-      for (let i = n; i < LEVELS.length; i++) {
-        ctx.fillStyle = '#3a3448';
-        ctx.fillText('??? (未解锁)', VIEW_W / 2, 116 + i * 15);
-      }
-      const backSel = this.sel === n;
-      ctx.fillStyle = backSel ? '#f0e0b0' : '#6a6080';
-      ctx.fillText(backSel ? '✦ 返回 ✦' : '返回', VIEW_W / 2, 116 + LEVELS.length * 15 + 4);
+        ctx.fillStyle = selected ? (i === 0 ? '#e88a8a' : '#f0e0b0') : '#6a6080';
+        ctx.fillText(selected ? `✦ ${o} ✦` : o, VIEW_W / 2, y);
+      });
     } else {
       ctx.font = `9px ${F_SERIF}`;
       const lines = [
-        'A / D 移动     空格 / W 跳跃(二段跳)',
-        'J 射击    K 近战连段    L 角色技能',
-        'Shift 弦化:化作纸片,敌弹穿身而过',
-        '纸片形态可穿过弦膜、贴墙滑行与蹬墙跳',
-        'Q 切换 米雪儿 / 香奈美    S+跳 下落平台',
-        'Esc 暂停    M 静音',
+        'A / D 移动   空格 / W 跳跃   S+跳 下落平台',
+        'J 射击(香奈美长按蓄力)  K 近战  L 技能  Q 换人',
+        '空中 S+K 下劈弹反 · U/; 冲刺(寻获后)',
+        'Shift 弦化 · Tab 地图 · Esc 暂停 · M 静音',
         '',
-        '收集弦晶 ◆,抵达拱门传送门通关',
+        '弦化、蹬墙跳、二段跳、相位突进散落世界各处;',
+        '香奈美被囚于研究区深处,声呐能显形隐藏平台。',
+        '击败敌人掉落晶尘 ✦,可向研究区门厅的',
+        '引航者购买「记忆芯片」强化自身。',
+        '在「调弦台」休息保存;击败塔顶「守望者 MK-III」。',
       ];
       lines.forEach((l, i) => {
-        ctx.fillStyle = i === 2 || i === 3 ? '#8ee8f4' : '#b8accc';
+        ctx.fillStyle = i >= 4 ? '#8ee8f4' : '#b8accc';
+        if (i >= 4) ctx.fillStyle = i >= 6 ? '#b8accc' : '#8ee8f4';
         ctx.fillText(l, VIEW_W / 2, 112 + i * 13);
       });
       ctx.fillStyle = '#6a6080';
@@ -348,7 +347,7 @@ export class TitleState implements GameState {
     ctx.font = `7px ${F_SERIF}`;
     ctx.fillStyle = '#4a4258';
     ctx.fillText('同人作品 · 非官方 · 仅供学习交流', VIEW_W / 2, VIEW_H - 12);
-    if (this.engine.save.cleared) {
+    if (this.engine.world.cleared) {
       ctx.fillStyle = '#d8b060';
       ctx.fillText('★ 已通关 ★', VIEW_W / 2, VIEW_H - 22);
     }

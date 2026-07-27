@@ -1,4 +1,4 @@
-export type PickupKind = 'heart' | 'energy' | 'crystal';
+export type PickupKind = 'heart' | 'energy' | 'crystal' | 'dust';
 
 export interface Pickup {
   x: number; // 中心

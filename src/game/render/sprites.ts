@@ -64,37 +64,70 @@ export interface CharPose {
   time: number;
 }
 
+// 配色采样自官方立绘(refs: docs/ref_images/):
+// 米雪儿·李:暖金色高位长双马尾、蓝瞳、黑色科技猫耳头饰、蓝色短外套(红衬里)、
+//            白色连体衣+黑领带+金铃铛、棕腰带、黑指切手套、腿环、黑靴蓝底;「警探」枪灰突击步枪。
 const MICHELE = {
-  hair: '#7ec4ee',
-  hairHi: '#c2e8ff',
-  hairDk: '#4a86b8',
+  hair: '#f0b874',
+  hairHi: '#f8ddb0',
+  hairDk: '#c8873e',
+  tie: '#4a86d8',
   skin: '#f4dcc4',
   skinDk: '#d0a888',
-  coat: '#dce6f0',
-  coatDk: '#9aaec8',
-  trim: '#2e5a8a',
-  hood: '#3a5474',
-  hoodDk: '#263a52',
-  boots: '#2e4058',
-  gun: '#54718e',
-  gunGlow: '#9fe8ff',
-  eye: '#1c3050',
+  white: '#e8e8f0',
+  whiteDk: '#b8bcd0',
+  blue: '#3c55b8',
+  blueHi: '#5a76d8',
+  red: '#8a3040',
+  neck: '#2a2a34',
+  bell: '#e8b83c',
+  belt: '#5a4236',
+  buckle: '#c8a050',
+  ear: '#33363f',
+  earIn: '#8a8e9e',
+  strap: '#3a3028',
+  glove: '#3a3e4a',
+  boots: '#23262e',
+  bootsHi: '#4a4e58',
+  sole: '#3a5dc0',
+  gun: '#6e737c',
+  gunHi: '#9a9ea6',
+  gunDk: '#4a4e56',
+  gunGlow: '#8fd7ff',
+  eye: '#3a7ce0',
 };
 
+// 香奈美:淡紫长发+粉色挑染+呆毛、蓝紫瞳、黑色露肩上衣、粉腰带+白色层叠裙(深粉裙缘)、
+//         黑袖+粉手套、白色过膝长靴(粉靴口/灰趾)、背后淡金飘带;「谢幕曲」枪灰狙击枪(大瞄准镜)。
 const KANAMI = {
-  hair: '#f0a0c8',
-  hairHi: '#ffd0e4',
-  hairDk: '#b86a94',
+  hair: '#e6ddf2',
+  hairHi: '#f8f4fc',
+  hairDk: '#b4a4d0',
+  streak: '#f078b8',
+  ornament: '#3a3644',
   skin: '#f8e2cc',
   skinDk: '#d8ac8c',
-  dress: '#ece4ec',
-  dressDk: '#b89ab0',
-  trim: '#c8487e',
-  ribbon: '#d83a72',
-  boots: '#8a3658',
+  top: '#3a3048',
+  topHi: '#574a68',
+  beltPink: '#eabdd1',
+  skirt: '#f5f3f8',
+  skirtDk: '#c8c4d8',
+  deepPink: '#d6517e',
+  sleeve: '#4c4056',
+  glovePink: '#f36094',
+  boot: '#eef0f6',
+  bootDk: '#c4c8da',
+  kneePink: '#f36094',
+  toe: '#5a5e6a',
+  streamer: '#eed9c0',
+  rifle: '#5a5e66',
+  rifleHi: '#8a8e94',
+  rifleDk: '#33373f',
+  scope: '#2a2e38',
+  accent: '#f36094',
   mic: '#d8a840',
   micGlow: '#ffe8a0',
-  eye: '#5c2440',
+  eye: '#7060d0',
 };
 
 function paintMichele(g: CanvasRenderingContext2D, pose: CharPose): void {
@@ -107,60 +140,89 @@ function paintMichele(g: CanvasRenderingContext2D, pose: CharPose): void {
   const legSwing = pose.moving && !pose.airborne ? Math.round(Math.sin(pose.runPhase) * 2) : 0;
   const airLeg = pose.airborne ? (pose.vy < 0 ? -2 : 1) : 0;
 
-  // ---- 双马尾(后层,带摆动)----
-  px(g, x0 - 8, top + 3 + sway, 3, 10, MICHELE.hairDk);
-  px(g, x0 + 5, top + 3 - sway, 3, 10, MICHELE.hairDk);
-  px(g, x0 - 8, top + 3 + sway, 1, 8, MICHELE.hair);
-  px(g, x0 + 5, top + 3 - sway, 1, 8, MICHELE.hair);
-  px(g, x0 - 9, top + 8 + sway, 1, 4, MICHELE.hairDk);
-  px(g, x0 + 7, top + 8 - sway, 1, 4, MICHELE.hairDk);
+  // ---- 高位长双马尾(暖金,垂至膝,后层带摆动)----
+  px(g, x0 - 8, top + 1 + sway, 2, 17, MICHELE.hair);
+  px(g, x0 + 6, top + 1 - sway, 2, 17, MICHELE.hair);
+  px(g, x0 - 8, top + 1 + sway, 1, 17, MICHELE.hairDk);
+  px(g, x0 + 7, top + 1 - sway, 1, 17, MICHELE.hairDk);
+  px(g, x0 - 7, top + 18 + sway, 1, 2, MICHELE.hairDk); // 尾梢
+  px(g, x0 + 6, top + 18 - sway, 1, 2, MICHELE.hairDk);
+  // 蓝发绳(高位)
+  px(g, x0 - 8, top + 2 + sway, 2, 1, MICHELE.tie);
+  px(g, x0 + 6, top + 2 - sway, 2, 1, MICHELE.tie);
 
-  // ---- 兜帽熊耳 ----
-  px(g, x0 - 6, top - 2, 3, 3, MICHELE.hood);
-  px(g, x0 + 3, top - 2, 3, 3, MICHELE.hood);
-  px(g, x0 - 5, top - 1, 1, 1, MICHELE.hoodDk);
-  px(g, x0 + 4, top - 1, 1, 1, MICHELE.hoodDk);
+  // ---- 黑色科技猫耳头饰 ----
+  px(g, x0 - 5, top - 2, 3, 3, MICHELE.ear);
+  px(g, x0 - 4, top - 3, 1, 1, MICHELE.ear);
+  px(g, x0 + 2, top - 2, 3, 3, MICHELE.ear);
+  px(g, x0 + 3, top - 3, 1, 1, MICHELE.ear);
+  px(g, x0 - 4, top - 1, 1, 1, MICHELE.earIn);
+  px(g, x0 + 3, top - 1, 1, 1, MICHELE.earIn);
 
-  // ---- 头发 ----
+  // ---- 金发刘海 ----
   px(g, x0 - 5, top, 10, 5, MICHELE.hair);
-  px(g, x0 - 5, top, 10, 1, MICHELE.hairHi); // 顶部受月光
-  px(g, x0 - 5, top + 4, 2, 4, MICHELE.hair);
-  px(g, x0 + 3, top + 4, 2, 4, MICHELE.hair);
-  px(g, x0 - 5, top + 7, 2, 1, MICHELE.hairDk);
-  px(g, x0 + 3, top + 7, 2, 1, MICHELE.hairDk);
+  px(g, x0 - 5, top, 10, 1, MICHELE.hairHi);
+  px(g, x0 - 5, top + 4, 2, 3, MICHELE.hair);
+  px(g, x0 + 3, top + 4, 2, 3, MICHELE.hair);
+  px(g, x0 - 5, top + 6, 2, 1, MICHELE.hairDk);
+  px(g, x0 + 3, top + 6, 2, 1, MICHELE.hairDk);
 
-  // ---- 脸 ----
+  // ---- 脸(蓝瞳)----
   px(g, x0 - 3, top + 4, 6, 4, MICHELE.skin);
   px(g, x0 - 3, top + 7, 6, 1, MICHELE.skinDk);
-  px(g, x0 + 1, top + 5, 1, 2, MICHELE.eye);
   px(g, x0 - 2, top + 5, 1, 2, MICHELE.eye);
+  px(g, x0 + 1, top + 5, 1, 2, MICHELE.eye);
 
-  // ---- 大衣 ----
-  px(g, x0 - 4, top + 8, 8, 7, MICHELE.coat);
-  px(g, x0 - 4, top + 12, 8, 3, MICHELE.coatDk);
-  px(g, x0 - 1, top + 8, 2, 7, MICHELE.trim); // 中缝
-  px(g, x0 - 4, top + 8, 8, 1, '#f4f8fc'); // 肩部高光
-  // 后摆
-  px(g, x0 - 6, top + 10, 2, 5, MICHELE.coatDk);
+  // ---- 白色连体衣 + 蓝色短外套(红衬里)+ 黑领带金铃铛 + 棕腰带 ----
+  px(g, x0 - 4, top + 8, 8, 5, MICHELE.white);
+  px(g, x0 - 4, top + 8, 8, 1, '#ffffff');
+  px(g, x0 - 4, top + 8, 2, 4, MICHELE.blue); // 左袖
+  px(g, x0 + 2, top + 8, 2, 4, MICHELE.blue); // 右袖
+  px(g, x0 - 4, top + 8, 2, 1, MICHELE.blueHi);
+  px(g, x0 + 2, top + 8, 2, 1, MICHELE.blueHi);
+  px(g, x0 - 2, top + 8, 1, 1, MICHELE.red); // 红衬里
+  px(g, x0 + 1, top + 8, 1, 1, MICHELE.red);
+  px(g, x0, top + 8, 1, 2, MICHELE.neck); // 黑领带
+  px(g, x0, top + 10, 1, 1, MICHELE.bell); // 金铃铛
+  px(g, x0 - 4, top + 12, 8, 1, MICHELE.belt); // 棕腰带
+  px(g, x0, top + 12, 1, 1, MICHELE.buckle);
+  px(g, x0 - 4, top + 13, 8, 2, MICHELE.white); // 白短裤
+  px(g, x0 - 4, top + 14, 8, 1, MICHELE.whiteDk);
 
-  // ---- 手臂 / 冰霜手枪 ----
+  // ---- 手臂 / 警探突击步枪(枪灰)----
   const armSwing = pose.moving && !pose.airborne ? Math.round(Math.sin(pose.runPhase + Math.PI) * 1) : 0;
   if (pose.meleeT > 0) {
     const sw = Math.round(pose.meleeT * 7);
     px(g, x0 + 1 + sw, top + 9, 5, 2, MICHELE.skin);
     px(g, x0 + 5 + sw, top + 8, 3, 3, MICHELE.gun);
   } else {
-    px(g, x0 - 6, top + 9 + armSwing, 2, 4, MICHELE.coatDk); // 后臂
-    px(g, x0 + 2, top + 10, 4, 2, MICHELE.skin);
-    px(g, x0 + 5, top + 8, 4, 3, MICHELE.gun);
-    px(g, x0 + 8, top + 9, 2, 1, MICHELE.gunGlow);
+    px(g, x0 - 6, top + 9 + armSwing, 2, 4, MICHELE.blue); // 后臂(蓝袖)
+    px(g, x0 + 2, top + 10, 3, 2, MICHELE.skin); // 前臂
+    px(g, x0 + 4, top + 10, 2, 2, MICHELE.glove); // 指切手套
+    // 警探:枪身 / 上导轨 / 光学瞄具 / 托 / 弹匣 / 枪口传感
+    px(g, x0 + 3, top + 8, 8, 2, MICHELE.gun);
+    px(g, x0 + 3, top + 8, 8, 1, MICHELE.gunHi);
+    px(g, x0 + 2, top + 9, 1, 2, MICHELE.gunDk);
+    px(g, x0 + 5, top + 10, 2, 2, MICHELE.gunDk);
+    px(g, x0 + 6, top + 7, 2, 1, MICHELE.gunDk);
+    px(g, x0 + 10, top + 8, 1, 1, MICHELE.gunGlow);
   }
 
-  // ---- 腿 ----
-  px(g, x0 - 3, top + 15, 2, 7 + (pose.airborne ? airLeg : legSwing > 0 ? -1 : 0), MICHELE.boots);
-  px(g, x0 + 1, top + 15, 2, 7 + (pose.airborne ? -airLeg : legSwing < 0 ? -1 : 0), MICHELE.boots);
-  px(g, x0 - 3, top + 15, 2, 1, MICHELE.coatDk);
-  px(g, x0 + 1, top + 15, 2, 1, MICHELE.coatDk);
+  // ---- 裸腿 + 腿环 + 黑靴(蓝底)----
+  const lL = pose.airborne ? airLeg : legSwing > 0 ? -1 : 0;
+  const lR = pose.airborne ? -airLeg : legSwing < 0 ? -1 : 0;
+  // 左腿
+  px(g, x0 - 3, top + 15, 2, Math.max(0, 4 + lL), MICHELE.skin);
+  px(g, x0 - 3, top + 16, 2, 1, MICHELE.strap);
+  px(g, x0 - 3, top + 19 + lL, 2, 3, MICHELE.boots);
+  px(g, x0 - 3, top + 19 + lL, 2, 1, MICHELE.bootsHi);
+  px(g, x0 - 3, top + 21 + lL, 2, 1, MICHELE.sole);
+  // 右腿
+  px(g, x0 + 1, top + 15, 2, Math.max(0, 4 + lR), MICHELE.skin);
+  px(g, x0 + 1, top + 16, 2, 1, MICHELE.strap);
+  px(g, x0 + 1, top + 19 + lR, 2, 3, MICHELE.boots);
+  px(g, x0 + 1, top + 19 + lR, 2, 1, MICHELE.bootsHi);
+  px(g, x0 + 1, top + 21 + lR, 2, 1, MICHELE.sole);
 }
 
 function paintKanami(g: CanvasRenderingContext2D, pose: CharPose): void {
@@ -173,54 +235,84 @@ function paintKanami(g: CanvasRenderingContext2D, pose: CharPose): void {
   const legSwing = pose.moving && !pose.airborne ? Math.round(Math.sin(pose.runPhase) * 2) : 0;
   const airLeg = pose.airborne ? (pose.vy < 0 ? -2 : 1) : 0;
 
-  // ---- 长发(后层)----
-  px(g, x0 - 7, top + 2 + sway, 3, 15, KANAMI.hairDk);
-  px(g, x0 + 4, top + 2 - sway, 3, 15, KANAMI.hairDk);
-  px(g, x0 - 7, top + 2 + sway, 1, 12, KANAMI.hair);
-  px(g, x0 + 4, top + 2 - sway, 1, 12, KANAMI.hair);
-  px(g, x0 - 8, top + 8 + sway, 1, 7, KANAMI.hairDk);
-  px(g, x0 + 7, top + 8 - sway, 1, 7, KANAMI.hairDk);
+  // ---- 背后淡金飘带(最后层)----
+  px(g, x0 - 8, top + 10 + sway, 1, 8, KANAMI.streamer);
+  px(g, x0 + 7, top + 10 - sway, 1, 8, KANAMI.streamer);
 
-  // ---- 头发 ----
+  // ---- 后发(淡紫长发及腰,粉色挑染)----
+  px(g, x0 - 6, top + 2 + sway, 2, 14, KANAMI.hair);
+  px(g, x0 + 4, top + 2 - sway, 2, 14, KANAMI.hair);
+  px(g, x0 - 6, top + 12 + sway, 2, 4, KANAMI.hairDk); // 发尾阴影
+  px(g, x0 + 4, top + 12 - sway, 2, 4, KANAMI.hairDk);
+  px(g, x0 + 5, top + 4 - sway, 1, 9, KANAMI.streak); // 粉挑染
+  px(g, x0 - 7, top + 9 + sway, 1, 6, KANAMI.hairDk); // 外侧发丝
+  px(g, x0 + 6, top + 9 - sway, 1, 6, KANAMI.hairDk);
+
+  // ---- 呆毛 + 侧发饰 ----
+  px(g, x0 - 1, top - 3, 2, 1, KANAMI.hair);
+  px(g, x0 - 2, top - 2, 1, 1, KANAMI.hair);
+  px(g, x0, top - 2, 1, 1, KANAMI.hairHi);
+  px(g, x0 + 4, top + 1, 1, 2, KANAMI.ornament); // 黑色科技发饰
+
+  // ---- 刘海(带一缕粉挑染)----
   px(g, x0 - 5, top, 10, 5, KANAMI.hair);
   px(g, x0 - 5, top, 10, 1, KANAMI.hairHi);
-  px(g, x0 - 5, top + 4, 2, 5, KANAMI.hair);
-  px(g, x0 + 3, top + 4, 2, 5, KANAMI.hair);
-  // 星形发饰
-  px(g, x0 + 3, top, 2, 2, KANAMI.ribbon);
-  px(g, x0 + 4, top - 1, 1, 1, '#ff7aa2');
+  px(g, x0 - 5, top + 4, 2, 4, KANAMI.hair);
+  px(g, x0 + 3, top + 4, 2, 4, KANAMI.hair);
+  px(g, x0 - 4, top + 1, 1, 3, KANAMI.streak);
 
-  // ---- 脸 ----
+  // ---- 脸(蓝紫瞳)----
   px(g, x0 - 3, top + 4, 6, 4, KANAMI.skin);
   px(g, x0 - 3, top + 7, 6, 1, KANAMI.skinDk);
-  px(g, x0 + 1, top + 5, 1, 2, KANAMI.eye);
   px(g, x0 - 2, top + 5, 1, 2, KANAMI.eye);
+  px(g, x0 + 1, top + 5, 1, 2, KANAMI.eye);
 
-  // ---- 连衣裙 ----
-  px(g, x0 - 4, top + 8, 8, 5, KANAMI.dress);
-  px(g, x0 - 5, top + 12, 10, 3, KANAMI.dress);
-  px(g, x0 - 5, top + 14, 10, 1, KANAMI.dressDk);
-  px(g, x0 - 1, top + 8, 2, 5, KANAMI.trim);
-  px(g, x0 - 4, top + 8, 8, 1, '#f8f4f8');
-  px(g, x0 - 5, top + 12, 1, 3, KANAMI.dressDk);
-  px(g, x0 + 4, top + 12, 1, 3, KANAMI.dressDk);
+  // ---- 黑色露肩上衣 + 粉腰带 + 白色层叠裙(深粉裙缘)----
+  px(g, x0 - 4, top + 8, 8, 1, KANAMI.skin); // 露肩
+  px(g, x0 - 4, top + 9, 8, 3, KANAMI.top);
+  px(g, x0 - 4, top + 9, 8, 1, KANAMI.topHi);
+  px(g, x0 - 4, top + 12, 8, 1, KANAMI.beltPink);
+  px(g, x0 - 5, top + 13, 10, 2, KANAMI.skirt);
+  px(g, x0 - 5, top + 13, 10, 1, '#ffffff');
+  px(g, x0 - 5, top + 14, 10, 1, KANAMI.deepPink);
+  px(g, x0 - 5, top + 13, 1, 2, KANAMI.skirtDk);
+  px(g, x0 + 4, top + 13, 1, 2, KANAMI.skirtDk);
 
-  // ---- 手臂 / 星星麦克风 ----
+  // ---- 手臂(黑袖+粉手套)/ 谢幕曲狙击枪(枪灰,大瞄准镜)----
   const armSwing = pose.moving && !pose.airborne ? Math.round(Math.sin(pose.runPhase + Math.PI) * 1) : 0;
   if (pose.meleeT > 0) {
     const sw = Math.round(pose.meleeT * 7);
-    px(g, x0 + 1 + sw, top + 9, 5, 2, KANAMI.skin);
+    px(g, x0 + 1 + sw, top + 9, 5, 2, KANAMI.sleeve);
     px(g, x0 + 5 + sw, top + 7, 3, 4, KANAMI.mic);
+    px(g, x0 + 5 + sw, top + 7, 3, 1, KANAMI.micGlow);
   } else {
-    px(g, x0 - 6, top + 9 + armSwing, 2, 4, KANAMI.dressDk);
-    px(g, x0 + 2, top + 10, 3, 2, KANAMI.skin);
-    px(g, x0 + 5, top + 8, 2, 4, KANAMI.mic);
-    px(g, x0 + 5, top + 7, 2, 2, KANAMI.micGlow);
+    px(g, x0 - 6, top + 9 + armSwing, 2, 4, KANAMI.sleeve); // 后臂黑袖
+    px(g, x0 + 2, top + 10, 3, 2, KANAMI.sleeve); // 前臂黑袖
+    px(g, x0 + 4, top + 10, 2, 2, KANAMI.glovePink); // 粉手套
+    // 谢幕曲:枪身 / 上棱线 / 大瞄准镜 / 弹匣 / 枪托 / 枪口制退器 / 粉饰条
+    px(g, x0 + 1, top + 8, 11, 2, KANAMI.rifle);
+    px(g, x0 + 1, top + 8, 11, 1, KANAMI.rifleHi);
+    px(g, x0 + 4, top + 6, 4, 2, KANAMI.scope);
+    px(g, x0 + 4, top + 6, 4, 1, '#4a4e5a');
+    px(g, x0 + 6, top + 10, 2, 1, KANAMI.rifleDk);
+    px(g, x0 + 1, top + 10, 2, 1, KANAMI.rifleDk);
+    px(g, x0 + 12, top + 8, 1, 2, KANAMI.rifleDk);
+    px(g, x0 + 9, top + 9, 2, 1, KANAMI.accent);
   }
 
-  // ---- 腿 ----
-  px(g, x0 - 3, top + 15, 2, 7 + (pose.airborne ? airLeg : legSwing > 0 ? -1 : 0), KANAMI.boots);
-  px(g, x0 + 1, top + 15, 2, 7 + (pose.airborne ? -airLeg : legSwing < 0 ? -1 : 0), KANAMI.boots);
+  // ---- 白色过膝长靴(粉靴口 / 灰趾)----
+  const lL = pose.airborne ? airLeg : legSwing > 0 ? -1 : 0;
+  const lR = pose.airborne ? -airLeg : legSwing < 0 ? -1 : 0;
+  // 左腿
+  px(g, x0 - 3, top + 15, 2, 1, KANAMI.kneePink);
+  px(g, x0 - 3, top + 16, 2, Math.max(0, 5 + lL), KANAMI.boot);
+  px(g, x0 - 3, top + 16, 1, 1, KANAMI.bootDk);
+  px(g, x0 - 3, top + 21 + lL, 2, 1, KANAMI.toe);
+  // 右腿
+  px(g, x0 + 1, top + 15, 2, 1, KANAMI.kneePink);
+  px(g, x0 + 1, top + 16, 2, Math.max(0, 5 + lR), KANAMI.boot);
+  px(g, x0 + 2, top + 16, 1, 1, KANAMI.bootDk);
+  px(g, x0 + 1, top + 21 + lR, 2, 1, KANAMI.toe);
 }
 
 /** 绘制角色。(x, y) 是脚底中心,facing: 1 右 / -1 左 */
@@ -254,7 +346,7 @@ export function drawChar(
     const f = pose.shootFlash;
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = f;
-    const gx = 10;
+    const gx = char === 'michele' ? 11 : 13;
     const gy = -13;
     const glow = char === 'michele' ? '#9fe8ff' : '#ffd0a0';
     px(ctx, gx, gy - 1, 3, 3, glow);
@@ -399,6 +491,56 @@ function paintEnemy(
       px(g, 7, -12, 2, 2, eye);
       break;
     }
+    case 'exploder': {
+      if (facing < 0) g.scale(-1, 1);
+      const puls = 1 + Math.sin(time * 6) * 0.5;
+      const bodyC = frozen ? '#8fc8e8' : '#6a2a7a';
+      const veinC = frozen ? '#c8ecf8' : '#c44a9a';
+      const coreC = frozen ? '#e8f8ff' : '#ff5a4a';
+      // 蠕行的晶簇肉团
+      px(g, -7, -10, 14, 8, bodyC);
+      px(g, -7, -10, 14, 1, veinC);
+      px(g, -5, -12, 4, 2, bodyC);
+      px(g, 2, -13, 3, 3, bodyC);
+      px(g, -8, -6, 2, 4, bodyC);
+      px(g, 6, -7, 2, 5, bodyC);
+      // 晶棘
+      px(g, -3, -14, 1, 2, veinC);
+      px(g, 4, -15, 1, 2, veinC);
+      // 不稳定核心(脉动)
+      px(g, -2, -8, 4 + Math.round(puls), 3, coreC);
+      px(g, -1, -7, 2, 1, '#ffd0a0');
+      // 蠕足
+      const crawl = Math.floor(time * 8) % 2;
+      px(g, -6 + crawl, -2, 3, 2, '#3a1a44');
+      px(g, 0, -2, 3, 2, '#3a1a44');
+      px(g, 4 - crawl, -2, 3, 2, '#3a1a44');
+      break;
+    }
+    case 'slasher': {
+      if (facing < 0) g.scale(-1, 1);
+      const bodyC = frozen ? '#8fc8e8' : '#7a2438';
+      const boneC = frozen ? '#c8ecf8' : '#e8c8c0';
+      const eyeC2 = frozen ? '#e8f8ff' : '#ff3d5c';
+      // 弓身晶壳
+      px(g, -6, -12, 11, 8, bodyC);
+      px(g, -6, -12, 11, 1, '#a84a60');
+      px(g, -7, -8, 2, 4, bodyC);
+      // 镰刃前肢(骨白,起手上扬)
+      const raise = Math.floor(time * 5) % 2;
+      px(g, 4, -14 - raise, 2, 6, boneC);
+      px(g, 5, -16 - raise, 2, 3, boneC);
+      px(g, 6, -17 - raise, 1, 2, '#fff4ec');
+      // 独眼
+      px(g, 0, -10, 4, 3, '#12060e');
+      px(g, 1, -9, 2, 1, eyeC2);
+      // 节肢
+      const step = Math.floor(time * 10) % 2;
+      px(g, -5 + step, -4, 2, 4, '#3a1420');
+      px(g, -1, -4, 2, 4, '#3a1420');
+      px(g, 3 - step, -4, 2, 4, '#3a1420');
+      break;
+    }
     default:
       break;
   }
@@ -468,6 +610,14 @@ export function drawPickup(
       px(ctx, 0, -6, 1, 1, '#6ee0f4');
       px(ctx, -1, -2, 1, 2, '#d6fbff');
       break;
+    case 'dust': {
+      const tw = 0.55 + Math.sin(t * 7) * 0.35;
+      ctx.globalAlpha = tw;
+      px(ctx, -1, -2, 2, 2, '#ffe9a8');
+      px(ctx, 0, -3, 1, 1, '#8ee8f4');
+      ctx.globalAlpha = 1;
+      break;
+    }
     case 'crystal': {
       const glow = 0.65 + Math.sin(t * 5) * 0.3;
       ctx.globalAlpha = glow;

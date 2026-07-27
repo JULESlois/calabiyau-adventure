@@ -22,6 +22,7 @@ export interface WorldApi {
     dmg?: number,
     color?: string,
     r?: number,
+    owner?: object,
   ): void;
   sfx(name: string): void;
   shake(n: number): void;

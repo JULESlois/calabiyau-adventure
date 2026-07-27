@@ -1,9 +1,11 @@
 import { AudioSys } from './Audio';
-import { DT, VIEW_H, VIEW_W } from './constants';
+import { DT, MAX_STRING, VIEW_H, VIEW_W } from './constants';
 import { Input } from './Input';
-import { loadSave, storeSave, type SaveData } from './save';
-import { PlayState } from './states/PlayState';
+import { clearWorldSave, loadWorldSave, storeWorldSave } from './save';
+import { PlayState, type EntryInfo } from './states/PlayState';
 import { TitleState } from './states/TitleState';
+import { ROOMS, START_ROOM, ZONES, type Ability } from './world/world';
+import { WorldState } from './world/WorldState';
 
 export interface GameState {
   enter(): void;
@@ -15,7 +17,7 @@ export class Engine {
   ctx: CanvasRenderingContext2D;
   input = new Input();
   audio = new AudioSys();
-  save: SaveData;
+  world = new WorldState();
   state: GameState | null = null;
 
   private raf = 0;
@@ -29,8 +31,31 @@ export class Engine {
     if (!ctx) throw new Error('Canvas 2D context unavailable');
     this.ctx = ctx;
     this.ctx.imageSmoothingEnabled = false;
-    this.save = loadSave();
     this.input.onAnyKey = () => this.audio.unlock();
+  }
+
+  hasSave(): boolean {
+    return loadWorldSave() !== null;
+  }
+
+  newGame(): void {
+    clearWorldSave();
+    this.world = new WorldState();
+    this.startRoom(START_ROOM, { kind: 'start' });
+  }
+
+  continueGame(): void {
+    const d = loadWorldSave();
+    this.world = d ? WorldState.deserialize(d) : new WorldState();
+    this.world.hp = this.world.hpMax;
+    this.world.energy = MAX_STRING;
+    this.startRoom(this.world.benchRoom, { kind: 'bench' });
+  }
+
+  respawnAtBench(): void {
+    this.world.hp = this.world.hpMax;
+    this.world.energy = MAX_STRING;
+    this.startRoom(this.world.benchRoom, { kind: 'bench' });
   }
 
   start(): void {
@@ -44,13 +69,25 @@ export class Engine {
     // 冒烟测试 / 调试钩子
     (window as unknown as Record<string, unknown>).__CBQ__ = {
       engine: this,
-      startLevel: (n: number) => this.startLevel(n),
+      newGame: () => this.newGame(),
+      continueGame: () => this.continueGame(),
+      goRoom: (id: string) => this.startRoom(id, { kind: 'start' }),
+      grant: (a: Ability) => {
+        this.world.grant(a);
+      },
+      giveDust: (n: number) => {
+        this.world.dust += n;
+      },
+      grantAll: () => {
+        for (const a of ['paper', 'cling', 'djump', 'dash', 'kanami'] as Ability[]) this.world.grant(a);
+      },
       info: () => {
         const s = this.state;
         if (s instanceof PlayState) {
           return {
             state: 'play',
-            level: s.levelId,
+            room: s.roomId,
+            zone: s.room.zone,
             x: Math.round(s.player.x),
             y: Math.round(s.player.y),
             hp: s.player.hp,
@@ -58,8 +95,10 @@ export class Engine {
             char: s.player.char,
             paper: s.player.paper,
             overlay: s.overlay,
+            abilities: [...this.world.abilities],
+            crystals: this.world.crystals.size,
+            visited: [...this.world.visited],
             enemies: s.enemies.filter((e) => !e.dead).length,
-            crystals: s.crystals,
             boss: s.boss ? { state: s.boss.state, hp: s.boss.hp } : null,
           };
         }
@@ -80,13 +119,20 @@ export class Engine {
     this.state.enter();
   }
 
-  startLevel(n: number): void {
-    this.state = new PlayState(this, n);
+  startRoom(roomId: string, entry: EntryInfo): void {
+    const room = ROOMS[roomId];
+    if (!room) {
+      console.error(`未知房间: ${roomId}`);
+      return;
+    }
+    this.world.visited.add(roomId);
+    this.audio.playSong(ZONES[room.zone].song);
+    this.state = new PlayState(this, roomId, entry);
     this.state.enter();
   }
 
-  persistSave(): void {
-    storeSave(this.save);
+  persistWorld(): void {
+    storeWorldSave(this.world.serialize());
   }
 
   private loop = (now: number): void => {
@@ -99,6 +145,7 @@ export class Engine {
 
     let steps = 0;
     while (this.acc >= DT && steps < 6) {
+      this.input.pollGamepad();
       if (this.input.pressed('mute')) this.audio.toggleMute();
       this.state?.update(DT);
       this.input.endFrame();
@@ -131,7 +178,6 @@ function buildVignette(): HTMLCanvasElement | null {
   rg.addColorStop(1, 'rgba(6,4,12,0.52)');
   g.fillStyle = rg;
   g.fillRect(0, 0, VIEW_W, VIEW_H);
-  // 顶部再压一点,舞台感
   const lg = g.createLinearGradient(0, 0, 0, 40);
   lg.addColorStop(0, 'rgba(4,3,8,0.30)');
   lg.addColorStop(1, 'rgba(4,3,8,0)');

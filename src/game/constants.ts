@@ -28,6 +28,11 @@ export const WALL_SLIDE_SPEED = 55;
 export const WALL_JUMP_VX = 175;
 export const WALL_JUMP_VY = 300;
 
+export const DASH_SPEED = 330; // 相位突进
+export const DASH_TIME = 0.16;
+export const DASH_CD = 0.5;
+export const POGO_VEL = 290; // 下劈反弹
+
 export const INVULN_TIME = 1.0; // 受击无敌
 export const SWITCH_CD = 0.6;
 

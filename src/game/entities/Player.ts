@@ -1,6 +1,9 @@
 import {
   AIR_ACCEL,
   COYOTE_TIME,
+  DASH_CD,
+  DASH_SPEED,
+  DASH_TIME,
   DOUBLE_JUMP_VEL,
   GRAVITY,
   INVULN_TIME,
@@ -26,7 +29,7 @@ import { T_MEMBRANE, T_ONEWAY, T_SOLID } from '../levels/levels';
 import type { CharId } from '../types';
 import type { Rect } from '../utils';
 import { approach, clamp } from '../utils';
-import { makeIceBolt, makeNote } from './bullets';
+import { makeQuickNote, makeRifleShot, makeSnipe } from './bullets';
 import { drawChar } from '../render/sprites';
 import type { PlayState } from '../states/PlayState';
 
@@ -59,6 +62,15 @@ export class Player {
   runPhase = 0;
   dead = false;
   shootFlashT = 0;
+  /** 香奈美·谢幕曲蓄力(秒,满蓄 0.7) */
+  chargeT = 0;
+  charging = false;
+  /** 相位突进 */
+  dashT = 0;
+  dashCdT = 0;
+  airDashed = false;
+  /** 下劈(pogo) */
+  downSlash = false;
   /** 弦化残影 */
   private ghosts: { x: number; y: number; t: number }[] = [];
   private ghostAcc = 0;
@@ -90,6 +102,9 @@ export class Player {
 
   meleeHitbox(): Rect | null {
     if (this.meleeT <= 0) return null;
+    if (this.downSlash) {
+      return { x: this.x - 8, y: this.y - 4, w: 16, h: 14 };
+    }
     const reach = this.meleeStep === 2 ? 24 : 20;
     return {
       x: this.facing > 0 ? this.x + 2 : this.x - 2 - reach,
@@ -97,6 +112,15 @@ export class Player {
       w: reach,
       h: this.h + 4,
     };
+  }
+
+  /** 下劈命中后的反弹(重置二段跳与空中冲刺) */
+  pogoBounce(): void {
+    this.vy = -290;
+    this.jumpsUsed = 1;
+    this.airDashed = false;
+    this.meleeT = 0;
+    this.downSlash = false;
   }
 
   meleeDamage(): number {
@@ -118,6 +142,7 @@ export class Player {
     this.regenDelay = Math.max(0, this.regenDelay - dt);
     this.skillCd.michele = Math.max(0, this.skillCd.michele - dt);
     this.skillCd.kanami = Math.max(0, this.skillCd.kanami - dt);
+    this.dashCdT = Math.max(0, this.dashCdT - dt);
     if (this.meleeT > 0) this.meleeT -= dt;
     this.shootFlashT = Math.max(0, this.shootFlashT - dt);
 
@@ -135,17 +160,81 @@ export class Player {
       }
     }
 
-    // ---- 弦化(纸片形态):按住 Shift ----
-    const wantPaper = input.down('paper') && this.energy > 1;
-    if (wantPaper && !this.paper) {
-      this.paper = true;
-      ps.sfx('paperOn');
-      ps.particles.burst(this.x, this.centerY(), 10, '#aef4ff', 70, 0.4, 'paper');
-    } else if (!wantPaper && this.paper) {
+    // ---- 相位突进(冲刺)----
+    if (this.onGround || this.clingDir !== 0) this.airDashed = false;
+    if (this.dashT > 0) {
+      this.dashT -= dt;
+      this.vx = this.facing * DASH_SPEED;
+      this.vy = 0;
+      this.moveAndCollide(dt, ps, this.facing);
+      this.ghostAcc += dt;
+      if (this.ghostAcc > 0.03) {
+        this.ghostAcc = 0;
+        this.ghosts.push({ x: this.x, y: this.y, t: 0.2 });
+        if (this.ghosts.length > 6) this.ghosts.shift();
+      }
+      return;
+    }
+    if (
+      ps.world.has('dash') &&
+      input.pressed('dash') &&
+      this.dashCdT <= 0 &&
+      !this.paper &&
+      (this.onGround || !this.airDashed)
+    ) {
+      this.dashT = DASH_TIME;
+      this.dashCdT = DASH_CD;
+      if (!this.onGround) this.airDashed = true;
+      this.vy = 0;
+      ps.sfx('doubleJump');
+      ps.particles.burst(this.x - this.facing * 6, this.centerY(), 8, '#7ae0c8', 60, 0.3, 'spark');
+    }
+
+    // ---- 弦化(纸片形态) & 贴墙爬行 & 空中滑翔 ----
+    const hasPaper = ps.world.has('paper');
+    const hasCling = ps.world.has('cling');
+    const holdPaper = input.down('paper');
+    const pressInteract = input.pressed('interact');
+
+    const wallLeft = this.nearSolidWall(ps, -1);
+    const wallRight = this.nearSolidWall(ps, 1);
+    const nearAnyWall = (wallLeft ? -1 : 0) || (wallRight ? 1 : 0);
+
+    // 贴墙按 E (或使用弦化/贴墙能力) 进入贴墙弦化状态 (在弦膜%旁不可进行贴墙E交互)
+    if (pressInteract && nearAnyWall !== 0 && hasPaper && this.energy > 1) {
+      if (this.clingDir !== 0) {
+        this.clingDir = 0;
+        this.paper = false;
+        ps.sfx('paperOff');
+      } else {
+        this.paper = true;
+        this.clingDir = nearAnyWall;
+        this.facing = nearAnyWall;
+        ps.sfx('paperOn');
+        ps.particles.burst(this.x, this.centerY(), 8, '#aef4ff', 70, 0.4, 'paper');
+      }
+    } else if (holdPaper && hasPaper && this.energy > 1) {
+      if (!this.paper) {
+        this.paper = true;
+        ps.sfx('paperOn');
+        ps.particles.burst(this.x, this.centerY(), 10, '#aef4ff', 70, 0.4, 'paper');
+      }
+      if (hasCling && nearAnyWall !== 0 && this.clingDir === 0 && !this.onGround) {
+        this.clingDir = nearAnyWall;
+      }
+    } else if (!holdPaper && this.clingDir === 0 && this.paper) {
       this.paper = false;
-      this.clingDir = 0;
       ps.sfx('paperOff');
     }
+
+    if (this.clingDir !== 0) {
+      if (!this.nearSolidWall(ps, this.clingDir) || this.energy <= 0) {
+        this.clingDir = 0;
+        this.paper = false;
+        ps.sfx('paperOff');
+      }
+    }
+
     if (this.paper) {
       const drain = this.clingDir !== 0 ? 12 : STRING_DRAIN;
       this.energy = Math.max(0, this.energy - drain * dt);
@@ -156,14 +245,15 @@ export class Player {
         ps.sfx('paperOff');
       }
     } else if (this.regenDelay <= 0) {
-      this.energy = Math.min(MAX_STRING, this.energy + STRING_REGEN * dt);
+      const regenMul = ps.world.chips.has('chip_regen') ? 1.4 : 1;
+      this.energy = Math.min(MAX_STRING, this.energy + STRING_REGEN * regenMul * dt);
     }
 
     // ---- 水平移动 ----
     const left = input.down('left');
     const right = input.down('right');
     const moveDir = (right ? 1 : 0) - (left ? 1 : 0);
-    const maxSpeed = RUN_SPEED * (this.paper ? PAPER_SPEED_MULT : 1);
+    const maxSpeed = RUN_SPEED * (this.paper ? PAPER_SPEED_MULT : this.charging ? 0.6 : 1);
     const accel = this.onGround ? RUN_ACCEL : AIR_ACCEL;
     if (moveDir !== 0) {
       this.vx = approach(this.vx, moveDir * maxSpeed, accel * dt);
@@ -200,7 +290,7 @@ export class Player {
         this.jumpsUsed = 1;
         this.jumpBuffer = 0;
         ps.sfx('jump');
-      } else if (this.jumpsUsed < 2) {
+      } else if (this.jumpsUsed < 2 && ps.world.has('djump')) {
         this.vy = -DOUBLE_JUMP_VEL;
         this.jumpsUsed = 2;
         this.jumpBuffer = 0;
@@ -213,11 +303,18 @@ export class Player {
       this.vy = -120;
     }
 
-    // ---- 重力 / 贴墙滑落 ----
-    this.vy = Math.min(this.vy + GRAVITY * dt, MAX_FALL);
-    if (this.clingDir !== 0 && this.vy > WALL_SLIDE_SPEED) {
-      this.vy = WALL_SLIDE_SPEED;
-      if (Math.random() < 0.3) {
+    // ---- 重力 / 贴墙上下爬行 / 空中弦化飘飞(滑翔) ----
+    if (this.clingDir !== 0) {
+      const up = input.down('up');
+      const down = input.down('down');
+      if (up) {
+        this.vy = -110;
+      } else if (down) {
+        this.vy = 110;
+      } else {
+        this.vy = 0;
+      }
+      if (Math.random() < 0.2) {
         ps.particles.spawn({
           x: this.x + this.clingDir * 3,
           y: this.y - 4,
@@ -228,6 +325,11 @@ export class Player {
           shape: 'paper',
         });
       }
+    } else {
+      this.vy = Math.min(this.vy + GRAVITY * dt, MAX_FALL);
+      if (this.paper && !this.onGround && this.vy > 35) {
+        this.vy = 35; // 空中弦化飘飞(滑翔)
+      }
     }
 
     // ---- 位移与碰撞 ----
@@ -235,23 +337,56 @@ export class Player {
 
     // ---- 战斗(纸片形态下不可攻击) ----
     if (!this.paper) {
-      if (input.down('shoot') && this.shootCd <= 0) {
-        this.shoot(ps);
+      const shootDown = input.down('shoot');
+      if (this.char === 'michele') {
+        // 警探:全自动速射
+        this.charging = false;
+        this.chargeT = 0;
+        if (shootDown && this.shootCd <= 0) {
+          this.shoot(ps);
+        }
+      } else {
+        // 谢幕曲:长按蓄力,松开射出
+        if (shootDown && this.shootCd <= 0) {
+          if (!this.charging) ps.sfx('paperOff');
+          this.charging = true;
+          this.chargeT = Math.min(0.7, this.chargeT + dt);
+        } else if (!shootDown && this.charging) {
+          this.fireSnipe(ps);
+          this.charging = false;
+          this.chargeT = 0;
+        }
       }
       if (input.pressed('melee') && this.meleeT <= 0) {
-        this.meleeStep = this.comboWindow > 0 ? (this.meleeStep + 1) % 3 : 0;
-        this.meleeT = 0.2;
-        this.comboWindow = 0.55;
-        this.swingId++;
-        ps.sfx('melee');
+        if (!this.onGround && input.down('down')) {
+          // 下劈(pogo)
+          this.downSlash = true;
+          this.meleeStep = 0;
+          this.meleeT = 0.22;
+          this.swingId++;
+          ps.sfx('melee');
+        } else {
+          this.downSlash = false;
+          this.meleeStep = this.comboWindow > 0 ? (this.meleeStep + 1) % 3 : 0;
+          this.meleeT = 0.2;
+          this.comboWindow = 0.55;
+          this.swingId++;
+          ps.sfx('melee');
+        }
       }
+      if (this.downSlash && this.onGround) this.downSlash = false;
       if (input.pressed('skill')) {
         this.castSkill(ps);
       }
     }
 
-    // ---- 切换角色 ----
-    if (input.pressed('switch') && this.switchCd <= 0) {
+    if (this.paper) {
+      this.charging = false;
+      this.chargeT = 0;
+    }
+
+    // ---- 切换角色(需香奈美已加入)----
+    if (input.pressed('switch') && this.switchCd <= 0 && ps.world.has('kanami')) {
       this.char = this.char === 'michele' ? 'kanami' : 'michele';
       this.switchCd = SWITCH_CD;
       this.invuln = Math.max(this.invuln, 0.3);
@@ -268,45 +403,48 @@ export class Player {
     }
   }
 
+  /** 米雪儿·警探速射 */
   private shoot(ps: PlayState): void {
     const gy = this.y - 11;
-    if (this.char === 'michele') {
-      ps.playerBullets.push(makeIceBolt(this.x + this.facing * 8, gy, this.facing));
-      this.shootCd = 0.19;
-      ps.sfx('shootIce');
-    } else {
-      for (let i = -1; i <= 1; i++) {
-        ps.playerBullets.push(makeNote(this.x + this.facing * 7, gy, this.facing, i));
-      }
-      this.shootCd = 0.36;
+    ps.playerBullets.push(makeRifleShot(this.x + this.facing * 8, gy, this.facing));
+    this.shootCd = 0.14;
+    ps.sfx('shootIce');
+    this.shootFlashT = 0.09;
+    ps.particles.burst(this.x + this.facing * 10, gy, 3, '#7ef0ff', 40, 0.15);
+  }
+
+  /** 香奈美·谢幕曲(松开时按蓄力射出) */
+  private fireSnipe(ps: PlayState): void {
+    const gy = this.y - 11;
+    if (this.chargeT < 0.15) {
+      ps.playerBullets.push(makeQuickNote(this.x + this.facing * 7, gy, this.facing));
+      this.shootCd = 0.28;
       ps.sfx('shootNote');
+    } else {
+      const charge = this.chargeT / 0.7;
+      ps.playerBullets.push(makeSnipe(this.x + this.facing * 8, gy, this.facing, charge));
+      this.shootCd = 0.45;
+      ps.sfx('shootNote');
+      ps.sfx('melee');
+      if (charge > 0.85) ps.shake(2);
+      ps.particles.burst(this.x + this.facing * 12, gy, 6, '#ff8ad0', 70, 0.25, 'spark');
     }
     this.shootFlashT = 0.09;
-    ps.particles.burst(this.x + this.facing * 10, gy, 3, this.char === 'michele' ? '#7ef0ff' : '#ffb0d8', 40, 0.15);
+    ps.particles.burst(this.x + this.facing * 10, gy, 3, '#ffb0d8', 40, 0.15);
   }
 
   private castSkill(ps: PlayState): void {
     if (this.char === 'michele') {
+      // 喵喵卫士:部署猫炮塔
       if (this.skillCd.michele > 0) return;
       this.skillCd.michele = 9;
-      ps.freezeNova(this.x, this.centerY());
+      ps.deployTurret(this.x + this.facing * 10, this.y);
     } else {
+      // 旋律回响:掷出声呐镖
       if (this.skillCd.kanami > 0) return;
-      this.skillCd.kanami = 12;
-      this.hp = Math.min(MAX_HP, this.hp + 30);
-      this.shieldT = 1.5;
+      this.skillCd.kanami = 10;
+      ps.throwSonarDart(this.x + this.facing * 6, this.y - 14, this.facing);
       ps.sfx('skillHeal');
-      for (let i = 0; i < 12; i++) {
-        ps.particles.spawn({
-          x: this.x + (Math.random() - 0.5) * 20,
-          y: this.y - Math.random() * 20,
-          vx: 0,
-          vy: -40 - Math.random() * 30,
-          life: 0.7,
-          color: i % 2 === 0 ? '#ffd75e' : '#ffb0d8',
-          shape: 'note',
-        });
-      }
     }
   }
 
@@ -367,6 +505,27 @@ export class Player {
     return false;
   }
 
+  /** 检查指定方向 (dir: -1 左 / 1 右) 是否紧贴普通实体墙 (排除弦膜%) */
+  nearSolidWall(ps: PlayState, dir: number): boolean {
+    const r = this.rect();
+    const probe: Rect = {
+      x: dir < 0 ? r.x - 3 : r.x + r.w,
+      y: r.y + 2,
+      w: 3,
+      h: r.h - 4,
+    };
+    const c0 = Math.floor(probe.x / TILE);
+    const c1 = Math.floor((probe.x + probe.w - 0.001) / TILE);
+    const r0 = Math.floor(probe.y / TILE);
+    const r1 = Math.floor((probe.y + probe.h - 0.001) / TILE);
+    for (let c = c0; c <= c1; c++) {
+      for (let rr = r0; rr <= r1; rr++) {
+        if (ps.tileAt(c, rr) === T_SOLID) return true;
+      }
+    }
+    return false;
+  }
+
   private moveAndCollide(dt: number, ps: PlayState, moveDir: number): void {
     // --- 水平 ---
     let nx = this.x + this.vx * dt;
@@ -392,8 +551,8 @@ export class Player {
     }
     this.x = nx;
 
-    // 弦化贴墙判定:空中 + 纸片形态 + 推向墙
-    if (this.paper && !this.onGround && moveDir !== 0) {
+    // 弦化贴墙判定:空中 + 纸片形态 + 推向墙(需已获得「矩阵适配」)
+    if (this.paper && ps.world.has('cling') && !this.onGround && moveDir !== 0) {
       const probe: Rect = {
         x: this.x - this.w / 2 + moveDir * 2,
         y: this.y - this.h + 2,
@@ -496,5 +655,19 @@ export class Player {
       shield: this.shieldT > 0,
       time,
     });
+    // 谢幕曲蓄力条
+    if (this.charging) {
+      const p = this.chargeT / 0.7;
+      const bx = Math.round(this.x) - 8;
+      const by = Math.round(this.y) - this.h - 7;
+      ctx.fillStyle = 'rgba(10,7,16,0.7)';
+      ctx.fillRect(bx, by, 16, 3);
+      ctx.fillStyle = p >= 1 ? '#ffd75e' : '#ff8ad0';
+      ctx.fillRect(bx + 1, by + 1, Math.round(14 * p), 1);
+      if (p >= 1 && Math.floor(time * 10) % 2 === 0) {
+        ctx.fillStyle = '#fff2c0';
+        ctx.fillRect(bx + 15, by, 2, 3);
+      }
+    }
   }
 }
