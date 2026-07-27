@@ -488,13 +488,13 @@ export const START_ROOM = 'coast_start';
 export const ABILITY_INFO: Record<Ability, { name: string; desc: string; hint: string }> = {
   paper: {
     name: '弦 化',
-    desc: '身体展开为二维纸片,敌人的子弹将穿身而过。',
-    hint: '按住 Shift 弦化 · 可穿过粉色弦膜',
+    desc: '身体展开为二维纸片。地面弦化可穿弦膜,空中弦化会随风飘飞。',
+    hint: '地面或空中按住 Shift 弦化 · 不同状态有独立动作',
   },
   cling: {
     name: '矩阵适配',
     desc: '巴布洛矩阵认可了你。纸片形态可以贴附墙面。',
-    hint: '弦化中贴墙滑行 · 跳跃蹬墙而上',
+    hint: '靠近墙面按 E 吸附 · W/S 上下移动 · 再按 E 脱离',
   },
   djump: {
     name: '弦 翼',
