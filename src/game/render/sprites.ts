@@ -61,7 +61,6 @@ export interface CharPose {
   meleeStep: number; // 连段 0/1/2
   shootFlash: number; // 枪口焰 0..1
   hurtFlash: boolean;
-  shield: boolean;
   time: number;
 }
 
@@ -427,22 +426,6 @@ export function drawChar(
     ctx.restore();
   }
 
-  // 香奈美护盾
-  if (pose.shield) {
-    ctx.save();
-    ctx.globalAlpha = 0.35 + Math.sin(pose.time * 8) * 0.15;
-    ctx.strokeStyle = '#ffd75e';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(Math.round(x), Math.round(y) - 11, 15, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = '#ffd75e';
-    ctx.beginPath();
-    ctx.arc(Math.round(x), Math.round(y) - 11, 14, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
 }
 
 function paintEnemy(

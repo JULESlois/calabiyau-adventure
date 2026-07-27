@@ -7,10 +7,11 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/input.test.ts tests/player-string.test.ts tests/save.test.ts",
+    "test": "tsx --test tests/input.test.ts tests/player-string.test.ts tests/save.test.ts tests/display.test.ts",
     "check:maps": "tsx scripts/check-maps.ts",
+    "check:dist": "tsx scripts/check-dist.ts",
     "build": "npm run typecheck && vite build",
-    "check": "npm run typecheck && npm test && npm run check:maps && vite build",
+    "check": "npm run typecheck && npm test && npm run check:maps && vite build && npm run check:dist",
     "preview": "vite preview"
   },
   "dependencies": {

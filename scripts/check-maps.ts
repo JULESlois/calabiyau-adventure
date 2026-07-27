@@ -1,5 +1,5 @@
 // 世界数据静态校验:房间尺寸、生成点支撑、出口配对、能力推进可达性。
-// 运行: npx tsx scripts/check-maps.ts (或 bun scripts/check-maps.ts)
+// 运行: npm run check:maps
 import { parseRows, T_MEMBRANE, T_ONEWAY, T_SOLID } from '../src/game/levels/levels';
 import { ROOMS, ROOM_LIST, START_ROOM, ZONES, type Ability } from '../src/game/world/world';
 
@@ -8,11 +8,15 @@ declare const process: { exit(code: number): void };
 let errors = 0;
 const err = (msg: string) => {
   errors++;
-  console.error(`  ✗ ${msg}`);
+  console.error(`  [错误] ${msg}`);
 };
 
 const parsed = new Map<string, ReturnType<typeof parseRows>>();
-for (const room of ROOM_LIST) parsed.set(room.id, parseRows(room.rows));
+for (const room of ROOM_LIST) {
+  if (parsed.has(room.id)) err(`房间 id 重复: ${room.id}`);
+  parsed.set(room.id, parseRows(room.rows));
+}
+if (!ROOMS[START_ROOM]) err(`起始房间不存在: ${START_ROOM}`);
 
 // ---------------- 逐房间检查 ----------------
 for (const room of ROOM_LIST) {
@@ -42,6 +46,7 @@ for (const room of ROOM_LIST) {
 
   // 出口检查
   for (const e of room.exits) {
+    if (e.from > e.to) err(`${e.side} 出口范围倒置: ${e.from}-${e.to}`);
     const target = ROOMS[e.target];
     if (!target) {
       err(`出口指向未知房间 ${e.target}`);
@@ -76,12 +81,19 @@ for (const room of ROOM_LIST) {
       if (!open) err(`down 出口 cols ${e.from}-${e.to} 被实体砖封死`);
       if (e.from < 0 || e.to >= lvl.w) err(`down 出口列范围越界`);
     }
+
+    // 左右通道必须能从目标房间返回；向下坠落口允许单向。
+    if (e.side === 'left' || e.side === 'right') {
+      const reverse = e.side === 'left' ? 'right' : 'left';
+      const paired = target.exits.some((candidate) => candidate.side === reverse && candidate.target === room.id);
+      if (!paired) err(`${e.side} 出口 → ${e.target} 缺少 ${reverse} 返回出口`);
+    }
   }
 
   const chars = lvl.spawns.map((s) => s.char);
   const count = (c: string) => chars.filter((x) => x === c).length;
   console.log(
-    `  ✓ 尺寸 ${lvl.w}×${lvl.h},出口 ${room.exits.length},弦晶 ${count('*')},敌人 ${
+    `  [通过] 尺寸 ${lvl.w}×${lvl.h},出口 ${room.exits.length},弦晶 ${count('*')},敌人 ${
       count('1') + count('2') + count('3') + count('4') + count('5') + count('6')
     }`,
   );
@@ -135,11 +147,11 @@ const unreachable = ROOM_LIST.filter((r) => !reachable.has(r.id));
 if (unreachable.length > 0) {
   err(`按能力推进不可达的房间: ${unreachable.map((r) => r.id).join(', ')}`);
 } else {
-  console.log(`  ✓ 全部 ${ROOM_LIST.length} 个房间按能力推进可达;能力获取齐全 [${[...owned].join(', ')}]`);
+  console.log(`  [通过] 全部 ${ROOM_LIST.length} 个房间按能力推进可达;能力获取齐全 [${[...owned].join(', ')}]`);
 }
 
 if (errors > 0) {
   console.error(`\n共 ${errors} 个问题。`);
   process.exit(1);
 }
-console.log('\n全部世界数据校验通过 ✔');
+console.log('\n全部世界数据校验通过');

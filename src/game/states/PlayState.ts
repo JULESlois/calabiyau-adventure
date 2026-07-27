@@ -357,29 +357,6 @@ export class PlayState implements GameState, WorldApi {
     this.particles.burst(x, y - 8, 10, '#c47eff', 80, 0.4);
   }
 
-  freezeNova(x: number, y: number): void {
-    this.sfx('skillIce');
-    this.shake(3);
-    for (let i = 0; i < 26; i++) {
-      const a = (i / 26) * Math.PI * 2;
-      this.particles.spawn({
-        x, y,
-        vx: Math.cos(a) * 160, vy: Math.sin(a) * 160,
-        life: 0.5, color: '#bfeaff', shape: 'snow',
-      });
-    }
-    for (const e of this.enemies) {
-      if (!e.dead && Math.hypot(e.x - x, e.y - e.h / 2 - y) < 100) {
-        e.hit(15, 2.6, this);
-        this.onEnemyDamaged(e);
-      }
-    }
-    if (this.boss && this.boss.active && Math.hypot(this.boss.x - x, this.boss.y - 24 - y) < 120) {
-      this.boss.hit(25, this);
-    }
-    this.enemyBullets = this.enemyBullets.filter((b) => Math.hypot(b.x - x, b.y - y) > 105);
-  }
-
   // ---------------- 主循环 ----------------
   enter(): void {
     // 音乐由 Engine.startRoom 按场景切换

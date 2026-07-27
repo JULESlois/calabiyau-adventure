@@ -3,7 +3,10 @@
 
 import type { CharId } from '../types';
 import { MAX_HP, MAX_STRING } from '../constants';
-import { ROOMS, START_ROOM, type Ability } from './world';
+import { ROOMS, SHOP_ITEMS, START_ROOM, type Ability } from './world';
+
+const KNOWN_ABILITIES = new Set<Ability>(['paper', 'cling', 'djump', 'dash', 'kanami']);
+const KNOWN_CHIPS = new Set(SHOP_ITEMS.map((item) => item.id));
 
 export interface WorldSave {
   version: 2;
@@ -74,16 +77,16 @@ export class WorldState {
 
   static deserialize(d: WorldSave): WorldState {
     const w = new WorldState();
-    for (const a of d.abilities) w.abilities.add(a);
-    for (const f of d.flags) w.flags.add(f);
-    for (const c of d.crystals) w.crystals.add(c);
-    for (const v of d.visited) w.visited.add(v);
+    for (const a of d.abilities) if (KNOWN_ABILITIES.has(a)) w.abilities.add(a);
+    for (const f of d.flags) if (typeof f === 'string') w.flags.add(f);
+    for (const c of d.crystals) if (typeof c === 'string') w.crystals.add(c);
+    for (const v of d.visited) if (typeof v === 'string' && ROOMS[v]) w.visited.add(v);
     w.benchRoom = ROOMS[d.benchRoom] ? d.benchRoom : START_ROOM;
     w.char = d.char === 'kanami' && w.abilities.has('kanami') ? 'kanami' : 'michele';
     w.cleared = !!d.cleared;
-    w.dust = typeof d.dust === 'number' ? d.dust : 0;
-    for (const c of d.chips ?? []) w.chips.add(c);
-    w.hpMax = typeof d.hpMax === 'number' ? d.hpMax : MAX_HP;
+    w.dust = typeof d.dust === 'number' && Number.isSafeInteger(d.dust) ? Math.max(0, d.dust) : 0;
+    for (const c of d.chips ?? []) if (KNOWN_CHIPS.has(c)) w.chips.add(c);
+    w.hpMax = w.chips.has('chip_hp') ? MAX_HP + 25 : MAX_HP;
     w.hp = Math.min(w.hp, w.hpMax);
     return w;
   }

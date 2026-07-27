@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Engine } from '../game/Engine';
 import { VIEW_W, VIEW_H } from '../game/constants';
+import { calculateCanvasDisplaySize } from './canvasSizing';
 
 export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -19,29 +20,39 @@ export default function GameCanvas() {
     const fit = () => {
       const shell = canvas.parentElement;
       if (!shell) return;
-      const availW = shell.clientWidth - 16;
-      const availH = shell.clientHeight - 8;
-      const scale = Math.max(1, Math.floor(Math.min(availW / VIEW_W, availH / VIEW_H)));
-      canvas.style.width = `${VIEW_W * scale}px`;
-      canvas.style.height = `${VIEW_H * scale}px`;
+      const display = calculateCanvasDisplaySize(shell.clientWidth, shell.clientHeight, VIEW_W, VIEW_H);
+      canvas.style.width = `${display.width}px`;
+      canvas.style.height = `${display.height}px`;
     };
     fit();
     window.addEventListener('resize', fit);
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
+    if (canvas.parentElement) resizeObserver?.observe(canvas.parentElement);
 
     return () => {
       window.removeEventListener('resize', fit);
+      resizeObserver?.disconnect();
       engine.stop();
       engineRef.current = null;
     };
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="game-canvas"
-      width={VIEW_W}
-      height={VIEW_H}
-      tabIndex={0}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="game-canvas"
+        width={VIEW_W}
+        height={VIEW_H}
+        tabIndex={0}
+        aria-label="卡拉比丘弦间冒险游戏画面"
+        aria-describedby="game-controls"
+      >
+        当前浏览器不支持 Canvas，无法运行游戏。
+      </canvas>
+      <p id="game-controls" className="sr-only">
+        A、D 移动，空格跳跃，J 射击，K 近战，L 技能，Shift 弦化或空中飘飞，E 贴墙，F 交互，Escape 暂停。
+      </p>
+    </>
   );
 }

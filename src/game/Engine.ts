@@ -66,46 +66,47 @@ export class Engine {
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.loop);
 
-    // 冒烟测试 / 调试钩子
-    (window as unknown as Record<string, unknown>).__CBQ__ = {
-      engine: this,
-      newGame: () => this.newGame(),
-      continueGame: () => this.continueGame(),
-      goRoom: (id: string) => this.startRoom(id, { kind: 'start' }),
-      grant: (a: Ability) => {
-        this.world.grant(a);
-      },
-      giveDust: (n: number) => {
-        this.world.dust += n;
-      },
-      grantAll: () => {
-        for (const a of ['paper', 'cling', 'djump', 'dash', 'kanami'] as Ability[]) this.world.grant(a);
-      },
-      info: () => {
-        const s = this.state;
-        if (s instanceof PlayState) {
-          return {
-            state: 'play',
-            room: s.roomId,
-            zone: s.room.zone,
-            x: Math.round(s.player.x),
-            y: Math.round(s.player.y),
-            hp: s.player.hp,
-            energy: Math.round(s.player.energy),
-            char: s.player.char,
-            paper: s.player.paper,
-            stringMode: s.player.stringMode,
-            overlay: s.overlay,
-            abilities: [...this.world.abilities],
-            crystals: this.world.crystals.size,
-            visited: [...this.world.visited],
-            enemies: s.enemies.filter((e) => !e.dead).length,
-            boss: s.boss ? { state: s.boss.state, hp: s.boss.hp } : null,
-          };
-        }
-        return { state: 'title' };
-      },
-    };
+    if (import.meta.env.DEV) {
+      (window as unknown as Record<string, unknown>).__CBQ__ = {
+        engine: this,
+        newGame: () => this.newGame(),
+        continueGame: () => this.continueGame(),
+        goRoom: (id: string) => this.startRoom(id, { kind: 'start' }),
+        grant: (a: Ability) => {
+          this.world.grant(a);
+        },
+        giveDust: (n: number) => {
+          this.world.dust += n;
+        },
+        grantAll: () => {
+          for (const a of ['paper', 'cling', 'djump', 'dash', 'kanami'] as Ability[]) this.world.grant(a);
+        },
+        info: () => {
+          const s = this.state;
+          if (s instanceof PlayState) {
+            return {
+              state: 'play',
+              room: s.roomId,
+              zone: s.room.zone,
+              x: Math.round(s.player.x),
+              y: Math.round(s.player.y),
+              hp: s.player.hp,
+              energy: Math.round(s.player.energy),
+              char: s.player.char,
+              paper: s.player.paper,
+              stringMode: s.player.stringMode,
+              overlay: s.overlay,
+              abilities: [...this.world.abilities],
+              crystals: this.world.crystals.size,
+              visited: [...this.world.visited],
+              enemies: s.enemies.filter((e) => !e.dead).length,
+              boss: s.boss ? { state: s.boss.state, hp: s.boss.hp } : null,
+            };
+          }
+          return { state: 'title' };
+        },
+      };
+    }
   }
 
   stop(): void {
@@ -113,6 +114,13 @@ export class Engine {
     cancelAnimationFrame(this.raf);
     this.input.detach();
     this.audio.dispose();
+    if (import.meta.env.DEV) {
+      const host = window as unknown as Record<string, unknown>;
+      const hook = host.__CBQ__;
+      if (typeof hook === 'object' && hook !== null && Reflect.get(hook, 'engine') === this) {
+        delete host.__CBQ__;
+      }
+    }
   }
 
   showTitle(): void {

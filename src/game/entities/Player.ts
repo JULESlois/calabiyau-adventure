@@ -61,7 +61,6 @@ export class Player {
   swingId = 0;
   switchCd = 0;
   skillCd: Record<CharId, number> = { michele: 0, kanami: 0 };
-  shieldT = 0; // 香奈美护盾
   regenDelay = 0;
   runPhase = 0;
   dead = false;
@@ -169,7 +168,6 @@ export class Player {
     this.invuln = Math.max(0, this.invuln - dt);
     this.shootCd = Math.max(0, this.shootCd - dt);
     this.switchCd = Math.max(0, this.switchCd - dt);
-    this.shieldT = Math.max(0, this.shieldT - dt);
     this.comboWindow = Math.max(0, this.comboWindow - dt);
     this.regenDelay = Math.max(0, this.regenDelay - dt);
     this.skillCd.michele = Math.max(0, this.skillCd.michele - dt);
@@ -472,11 +470,6 @@ export class Player {
   /** 受伤。返回是否实际受伤 */
   hurt(dmg: number, fromX: number, ps: PlayState): boolean {
     if (this.invuln > 0 || this.dead) return false;
-    if (this.shieldT > 0) {
-      ps.particles.burst(this.x, this.centerY(), 8, '#ffd75e', 80, 0.4, 'spark');
-      ps.sfx('meleeHit');
-      return false;
-    }
     this.hp -= dmg;
     this.invuln = INVULN_TIME;
     const dir = this.x < fromX ? -1 : 1;
@@ -663,7 +656,6 @@ export class Player {
       meleeStep: this.meleeStep,
       shootFlash: this.shootFlashT > 0 ? this.shootFlashT / 0.09 : 0,
       hurtFlash: this.invuln > INVULN_TIME - 0.15,
-      shield: this.shieldT > 0,
       time,
     });
     // 谢幕曲蓄力条

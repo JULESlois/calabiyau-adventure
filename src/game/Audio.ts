@@ -12,7 +12,6 @@ type SfxName =
   | 'crystal'
   | 'paperOn'
   | 'paperOff'
-  | 'skillIce'
   | 'skillHeal'
   | 'switch'
   | 'explosion'
@@ -116,7 +115,6 @@ export class AudioSys {
       case 'crystal': this.tone(1040, 0.14, 'triangle', 0.12, 300); break;
       case 'paperOn': this.noise(0.12, 0.07, 4000); this.tone(1200, 0.1, 'sine', 0.06, 500); break;
       case 'paperOff': this.tone(700, 0.1, 'sine', 0.06, -300); break;
-      case 'skillIce': this.noise(0.4, 0.12, 3000); this.tone(1500, 0.5, 'sine', 0.08, -900); break;
       case 'skillHeal':
         this.tone(523, 0.16, 'triangle', 0.1);
         this.tone(659, 0.16, 'triangle', 0.1, 0, 0.1);

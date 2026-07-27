@@ -1,4 +1,4 @@
-// 角色美术预览页:两位角色 × 七种姿态,放大 6 倍检查像素细节。
+// 角色美术预览页:两位角色 × 常规/弦化姿态,放大 6 倍检查像素细节。
 // 构建: bun build scripts/art-preview.ts --outdir <dir> --target browser
 import { drawChar, type CharPose } from '../src/game/render/sprites';
 import type { CharId } from '../src/game/types';
@@ -6,7 +6,7 @@ import type { CharId } from '../src/game/types';
 const SCALE = 6;
 const CELL_W = 26;
 const ROW_H = 40;
-const LOGICAL_W = 14 + CELL_W * 7;
+const LOGICAL_W = 14 + CELL_W * 9;
 const LOGICAL_H = 100;
 
 const canvas = document.createElement('canvas');
@@ -26,7 +26,9 @@ const POSES: [string, Partial<CharPose>][] = [
   ['下落', { airborne: true, vy: 200 }],
   ['射击', { shootFlash: 0.8 }],
   ['近战', { meleeT: 0.5, meleeStep: 2 }],
-  ['弦化', { paper: true }],
+  ['地面弦化', { paper: true, stringMode: 'ground' }],
+  ['贴墙', { paper: true, stringMode: 'wall' }],
+  ['空中飘飞', { paper: true, stringMode: 'glide', airborne: true, vy: 42 }],
 ];
 
 function frame(now: number): void {
@@ -48,7 +50,6 @@ function frame(now: number): void {
         meleeStep: 0,
         shootFlash: 0,
         hurtFlash: false,
-        shield: false,
         time: t,
         ...part,
         paper: part.paper ?? false,

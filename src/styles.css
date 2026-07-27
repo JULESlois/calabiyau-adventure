@@ -43,3 +43,20 @@ canvas.game-canvas {
   border-radius: 4px;
   outline: none;
 }
+
+canvas.game-canvas:focus-visible {
+  outline: 2px solid #8ee8f4;
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
