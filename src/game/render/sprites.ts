@@ -77,6 +77,13 @@ export function resolveAirMotionStage(airborne: boolean, vy: number): AirMotionS
   return 'fall';
 }
 
+/** 飘飞时以脚底为轴向面朝方向前倾，速度只做小幅修正。 */
+export function resolveGlideTilt(vy: number, time: number): number {
+  const flutter = Math.sin(time * 16) * 0.055;
+  const fallTilt = Math.max(-0.06, Math.min(0.12, vy / 360));
+  return 0.28 + fallTilt + flutter;
+}
+
 interface LocomotionFrame {
   idle: boolean;
   running: boolean;
@@ -478,9 +485,7 @@ export function drawChar(
     ctx.scale(0.18, 0.98);
     ctx.globalAlpha = 0.94;
   } else if (pose.stringMode === 'glide') {
-    const flutter = Math.sin(pose.time * 16) * 0.07;
-    const fallTilt = Math.max(-0.08, Math.min(0.16, pose.vy / 280));
-    ctx.rotate(-0.3 + fallTilt + flutter);
+    ctx.rotate(resolveGlideTilt(pose.vy, pose.time));
     ctx.transform(0.38, 0, Math.sin(pose.time * 12) * 0.1, 0.92, 0, 0);
     ctx.globalAlpha = 0.9;
   }
@@ -547,7 +552,7 @@ export function drawChar(
     ctx.save();
     ctx.translate(Math.round(x), Math.round(y));
     if (facing < 0) ctx.scale(-1, 1);
-    ctx.rotate(-0.3 + Math.sin(pose.time * 16) * 0.06);
+    ctx.rotate(resolveGlideTilt(pose.vy, pose.time));
     ctx.globalAlpha = 0.55;
     ctx.strokeStyle = '#aef4ff';
     ctx.strokeRect(-4.5, -23.5, 9, 24);

@@ -318,20 +318,13 @@ export class TitleState implements GameState {
     } else {
       ctx.font = `9px ${F_SERIF}`;
       const lines = [
-        'A / D 移动   空格 / W 跳跃   S+跳 下落平台',
-        'J 射击(香奈美长按蓄力)  K 近战  L 技能  Q 换人',
-        '空中 S+K 下劈弹反 · U/; 冲刺(寻获后)',
-        'Shift 地面弦化/空中飘飞 · E 吸附/脱离墙面 · F 交互',
-        'Tab / I 地图 · Esc 暂停 · M 静音',
-        '',
-        '弦化、蹬墙跳、二段跳、相位突进散落世界各处;',
-        '香奈美被囚于研究区深处,声呐能显形隐藏平台。',
-        '击败敌人掉落晶尘 ✦,可向研究区门厅的',
-        '引航者购买「记忆芯片」强化自身。',
-        '在「调弦台」休息保存;击败塔顶「守望者 MK-III」。',
+        'A/D 移动 · 空格/W 跳跃 · S+跳 下落',
+        'J 射击 · K 近战 · L 技能 · Q 换人',
+        '空中 Shift 飘飞 · E 贴墙/脱离 · F 交互',
+        'U/; 冲刺 · Tab/I 地图 · Esc 暂停',
       ];
       lines.forEach((l, i) => {
-        ctx.fillStyle = i === 6 || i === 7 ? '#8ee8f4' : '#b8accc';
+        ctx.fillStyle = i === 2 ? '#8ee8f4' : '#b8accc';
         ctx.fillText(l, VIEW_W / 2, 112 + i * 13);
       });
       ctx.fillStyle = '#6a6080';

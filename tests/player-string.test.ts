@@ -4,6 +4,7 @@ import { DT, GLIDE_FALL_SPEED, WALL_JUMP_VY } from '../src/game/constants';
 import { Player } from '../src/game/entities/Player';
 import type { Action } from '../src/game/Input';
 import { T_EMPTY, T_SOLID } from '../src/game/levels/levels';
+import { resolveGlideTilt } from '../src/game/render/sprites';
 import { PlayState } from '../src/game/states/PlayState';
 import type { Ability } from '../src/game/world/world';
 
@@ -100,14 +101,15 @@ test('wall mode stays still without input, W/S only move vertically, and E wall-
   assert.equal(player.facing, -1);
 });
 
-test('Shift selects separate ground stringification and airborne glide modes', () => {
-  const { input, state } = makeState(['paper']);
+test('Shift only enables glide while airborne and never attaches to a nearby wall', () => {
+  const { input, state } = makeState(['paper', 'cling']);
 
-  const grounded = new Player(120, 100);
+  const grounded = new Player(26.5, 100);
   grounded.onGround = true;
   input.held.add('paper');
   grounded.update(DT, state);
-  assert.equal(grounded.stringMode, 'ground');
+  assert.equal(grounded.stringMode, 'normal');
+  assert.equal(grounded.clingDir, 0);
 
   const airborne = new Player(120, 80);
   airborne.onGround = false;
@@ -119,6 +121,29 @@ test('Shift selects separate ground stringification and airborne glide modes', (
   input.held.clear();
   airborne.update(DT, state);
   assert.equal(airborne.stringMode, 'normal');
+});
+
+test('glide consumes jump input without triggering an extra airborne jump', () => {
+  const { input, state } = makeState(['paper', 'djump']);
+  const player = new Player(120, 80);
+  player.vy = 120;
+  player.jumpsUsed = 1;
+  input.held.add('paper');
+  input.held.add('jump');
+  input.justPressed.add('jump');
+
+  player.update(DT, state);
+
+  assert.equal(player.stringMode, 'glide');
+  assert.equal(player.jumpsUsed, 1);
+  assert.equal(player.jumpBuffer, 0);
+  assert.ok(player.vy >= 0);
+  assert.ok(player.vy <= GLIDE_FALL_SPEED);
+});
+
+test('glide pose leans the character head toward the facing direction', () => {
+  assert.ok(resolveGlideTilt(0, 0) > 0);
+  assert.ok(resolveGlideTilt(GLIDE_FALL_SPEED, 0) > 0);
 });
 
 test('enemy bullets preserve their owner for Michele passive marking', () => {

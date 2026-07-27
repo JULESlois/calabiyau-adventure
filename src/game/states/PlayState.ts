@@ -100,7 +100,6 @@ export class PlayState implements GameState, WorldApi {
   private nearShop = false;
   private nearAbilitySpot: AbilitySpot | null = null;
   private nearKanamiSpot: { x: number; y: number } | null = null;
-  private nearWallClimb = false;
   particles = new ParticleSystem();
   bg: Background;
 
@@ -736,13 +735,6 @@ export class PlayState implements GameState, WorldApi {
         }
       }
     }
-
-    // 5. 贴墙弦化提示 (Wall Climb Prompt)
-    const wallLeft = p.nearSolidWall(this, -1);
-    const wallRight = p.nearSolidWall(this, 1);
-    this.nearWallClimb =
-      p.stringMode === 'wall' ||
-      ((wallLeft || wallRight) && this.world.has('paper') && this.world.has('cling'));
   }
 
   private grantAbility(kind: Ability, x: number, y: number): void {
@@ -1254,11 +1246,7 @@ export class PlayState implements GameState, WorldApi {
     for (const a of this.abilitySpots) drawAbilityShrine(ctx, a.x, a.y, a.kind, this.time);
     if (this.kanamiSpot) drawCagedKanami(ctx, this.kanamiSpot.x, this.kanamiSpot.y, this.time);
     if (this.shopSpot) {
-      const near =
-        !this.player.dead &&
-        Math.abs(this.player.x - this.shopSpot.x) < 16 &&
-        Math.abs(this.player.y - this.shopSpot.y) < 24;
-      drawNavigator(ctx, this.shopSpot.x, this.shopSpot.y, this.time, near);
+      drawNavigator(ctx, this.shopSpot.x, this.shopSpot.y, this.time, false);
     }
     if (this.gate.active) drawExitGate(ctx, this.gate.x, this.gate.y, this.time);
 
@@ -1592,6 +1580,8 @@ export class PlayState implements GameState, WorldApi {
   }
 
   private renderShop(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = 'rgba(4,3,10,0.82)';
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     this.ornateFrame(ctx, VIEW_W / 2 - 128, 40, 256, 178);
@@ -1600,37 +1590,38 @@ export class PlayState implements GameState, WorldApi {
     ctx.fillStyle = '#e8d8a8';
     ctx.fillText('引航者 · 诺笛', VIEW_W / 2, 60);
     ctx.font = '8px "SimSun", "Songti SC", serif';
-    ctx.fillStyle = '#8a7a98';
-    ctx.fillText('「记忆是最贵的东西。所以我只收晶尘。」', VIEW_W / 2, 76);
     ctx.fillStyle = '#ffe9a8';
-    ctx.fillText(`✦ 持有晶尘 ${this.world.dust}`, VIEW_W / 2, 92);
+    ctx.fillText(`晶尘 ${this.world.dust}`, VIEW_W / 2, 79);
 
     ctx.textAlign = 'left';
     SHOP_ITEMS.forEach((it, i) => {
-      const y = 108 + i * 24;
+      const rowTop = 91 + i * 25;
+      const nameY = rowTop + 9;
       const sel = i === this.shopSel;
       const owned = this.world.chips.has(it.id);
       if (sel) {
         ctx.fillStyle = 'rgba(168,130,60,0.18)';
-        ctx.fillRect(VIEW_W / 2 - 118, y - 8, 236, 22);
+        ctx.fillRect(VIEW_W / 2 - 118, rowTop, 236, 23);
+        ctx.fillStyle = '#e8c860';
+        ctx.fillRect(VIEW_W / 2 - 111, nameY - 4, 3, 3);
       }
       ctx.font = '9px "SimSun", "Songti SC", serif';
       ctx.fillStyle = owned ? '#5a5468' : sel ? '#f0e0b0' : '#b8accc';
-      ctx.fillText(`${sel ? '✦ ' : '  '}${it.name}`, VIEW_W / 2 - 112, y);
+      ctx.fillText(it.name, VIEW_W / 2 - 104, nameY);
       ctx.font = '8px "SimSun", "Songti SC", serif';
       ctx.fillStyle = owned ? '#4a4458' : '#8a7a98';
-      ctx.fillText(it.desc, VIEW_W / 2 - 104, y + 10);
+      ctx.fillText(it.desc, VIEW_W / 2 - 104, nameY + 10);
       ctx.textAlign = 'right';
       ctx.fillStyle = owned ? '#5a5468' : this.world.dust >= it.cost ? '#ffe9a8' : '#a85a5c';
-      ctx.fillText(owned ? '已接入' : `✦${it.cost}`, VIEW_W / 2 + 112, y);
+      ctx.fillText(owned ? '已接入' : `${it.cost}`, VIEW_W / 2 + 110, nameY);
       ctx.textAlign = 'left';
     });
 
     ctx.textAlign = 'center';
     ctx.font = '8px "SimSun", "Songti SC", serif';
     ctx.fillStyle = '#8a7a98';
-    ctx.fillText('↑↓ 选择 · 确认 购买 · Esc 离开', VIEW_W / 2, 210);
-    ctx.textAlign = 'left';
+    ctx.fillText('↑↓ 选择 · F 购买 · Esc 关闭', VIEW_W / 2, 208);
+    ctx.restore();
   }
 
   // 房间名 / 事件提示
@@ -1658,47 +1649,39 @@ export class PlayState implements GameState, WorldApi {
   }
 
   private renderInteractionPrompts(ctx: CanvasRenderingContext2D): void {
-    let promptMsg = '';
     let px = 0;
     let py = 0;
 
     if (this.nearBenchSpot) {
-      promptMsg = '按 [F] 调谐 / 快速传送';
       px = this.nearBenchSpot.x;
       py = this.nearBenchSpot.y - 32;
     } else if (this.nearAbilitySpot) {
-      promptMsg = '按 [F] 吸收能力';
       px = this.nearAbilitySpot.x;
       py = this.nearAbilitySpot.y - 28;
     } else if (this.nearKanamiSpot) {
-      promptMsg = '按 [F] 解救香奈美';
       px = this.nearKanamiSpot.x;
       py = this.nearKanamiSpot.y - 26;
     } else if (this.nearShop && this.shopSpot) {
-      promptMsg = '按 [F] 与诺笛交谈';
       px = this.shopSpot.x;
       py = this.shopSpot.y - 26;
-    } else if (this.nearWallClimb) {
-      promptMsg = this.player.stringMode === 'wall' ? 'W/S 上下移动 · 按 [E] 蹬墙跳' : '按 [E] 贴墙弦化';
-      px = this.player.x;
-      py = this.player.y - 28;
+    } else {
+      return;
     }
 
-    if (promptMsg) {
-      const bx = Math.round(px - this.camX);
-      const by = Math.round(py - this.camY);
-      ctx.font = '9px sans-serif';
-      ctx.textAlign = 'center';
-      const tw = ctx.measureText(promptMsg).width;
-      ctx.fillStyle = 'rgba(8, 6, 16, 0.9)';
-      ctx.fillRect(bx - tw / 2 - 5, by - 11, tw + 10, 13);
-      ctx.strokeStyle = '#8ee8f4';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(bx - tw / 2 - 5, by - 11, tw + 10, 13);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(promptMsg, bx, by - 1);
-      ctx.textAlign = 'left';
-    }
+    const bx = Math.round(px - this.camX);
+    const by = Math.round(py - this.camY);
+    ctx.save();
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(8, 6, 16, 0.9)';
+    ctx.fillRect(bx - 6, by - 10, 12, 12);
+    ctx.strokeStyle = '#8ee8f4';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx - 5.5, by - 9.5, 11, 11);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('F', bx, by - 4);
+    ctx.restore();
   }
 
   private renderFastTravel(ctx: CanvasRenderingContext2D): void {
@@ -1847,19 +1830,16 @@ export class PlayState implements GameState, WorldApi {
       const info = ABILITY_INFO[this.abilityKind];
       const a = clamp(this.overlayT / 0.4, 0, 1);
       ctx.globalAlpha = a;
-      this.ornateFrame(ctx, VIEW_W / 2 - 118, 74, 236, 104);
+      this.ornateFrame(ctx, VIEW_W / 2 - 90, 84, 180, 82);
       ctx.font = F_BIG;
       ctx.fillStyle = this.abilityKind === 'kanami' ? '#ffb0d8' : '#8ee8f4';
-      ctx.fillText(info.name, VIEW_W / 2, 96);
-      ctx.font = F_MID;
-      ctx.fillStyle = '#d8cce8';
-      ctx.fillText(info.desc, VIEW_W / 2, 124);
+      ctx.fillText(info.name, VIEW_W / 2, 108);
       ctx.font = F_SMALL;
       ctx.fillStyle = '#e8d8a8';
-      ctx.fillText(info.hint, VIEW_W / 2, 144);
+      ctx.fillText('已获得', VIEW_W / 2, 132);
       if (this.overlayT > 0.6) {
         ctx.fillStyle = '#8a7a98';
-        ctx.fillText('按 确认 继续', VIEW_W / 2, 166);
+        ctx.fillText('确认', VIEW_W / 2, 154);
       }
       ctx.globalAlpha = 1;
     } else if (this.overlay === 'victory') {

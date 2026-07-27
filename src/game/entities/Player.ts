@@ -20,7 +20,6 @@ import {
   PLAYER_W,
   RUN_ACCEL,
   RUN_SPEED,
-  STRING_DRAIN,
   STRING_REGEN,
   SWITCH_CD,
   TILE,
@@ -249,7 +248,7 @@ export class Player {
       ps.particles.burst(this.x - this.facing * 6, this.centerY(), 8, '#7ae0c8', 60, 0.3, 'spark');
     }
 
-    // ---- 三种弦化形态：Shift 普通弦化/空中飘飞，E 贴墙 ----
+    // ---- 弦化形态：空中 Shift 飘飞，E 贴墙 ----
     const hasPaper = ps.world.has('paper');
     const hasCling = ps.world.has('cling');
     const holdPaper = input.down('paper');
@@ -273,17 +272,12 @@ export class Player {
 
     if (this.stringMode !== 'wall') {
       const desired: StringMode =
-        holdPaper && hasPaper && this.energy > 1 ? (this.onGround ? 'ground' : 'glide') : 'normal';
+        holdPaper && !this.onGround && hasPaper && this.energy > 1 ? 'glide' : 'normal';
       this.setStringMode(desired, ps);
     }
 
     if (this.paper) {
-      const drain =
-        this.stringMode === 'wall'
-          ? WALL_STRING_DRAIN
-          : this.stringMode === 'glide'
-            ? GLIDE_STRING_DRAIN
-            : STRING_DRAIN;
+      const drain = this.stringMode === 'wall' ? WALL_STRING_DRAIN : GLIDE_STRING_DRAIN;
       this.energy = Math.max(0, this.energy - drain * dt);
       this.regenDelay = 0.55;
       if (this.energy <= 0) {
@@ -315,8 +309,8 @@ export class Player {
     }
 
     // ---- 跳跃 ----
-    // W/↑ 同时映射到 up + jump；贴墙时必须只把它解释为上下移动。
-    if (this.stringMode === 'wall') {
+    // 贴墙和飘飞状态都不接受普通/二段跳输入。
+    if (this.stringMode === 'wall' || this.stringMode === 'glide') {
       this.jumpBuffer = 0;
     } else if (!jumpedFromWall && input.pressed('jump')) {
       this.jumpBuffer = JUMP_BUFFER;
@@ -383,6 +377,7 @@ export class Player {
 
     // ---- 位移与碰撞 ----
     this.moveAndCollide(dt, ps);
+    if (this.stringMode === 'glide' && this.onGround) this.setStringMode('normal', ps);
 
     // ---- 战斗(纸片形态下不可攻击) ----
     if (!this.paper) {
