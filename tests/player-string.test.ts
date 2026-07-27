@@ -72,7 +72,19 @@ test('wall mode stays still without input, W/S only move vertically, and E wall-
   assert.equal(player.y, idleY);
   assert.equal(player.stringMode, 'wall');
 
+  input.held.add('paper');
+  input.justPressed.add('paper');
+  for (let i = 0; i < 5; i++) {
+    player.update(DT, state);
+    input.justPressed.clear();
+  }
+  assert.equal(player.y, idleY);
+  assert.equal(player.stringMode, 'wall');
+  assert.equal(player.clingDir, 1);
+
   // W 在键盘映射中同时包含 up + jump；贴墙时必须只解释为向上移动。
+  input.held.clear();
+  input.justPressed.clear();
   input.held.add('up');
   input.held.add('jump');
   input.justPressed.add('jump');
@@ -101,26 +113,157 @@ test('wall mode stays still without input, W/S only move vertically, and E wall-
   assert.equal(player.facing, -1);
 });
 
-test('Shift only enables glide while airborne and never attaches to a nearby wall', () => {
+test('passive wall detachment stops climbing and restores normal width away from the wall', () => {
+  const player = new Player(26.5, 128);
+  const { input, state } = makeState(['paper', 'cling']);
+  state.tileAt = (col: number, row: number) =>
+    (col === 2 && row >= 3 && row < 8) || row === 8 ? T_SOLID : T_EMPTY;
+  player.onGround = true;
+  input.justPressed.add('wall');
+  player.update(DT, state);
+
+  assert.equal(player.stringMode, 'wall');
+  assert.equal(player.x, 29);
+
+  input.justPressed.clear();
+  input.held.add('up');
+  input.held.add('paper');
+  let detached = false;
+  for (let frame = 0; frame < 60; frame++) {
+    const previousY = player.y;
+    player.update(DT, state);
+    const currentMode: string = player.stringMode;
+    if (currentMode !== 'normal') continue;
+
+    detached = true;
+    assert.equal(player.clingDir, 0);
+    assert.equal(player.x, 26.5);
+    assert.ok(player.vy >= 0, `wall climb velocity leaked into normal mode: ${player.vy}`);
+    assert.ok(player.y >= previousY, `player rose after leaving the wall: ${previousY} -> ${player.y}`);
+    break;
+  }
+  assert.equal(detached, true);
+});
+
+test('losing wall contact ignores a same-frame W jump action', () => {
+  const player = new Player(26.5, 100);
+  const { input, state } = makeState(['paper', 'cling', 'djump']);
+  let wallExists = true;
+  state.tileAt = (col: number, row: number) => (wallExists && col === 2 && row <= 12 ? T_SOLID : T_EMPTY);
+  input.justPressed.add('wall');
+  player.update(DT, state);
+  assert.equal(player.stringMode, 'wall');
+
+  wallExists = false;
+  input.justPressed.clear();
+  input.held.add('up');
+  input.held.add('jump');
+  input.justPressed.add('jump');
+  player.update(DT, state);
+
+  assert.equal(player.stringMode, 'normal');
+  assert.equal(player.jumpsUsed, 0);
+  assert.equal(player.jumpBuffer, 0);
+  assert.ok(player.vy >= 0);
+});
+
+test('running out of string energy on a wall cannot wedge the normal body into the wall', () => {
+  for (const startX of [26.5, 53.5]) {
+    const player = new Player(startX, 100);
+    const { input, state } = makeState(['paper', 'cling']);
+    input.justPressed.add('wall');
+    player.update(DT, state);
+    assert.equal(player.stringMode, 'wall');
+
+    input.justPressed.clear();
+    player.energy = 0;
+    const previousY = player.y;
+    player.update(DT, state);
+
+    assert.equal(player.stringMode, 'normal');
+    assert.equal(player.x, startX);
+    assert.ok(player.y >= previousY, `collision recovery pushed the player upward: ${previousY} -> ${player.y}`);
+    assert.equal(player.onGround, false);
+  }
+});
+
+test('ending an airborne glide beside a wall restores normal width without climbing it', () => {
+  for (const [startX, awayDir] of [
+    [29.5, -1],
+    [50.5, 1],
+  ] as const) {
+    const player = new Player(startX, 100);
+    const { input, state } = makeState(['paper']);
+    input.held.add('paper');
+    input.justPressed.add('paper');
+    player.update(DT, state);
+    assert.equal(player.stringMode, 'glide');
+
+    input.held.clear();
+    input.justPressed.clear();
+    const previousY = player.y;
+    player.update(DT, state);
+
+    assert.equal(player.stringMode, 'normal');
+    assert.equal(Math.sign(player.x - startX), awayDir);
+    assert.ok(player.y >= previousY, `collision recovery pushed the player upward: ${previousY} -> ${player.y}`);
+    assert.equal(player.onGround, false);
+  }
+});
+
+test('Shift selects ground stringification or airborne glide without attaching to a nearby wall', () => {
   const { input, state } = makeState(['paper', 'cling']);
 
   const grounded = new Player(26.5, 100);
   grounded.onGround = true;
   input.held.add('paper');
   grounded.update(DT, state);
-  assert.equal(grounded.stringMode, 'normal');
+  assert.equal(grounded.stringMode, 'ground');
   assert.equal(grounded.clingDir, 0);
 
   const airborne = new Player(120, 80);
   airborne.onGround = false;
   airborne.vy = 120;
+  input.justPressed.add('paper');
   airborne.update(DT, state);
   assert.equal(airborne.stringMode, 'glide');
   assert.ok(airborne.vy <= GLIDE_FALL_SPEED);
 
   input.held.clear();
+  input.justPressed.clear();
   airborne.update(DT, state);
   assert.equal(airborne.stringMode, 'normal');
+});
+
+test('holding ground stringification through a jump does not auto-enter glide or wall mode', () => {
+  const { input, state } = makeState(['paper', 'cling']);
+  state.tileAt = (col: number, row: number) =>
+    (col === 2 && row < 8) || row === 8 ? T_SOLID : T_EMPTY;
+  const player = new Player(26.5, 128);
+  player.onGround = true;
+  input.held.add('paper');
+  player.update(DT, state);
+  assert.equal(player.stringMode, 'ground');
+
+  input.held.add('up');
+  input.held.add('jump');
+  input.justPressed.add('jump');
+  player.update(DT, state);
+  assert.equal(player.stringMode, 'normal');
+  assert.equal(player.clingDir, 0);
+  assert.ok(player.vy < 0);
+
+  input.justPressed.clear();
+  player.update(DT, state);
+  assert.equal(player.stringMode, 'normal');
+  assert.equal(player.clingDir, 0);
+
+  input.held.clear();
+  player.update(DT, state);
+  input.held.add('paper');
+  input.justPressed.add('paper');
+  player.update(DT, state);
+  assert.equal(player.stringMode, 'glide');
 });
 
 test('glide consumes jump input without triggering an extra airborne jump', () => {
@@ -130,6 +273,7 @@ test('glide consumes jump input without triggering an extra airborne jump', () =
   player.jumpsUsed = 1;
   input.held.add('paper');
   input.held.add('jump');
+  input.justPressed.add('paper');
   input.justPressed.add('jump');
 
   player.update(DT, state);

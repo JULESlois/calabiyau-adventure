@@ -20,6 +20,7 @@ import {
   PLAYER_W,
   RUN_ACCEL,
   RUN_SPEED,
+  STRING_DRAIN,
   STRING_REGEN,
   SWITCH_CD,
   TILE,
@@ -145,13 +146,37 @@ export class Player {
   private setStringMode(mode: StringMode, ps: PlayState): void {
     if (this.stringMode === mode) return;
     const wasPaper = this.paper;
+    const previousWidth = this.w;
+    const wallDir = this.stringMode === 'wall' ? this.clingDir : 0;
+    const wallLeft = wasPaper && mode === 'normal' && this.nearSolidWall(ps, -1);
+    const wallRight = wasPaper && mode === 'normal' && this.nearSolidWall(ps, 1);
     this.stringMode = mode;
+    if (wasPaper && !this.paper && this.w > previousWidth) {
+      // 纸片恢复普通宽度前先向墙外侧让位，避免横向嵌墙被垂直碰撞器向上挤。
+      const originalX = this.x;
+      const halfExpansion = (this.w - previousWidth) / 2;
+      const awayDir =
+        wallDir !== 0 ? -wallDir : wallRight && !wallLeft ? -1 : wallLeft && !wallRight ? 1 : 0;
+      const offsets =
+        awayDir === 0 ? [-halfExpansion, halfExpansion] : [awayDir * halfExpansion, -awayDir * halfExpansion];
+      for (const offset of offsets) {
+        this.x = clamp(originalX + offset, this.w / 2, ps.mapW - this.w / 2);
+        if (!this.rectBlocked(ps, this.rect())) break;
+        this.x = originalX;
+      }
+    }
     if (mode !== 'wall') this.clingDir = 0;
     if (wasPaper === this.paper) return;
     ps.sfx(this.paper ? 'paperOn' : 'paperOff');
     if (this.paper) {
       ps.particles.burst(this.x, this.centerY(), 10, '#aef4ff', 70, 0.4, 'paper');
     }
+  }
+
+  private releaseWall(ps: PlayState): void {
+    this.vx = 0;
+    this.vy = 0;
+    this.setStringMode('normal', ps);
   }
 
   private attachToWall(dir: number, ps: PlayState): void {
@@ -248,15 +273,17 @@ export class Player {
       ps.particles.burst(this.x - this.facing * 6, this.centerY(), 8, '#7ae0c8', 60, 0.3, 'spark');
     }
 
-    // ---- 弦化形态：空中 Shift 飘飞，E 贴墙 ----
+    // ---- 弦化形态：地面 Shift 弦化、空中 Shift 飘飞，E 贴墙 ----
     const hasPaper = ps.world.has('paper');
     const hasCling = ps.world.has('cling');
     const holdPaper = input.down('paper');
+    const pressPaper = input.pressed('paper');
     const pressWall = input.pressed('wall');
 
     const wallLeft = this.nearSolidWall(ps, -1);
     const wallRight = this.nearSolidWall(ps, 1);
     const nearAnyWall = (wallLeft ? -1 : 0) || (wallRight ? 1 : 0);
+    const startedOnWall = this.stringMode === 'wall';
     let jumpedFromWall = false;
 
     if (this.stringMode === 'wall') {
@@ -264,24 +291,39 @@ export class Player {
         this.jumpAwayFromWall(ps);
         jumpedFromWall = true;
       } else if (!hasPaper || !hasCling || this.energy <= 0 || !this.nearSolidWall(ps, this.clingDir)) {
-        this.setStringMode('normal', ps);
+        this.releaseWall(ps);
       }
     } else if (pressWall && nearAnyWall !== 0 && hasPaper && hasCling && this.energy > 1) {
       this.attachToWall(nearAnyWall, ps);
     }
 
     if (this.stringMode !== 'wall') {
-      const desired: StringMode =
-        holdPaper && !this.onGround && hasPaper && this.energy > 1 ? 'glide' : 'normal';
+      let desired: StringMode = 'normal';
+      if (hasPaper && this.energy > 1) {
+        if (this.onGround) {
+          desired = holdPaper ? 'ground' : 'normal';
+        } else if (this.stringMode === 'glide') {
+          desired = holdPaper ? 'glide' : 'normal';
+        } else if (holdPaper && pressPaper) {
+          // 从地面一路按住 Shift 不会自动飘飞，必须在空中重新按下。
+          desired = 'glide';
+        }
+      }
       this.setStringMode(desired, ps);
     }
 
     if (this.paper) {
-      const drain = this.stringMode === 'wall' ? WALL_STRING_DRAIN : GLIDE_STRING_DRAIN;
+      const drain =
+        this.stringMode === 'wall'
+          ? WALL_STRING_DRAIN
+          : this.stringMode === 'glide'
+            ? GLIDE_STRING_DRAIN
+            : STRING_DRAIN;
       this.energy = Math.max(0, this.energy - drain * dt);
       this.regenDelay = 0.55;
       if (this.energy <= 0) {
-        this.setStringMode('normal', ps);
+        if (this.stringMode === 'wall') this.releaseWall(ps);
+        else this.setStringMode('normal', ps);
       }
     } else if (this.regenDelay <= 0) {
       const regenMul = ps.world.chips.has('chip_regen') ? 1.4 : 1;
@@ -310,7 +352,7 @@ export class Player {
 
     // ---- 跳跃 ----
     // 贴墙和飘飞状态都不接受普通/二段跳输入。
-    if (this.stringMode === 'wall' || this.stringMode === 'glide') {
+    if (startedOnWall || this.stringMode === 'wall' || this.stringMode === 'glide') {
       this.jumpBuffer = 0;
     } else if (!jumpedFromWall && input.pressed('jump')) {
       this.jumpBuffer = JUMP_BUFFER;
@@ -331,6 +373,7 @@ export class Player {
         this.coyote = 0;
         this.jumpsUsed = 1;
         this.jumpBuffer = 0;
+        if (this.stringMode === 'ground') this.setStringMode('normal', ps);
         ps.sfx('jump');
       } else if (this.jumpsUsed < 2 && ps.world.has('djump')) {
         this.vy = -DOUBLE_JUMP_VEL;
@@ -377,7 +420,9 @@ export class Player {
 
     // ---- 位移与碰撞 ----
     this.moveAndCollide(dt, ps);
-    if (this.stringMode === 'glide' && this.onGround) this.setStringMode('normal', ps);
+    if (this.stringMode === 'glide' && this.onGround) {
+      this.setStringMode(holdPaper && this.energy > 1 ? 'ground' : 'normal', ps);
+    }
 
     // ---- 战斗(纸片形态下不可攻击) ----
     if (!this.paper) {

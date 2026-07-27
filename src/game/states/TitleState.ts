@@ -320,7 +320,7 @@ export class TitleState implements GameState {
       const lines = [
         'A/D 移动 · 空格/W 跳跃 · S+跳 下落',
         'J 射击 · K 近战 · L 技能 · Q 换人',
-        '空中 Shift 飘飞 · E 贴墙/脱离 · F 交互',
+        'Shift 弦化/空中飘飞 · E 贴墙/脱离 · F 交互',
         'U/; 冲刺 · Tab/I 地图 · Esc 暂停',
       ];
       lines.forEach((l, i) => {
