@@ -100,6 +100,7 @@ export class PlayState implements GameState, WorldApi {
   private nearShop = false;
   private nearAbilitySpot: AbilitySpot | null = null;
   private nearKanamiSpot: { x: number; y: number } | null = null;
+  private nearWallClimb = false;
   particles = new ParticleSystem();
   bg: Background;
 
@@ -676,7 +677,7 @@ export class PlayState implements GameState, WorldApi {
       const zone: Rect = { x: b.x - 14, y: b.y - 30, w: 28, h: 30 };
       if (rectsOverlap(pr, zone)) {
         this.nearBenchSpot = b;
-        if (this.input.pressed('interact') || (this.input.pressed('up') && !p.paper)) {
+        if (this.input.pressed('interact')) {
           b.resting = true;
           const w = this.world;
           p.hp = w.hpMax;
@@ -707,7 +708,7 @@ export class PlayState implements GameState, WorldApi {
       const zone: Rect = { x: a.x - 12, y: a.y - 28, w: 24, h: 28 };
       if (rectsOverlap(pr, zone)) {
         this.nearAbilitySpot = a;
-        if (this.input.pressed('interact') || this.input.pressed('up') || this.input.pressed('confirm')) {
+        if (this.input.pressed('interact')) {
           this.abilitySpots.splice(i, 1);
           this.grantAbility(a.kind, a.x, a.y);
           this.nearAbilitySpot = null;
@@ -724,7 +725,7 @@ export class PlayState implements GameState, WorldApi {
       const zone: Rect = { x: k.x - 12, y: k.y - 26, w: 24, h: 26 };
       if (rectsOverlap(pr, zone)) {
         this.nearKanamiSpot = k;
-        if (this.input.pressed('interact') || this.input.pressed('up') || this.input.pressed('confirm')) {
+        if (this.input.pressed('interact')) {
           this.kanamiSpot = null;
           this.grantAbility('kanami', k.x, k.y);
           this.nearKanamiSpot = null;
@@ -739,7 +740,7 @@ export class PlayState implements GameState, WorldApi {
       const zone: Rect = { x: this.shopSpot.x - 16, y: this.shopSpot.y - 26, w: 32, h: 26 };
       if (rectsOverlap(pr, zone)) {
         this.nearShop = true;
-        if (this.input.pressed('interact') || this.input.pressed('up')) {
+        if (this.input.pressed('interact')) {
           this.overlay = 'shop';
           this.shopSel = 0;
           this.sfx('ui');
@@ -747,6 +748,11 @@ export class PlayState implements GameState, WorldApi {
         }
       }
     }
+
+    // 5. 贴墙弦化提示 (Wall Climb Prompt)
+    const wallLeft = p.nearSolidWall(this, -1);
+    const wallRight = p.nearSolidWall(this, 1);
+    this.nearWallClimb = (wallLeft || wallRight) && this.world.has('paper') && p.clingDir === 0;
   }
 
   private grantAbility(kind: Ability, x: number, y: number): void {
@@ -1686,34 +1692,38 @@ export class PlayState implements GameState, WorldApi {
     let py = 0;
 
     if (this.nearBenchSpot) {
-      promptMsg = '按 [E] 调谐 / 快速传送';
+      promptMsg = '按 [F] 调谐 / 快速传送';
       px = this.nearBenchSpot.x;
       py = this.nearBenchSpot.y - 32;
     } else if (this.nearAbilitySpot) {
-      promptMsg = '按 [E] 吸收能力';
+      promptMsg = '按 [F] 吸收能力';
       px = this.nearAbilitySpot.x;
       py = this.nearAbilitySpot.y - 28;
     } else if (this.nearKanamiSpot) {
-      promptMsg = '按 [E] 解救香奈美';
+      promptMsg = '按 [F] 解救香奈美';
       px = this.nearKanamiSpot.x;
       py = this.nearKanamiSpot.y - 26;
     } else if (this.nearShop && this.shopSpot) {
-      promptMsg = '按 [E] 与诺笛交谈';
+      promptMsg = '按 [F] 与诺笛交谈';
       px = this.shopSpot.x;
       py = this.shopSpot.y - 26;
+    } else if (this.nearWallClimb) {
+      promptMsg = '按 [F] 贴墙弦化';
+      px = this.player.x;
+      py = this.player.y - 28;
     }
 
     if (promptMsg) {
       const bx = Math.round(px - this.camX);
       const by = Math.round(py - this.camY);
-      ctx.font = '9px "SimSun", "Songti SC", sans-serif';
+      ctx.font = '9px sans-serif';
       ctx.textAlign = 'center';
       const tw = ctx.measureText(promptMsg).width;
-      ctx.fillStyle = 'rgba(10,7,18,0.85)';
-      ctx.fillRect(bx - tw / 2 - 4, by - 10, tw + 8, 12);
+      ctx.fillStyle = 'rgba(8, 6, 16, 0.9)';
+      ctx.fillRect(bx - tw / 2 - 5, by - 11, tw + 10, 13);
       ctx.strokeStyle = '#8ee8f4';
       ctx.lineWidth = 1;
-      ctx.strokeRect(bx - tw / 2 - 4, by - 10, tw + 8, 12);
+      ctx.strokeRect(bx - tw / 2 - 5, by - 11, tw + 10, 13);
       ctx.fillStyle = '#ffffff';
       ctx.fillText(promptMsg, bx, by - 1);
       ctx.textAlign = 'left';
@@ -1721,45 +1731,108 @@ export class PlayState implements GameState, WorldApi {
   }
 
   private renderFastTravel(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = 'rgba(4, 3, 10, 0.85)';
+    ctx.fillStyle = 'rgba(4, 3, 10, 0.88)';
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    ctx.textAlign = 'center';
-    this.ornateFrame(ctx, VIEW_W / 2 - 120, 24, 240, 222);
 
-    ctx.font = 'bold 12px "SimSun", "Songti SC", serif';
+    const frameW = 270;
+    const frameH = 238;
+    const frameX = Math.round(VIEW_W / 2 - frameW / 2);
+    const frameY = 16;
+    this.ornateFrame(ctx, frameX, frameY, frameW, frameH);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 12px sans-serif';
     ctx.fillStyle = '#8ee8f4';
-    ctx.fillText('调 弦 台 关 卡 传 送', VIEW_W / 2, 44);
+    ctx.fillText('调 弦 台 关 卡 传 送', VIEW_W / 2, frameY + 20);
 
     ctx.fillStyle = '#4a3c5c';
-    ctx.fillRect(VIEW_W / 2 - 100, 50, 200, 1);
+    ctx.fillRect(frameX + 20, frameY + 26, frameW - 40, 1);
 
     const benches = this.getVisitedBenches();
     if (benches.length === 0) {
-      ctx.font = '10px "SimSun", "Songti SC", serif';
+      ctx.font = '10px sans-serif';
       ctx.fillStyle = '#8a7a98';
-      ctx.fillText('尚未激活其他调弦台……', VIEW_W / 2, 120);
+      ctx.fillText('尚未激活其他调弦台……', VIEW_W / 2, frameY + 110);
     } else {
-      const startY = 62;
-      benches.forEach((b, i) => {
-        const y = startY + i * 24;
-        const sel = i === this.fastTravelIndex;
-        if (sel) {
+      const MAX_VISIBLE = 5;
+      const total = benches.length;
+      // 保持当前选中项在可视窗口内
+      const scrollOffset = Math.max(0, Math.min(total - MAX_VISIBLE, this.fastTravelIndex - 2));
+      const visibleList = benches.slice(scrollOffset, scrollOffset + MAX_VISIBLE);
+
+      const listStartY = frameY + 32;
+      const cardW = 236;
+      const cardH = 25;
+      const cardX = Math.round(VIEW_W / 2 - cardW / 2);
+
+      visibleList.forEach((b, index) => {
+        const i = scrollOffset + index;
+        const cardY = listStartY + index * 29;
+        const isSel = i === this.fastTravelIndex;
+
+        // 背景框
+        if (isSel) {
           ctx.fillStyle = 'rgba(142, 232, 244, 0.18)';
-          ctx.fillRect(VIEW_W / 2 - 100, y - 4, 200, 20);
+          ctx.fillRect(cardX, cardY, cardW, cardH);
           ctx.strokeStyle = '#8ee8f4';
           ctx.lineWidth = 1;
-          ctx.strokeRect(VIEW_W / 2 - 100, y - 4, 200, 20);
+          ctx.strokeRect(cardX, cardY, cardW, cardH);
+        } else {
+          ctx.fillStyle = 'rgba(20, 14, 32, 0.65)';
+          ctx.fillRect(cardX, cardY, cardW, cardH);
+          ctx.strokeStyle = 'rgba(80, 60, 110, 0.4)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(cardX, cardY, cardW, cardH);
         }
-        ctx.font = sel ? 'bold 10px "SimSun", "Songti SC", serif' : '9px "SimSun", "Songti SC", serif';
-        ctx.fillStyle = b.isCurrent ? '#ffd75e' : sel ? '#ffffff' : '#c8b8d8';
-        const label = `${b.zoneName} · ${b.name}${b.isCurrent ? ' (当前)' : ''}`;
-        ctx.fillText(label, VIEW_W / 2, y + 10);
+
+        // 左侧文字: 区域与房间名
+        ctx.textAlign = 'left';
+        ctx.font = isSel ? 'bold 10px sans-serif' : '10px sans-serif';
+
+        // 区域前缀
+        ctx.fillStyle = isSel ? '#7ae0c8' : '#8a7a98';
+        const zoneTag = `[${b.zoneName}] `;
+        ctx.fillText(zoneTag, cardX + 8, cardY + 16);
+        const tagW = ctx.measureText(zoneTag).width;
+
+        // 房间名
+        ctx.fillStyle = b.isCurrent ? '#ffd75e' : isSel ? '#ffffff' : '#c8b8d8';
+        ctx.fillText(b.name, cardX + 8 + tagW, cardY + 16);
+
+        // 右侧状态标签
+        ctx.textAlign = 'right';
+        ctx.font = '9px sans-serif';
+        if (b.isCurrent) {
+          ctx.fillStyle = '#ffd75e';
+          ctx.fillText('(当前调弦台)', cardX + cardW - 8, cardY + 16);
+        } else if (isSel) {
+          ctx.fillStyle = '#8ee8f4';
+          ctx.fillText('按 F 传送 ▶', cardX + cardW - 8, cardY + 16);
+        } else {
+          ctx.fillStyle = '#5a4c6a';
+          ctx.fillText('已到访', cardX + cardW - 8, cardY + 16);
+        }
       });
+
+      // 滚动指示指示器
+      if (scrollOffset > 0) {
+        ctx.textAlign = 'center';
+        ctx.font = '8px sans-serif';
+        ctx.fillStyle = '#8ee8f4';
+        ctx.fillText('▲ 向上滚动', VIEW_W / 2, listStartY - 2);
+      }
+      if (scrollOffset + MAX_VISIBLE < total) {
+        ctx.textAlign = 'center';
+        ctx.font = '8px sans-serif';
+        ctx.fillStyle = '#8ee8f4';
+        ctx.fillText('▼ 向下滚动', VIEW_W / 2, listStartY + MAX_VISIBLE * 29);
+      }
     }
 
-    ctx.font = '9px "SimSun", "Songti SC", serif';
+    ctx.textAlign = 'center';
+    ctx.font = '9px sans-serif';
     ctx.fillStyle = '#8a7a98';
-    ctx.fillText('↑/↓ 选择 · E/Space 传送 · Esc 取消', VIEW_W / 2, 232);
+    ctx.fillText('↑/↓ 选择 · F 键 确认传送 · Esc 取消', VIEW_W / 2, frameY + frameH - 10);
     ctx.textAlign = 'left';
   }
 

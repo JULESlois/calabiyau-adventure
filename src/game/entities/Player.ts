@@ -200,7 +200,7 @@ export class Player {
     const wallRight = this.nearSolidWall(ps, 1);
     const nearAnyWall = (wallLeft ? -1 : 0) || (wallRight ? 1 : 0);
 
-    // 贴墙按 E (或使用弦化/贴墙能力) 进入贴墙弦化状态 (在弦膜%旁不可进行贴墙E交互)
+    // 贴墙按 F 键进入贴墙弦化状态 (在弦膜%旁不可进行贴墙F交互)
     if (pressInteract && nearAnyWall !== 0 && hasPaper && this.energy > 1) {
       if (this.clingDir !== 0) {
         this.clingDir = 0;
@@ -218,9 +218,6 @@ export class Player {
         this.paper = true;
         ps.sfx('paperOn');
         ps.particles.burst(this.x, this.centerY(), 10, '#aef4ff', 70, 0.4, 'paper');
-      }
-      if (hasCling && nearAnyWall !== 0 && this.clingDir === 0 && !this.onGround) {
-        this.clingDir = nearAnyWall;
       }
     } else if (!holdPaper && this.clingDir === 0 && this.paper) {
       this.paper = false;

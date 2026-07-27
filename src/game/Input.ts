@@ -27,6 +27,7 @@ const KEYMAP: Record<string, Action[]> = {
   ArrowDown: ['down'],
   Space: ['jump', 'confirm'],
   KeyE: ['interact'],
+  KeyF: ['interact'],
   KeyJ: ['shoot'],
   KeyK: ['melee'],
   KeyL: ['skill'],
