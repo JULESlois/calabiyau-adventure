@@ -92,7 +92,7 @@ interface LocomotionFrame {
   blink: boolean;
 }
 
-function locomotionFrame(pose: CharPose, idleRate: number, blinkOffset: number): LocomotionFrame {
+function locomotionFrame(pose: CharPose, blinkOffset: number): LocomotionFrame {
   const air = resolveAirMotionStage(pose.airborne, pose.vy);
   const running = pose.moving && air === 'ground';
   const idle = !running && air === 'ground';
@@ -124,15 +124,12 @@ function locomotionFrame(pose: CharPose, idleRate: number, blinkOffset: number):
     rightLift = 1;
   }
 
-  const idleWave = Math.sin(pose.time * idleRate);
   const bodyY =
     pose.landing > 0.05 || pose.takeoff > 0.2
       ? 1
       : running
         ? -Math.round(Math.abs(Math.sin(pose.runPhase * 2)))
-        : idle && idleWave > 0.62
-          ? -1
-          : 0;
+        : 0;
   const hairX = running ? -1 - Math.round(Math.abs(stride)) : air === 'ground' ? 0 : -1;
   const hairY = air === 'rise' ? 2 : air === 'fall' ? -2 : air === 'apex' ? -1 : 0;
   const blinkPhase = (pose.time + blinkOffset) % 4.6;
@@ -160,26 +157,15 @@ function applyNormalMotion(ctx: CanvasRenderingContext2D, pose: CharPose): void 
   if (pose.airborne) {
     const stage = resolveAirMotionStage(true, pose.vy);
     if (stage === 'rise') {
-      ctx.rotate(0.055 * speed);
+      ctx.rotate(speed > 0.1 ? 0.045 : 0);
       ctx.scale(0.95, 1.055);
     } else if (stage === 'apex') {
-      ctx.rotate(0.025 * speed + Math.sin(pose.time * 5) * 0.008);
+      ctx.rotate(speed > 0.1 ? 0.02 : 0);
       ctx.scale(1.035, 0.975);
     } else {
-      ctx.rotate(-0.035 * speed);
+      ctx.rotate(speed > 0.1 ? -0.03 : 0);
       ctx.scale(0.975, 1.035);
     }
-  } else if (pose.moving) {
-    const stride = Math.sin(pose.runPhase);
-    ctx.translate(0, -Math.abs(Math.sin(pose.runPhase * 2)) * 0.55);
-    ctx.rotate(0.025 + speed * 0.035 + Math.cos(pose.runPhase) * 0.008);
-    const contact = Math.pow(Math.abs(stride), 6) * speed;
-    ctx.scale(1 + contact * 0.018, 1 - contact * 0.022);
-  } else {
-    const breath = (Math.sin(pose.time * 2.05) + 1) * 0.5;
-    ctx.translate(0, -breath * 0.28);
-    ctx.rotate(Math.sin(pose.time * 1.05) * 0.006);
-    ctx.scale(1 - breath * 0.006, 1 + breath * 0.008);
   }
 
   if (pose.takeoff > 0) {
@@ -263,7 +249,7 @@ const KANAMI = {
 
 function paintMichele(g: CanvasRenderingContext2D, pose: CharPose): void {
   const t = pose.time;
-  const motion = locomotionFrame(pose, 2.2, 0);
+  const motion = locomotionFrame(pose, 0);
   const top = ORIGIN_Y - 22 + motion.bodyY;
   const x0 = ORIGIN_X;
   const sway = motion.running
@@ -366,7 +352,7 @@ function paintMichele(g: CanvasRenderingContext2D, pose: CharPose): void {
 
 function paintKanami(g: CanvasRenderingContext2D, pose: CharPose): void {
   const t = pose.time;
-  const motion = locomotionFrame(pose, 2, 1.7);
+  const motion = locomotionFrame(pose, 1.7);
   const top = ORIGIN_Y - 22 + motion.bodyY;
   const x0 = ORIGIN_X;
   const sway = motion.running
@@ -485,13 +471,10 @@ export function drawChar(
   if (facing < 0) ctx.scale(-1, 1);
   applyNormalMotion(ctx, pose);
   if (pose.stringMode === 'ground') {
-    const flutter = Math.sin(pose.time * 14) * 0.04;
-    ctx.scale(0.25 + flutter, 1);
+    ctx.scale(0.25, 1);
     ctx.globalAlpha = 0.92;
   } else if (pose.stringMode === 'wall') {
-    const flutter = Math.sin(pose.time * 11) * 0.025;
     ctx.translate(1, 0);
-    ctx.rotate(flutter);
     ctx.scale(0.18, 0.98);
     ctx.globalAlpha = 0.94;
   } else if (pose.stringMode === 'glide') {

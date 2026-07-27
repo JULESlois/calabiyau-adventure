@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DT, GLIDE_FALL_SPEED } from '../src/game/constants';
+import { DT, GLIDE_FALL_SPEED, WALL_JUMP_VY } from '../src/game/constants';
 import { Player } from '../src/game/entities/Player';
 import type { Action } from '../src/game/Input';
 import { T_EMPTY, T_SOLID } from '../src/game/levels/levels';
@@ -56,7 +56,7 @@ test('E cannot attach to a wall before Matrix Adaptation is unlocked', () => {
   assert.equal(player.clingDir, 0);
 });
 
-test('E attaches to a wall, allows vertical movement and toggles off', () => {
+test('wall mode stays still without input, W/S only move vertically, and E wall-jumps away', () => {
   const player = new Player(26.5, 100);
   const { input, state } = makeState(['paper', 'cling']);
   input.justPressed.add('wall');
@@ -66,16 +66,38 @@ test('E attaches to a wall, allows vertical movement and toggles off', () => {
   assert.equal(player.clingDir, 1);
 
   input.justPressed.clear();
+  const idleY = player.y;
+  for (let i = 0; i < 5; i++) player.update(DT, state);
+  assert.equal(player.y, idleY);
+  assert.equal(player.stringMode, 'wall');
+
+  // W 在键盘映射中同时包含 up + jump；贴墙时必须只解释为向上移动。
   input.held.add('up');
+  input.held.add('jump');
+  input.justPressed.add('jump');
   const beforeY = player.y;
   player.update(DT, state);
   assert.ok(player.y < beforeY);
+  assert.equal(player.stringMode, 'wall');
+  assert.equal(player.clingDir, 1);
 
   input.held.clear();
+  input.justPressed.clear();
+  input.held.add('down');
+  const beforeDownY = player.y;
+  player.update(DT, state);
+  assert.ok(player.y > beforeDownY);
+  assert.equal(player.stringMode, 'wall');
+
+  input.held.clear();
+  input.justPressed.clear();
   input.justPressed.add('wall');
   player.update(DT, state);
   assert.equal(player.stringMode, 'normal');
   assert.equal(player.clingDir, 0);
+  assert.ok(player.vx < 0);
+  assert.ok(player.vy < -WALL_JUMP_VY * 0.75);
+  assert.equal(player.facing, -1);
 });
 
 test('Shift selects separate ground stringification and airborne glide modes', () => {

@@ -167,6 +167,23 @@ export class Player {
     this.airDashed = false;
   }
 
+  private jumpAwayFromWall(ps: PlayState): void {
+    const wallDir = this.clingDir;
+    if (wallDir === 0) return;
+    this.vx = -wallDir * WALL_JUMP_VX;
+    this.vy = -WALL_JUMP_VY;
+    this.takeoffAnimT = TAKEOFF_ANIM_TIME;
+    this.landingAnimT = 0;
+    this.facing = -wallDir;
+    this.onGround = false;
+    this.coyote = 0;
+    this.jumpsUsed = 1;
+    this.jumpBuffer = 0;
+    this.setStringMode('normal', ps);
+    ps.sfx('doubleJump');
+    ps.particles.burst(this.x, this.y, 8, '#aef4ff', 80, 0.35, 'paper');
+  }
+
   update(dt: number, ps: PlayState): void {
     const input = ps.input;
 
@@ -241,15 +258,13 @@ export class Player {
     const wallLeft = this.nearSolidWall(ps, -1);
     const wallRight = this.nearSolidWall(ps, 1);
     const nearAnyWall = (wallLeft ? -1 : 0) || (wallRight ? 1 : 0);
+    let jumpedFromWall = false;
 
     if (this.stringMode === 'wall') {
-      if (
-        pressWall ||
-        !hasPaper ||
-        !hasCling ||
-        this.energy <= 0 ||
-        !this.nearSolidWall(ps, this.clingDir)
-      ) {
+      if (pressWall) {
+        this.jumpAwayFromWall(ps);
+        jumpedFromWall = true;
+      } else if (!hasPaper || !hasCling || this.energy <= 0 || !this.nearSolidWall(ps, this.clingDir)) {
         this.setStringMode('normal', ps);
       }
     } else if (pressWall && nearAnyWall !== 0 && hasPaper && hasCling && this.energy > 1) {
@@ -300,7 +315,12 @@ export class Player {
     }
 
     // ---- 跳跃 ----
-    if (input.pressed('jump')) this.jumpBuffer = JUMP_BUFFER;
+    // W/↑ 同时映射到 up + jump；贴墙时必须只把它解释为上下移动。
+    if (this.stringMode === 'wall') {
+      this.jumpBuffer = 0;
+    } else if (!jumpedFromWall && input.pressed('jump')) {
+      this.jumpBuffer = JUMP_BUFFER;
+    }
     const grounded = this.onGround || this.coyote > 0;
 
     if (this.jumpBuffer > 0) {
@@ -309,18 +329,6 @@ export class Player {
         this.dropTimer = 0.22;
         this.jumpBuffer = 0;
         this.onGround = false;
-      } else if (this.stringMode === 'wall' && this.clingDir !== 0) {
-        // 弦化蹬墙跳
-        this.vx = -this.clingDir * WALL_JUMP_VX;
-        this.vy = -WALL_JUMP_VY;
-        this.takeoffAnimT = TAKEOFF_ANIM_TIME;
-        this.landingAnimT = 0;
-        this.facing = -this.clingDir;
-        this.setStringMode('normal', ps);
-        this.jumpsUsed = 1;
-        this.jumpBuffer = 0;
-        ps.sfx('doubleJump');
-        ps.particles.burst(this.x, this.y, 8, '#aef4ff', 80, 0.35, 'paper');
       } else if (grounded) {
         this.vy = -JUMP_VEL;
         this.takeoffAnimT = TAKEOFF_ANIM_TIME;
@@ -341,7 +349,7 @@ export class Player {
       }
     }
     // 松开跳跃键短跳
-    if (!input.down('jump') && this.vy < -120) {
+    if (!jumpedFromWall && !input.down('jump') && this.vy < -120) {
       this.vy = -120;
     }
 

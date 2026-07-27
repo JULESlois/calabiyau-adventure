@@ -1679,7 +1679,7 @@ export class PlayState implements GameState, WorldApi {
       px = this.shopSpot.x;
       py = this.shopSpot.y - 26;
     } else if (this.nearWallClimb) {
-      promptMsg = this.player.stringMode === 'wall' ? '按 [E] 脱离 · W/S 上下移动' : '按 [E] 贴墙弦化';
+      promptMsg = this.player.stringMode === 'wall' ? 'W/S 上下移动 · 按 [E] 蹬墙跳' : '按 [E] 贴墙弦化';
       px = this.player.x;
       py = this.player.y - 28;
     }
