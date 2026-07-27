@@ -94,6 +94,7 @@ export class Engine {
             energy: Math.round(s.player.energy),
             char: s.player.char,
             paper: s.player.paper,
+            stringMode: s.player.stringMode,
             overlay: s.overlay,
             abilities: [...this.world.abilities],
             crystals: this.world.crystals.size,

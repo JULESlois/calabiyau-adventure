@@ -6,7 +6,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/input.test.ts tests/player-string.test.ts tests/save.test.ts",
+    "check:maps": "tsx scripts/check-maps.ts",
+    "build": "npm run typecheck && vite build",
+    "check": "npm run typecheck && npm test && npm run check:maps && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -14,9 +18,11 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.23.1",
     "typescript": "~5.6.3",
     "vite": "^6.0.7"
   }

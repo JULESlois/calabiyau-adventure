@@ -5,6 +5,9 @@ import {
   DASH_SPEED,
   DASH_TIME,
   DOUBLE_JUMP_VEL,
+  GLIDE_FALL_SPEED,
+  GLIDE_GRAVITY_MULT,
+  GLIDE_STRING_DRAIN,
   GRAVITY,
   INVULN_TIME,
   JUMP_BUFFER,
@@ -21,12 +24,13 @@ import {
   STRING_REGEN,
   SWITCH_CD,
   TILE,
+  WALL_STRING_DRAIN,
   WALL_JUMP_VX,
   WALL_JUMP_VY,
   WALL_SLIDE_SPEED,
 } from '../constants';
 import { T_MEMBRANE, T_ONEWAY, T_SOLID } from '../levels/levels';
-import type { CharId } from '../types';
+import type { CharId, StringMode } from '../types';
 import type { Rect } from '../utils';
 import { approach, clamp } from '../utils';
 import { makeQuickNote, makeRifleShot, makeSnipe } from './bullets';
@@ -42,7 +46,7 @@ export class Player {
   char: CharId = 'michele';
   hp = MAX_HP;
   energy = MAX_STRING;
-  paper = false;
+  stringMode: StringMode = 'normal';
   onGround = false;
   clingDir = 0; // 弦化贴墙方向(-1 左墙 / 1 右墙)
   jumpsUsed = 0;
@@ -82,6 +86,10 @@ export class Player {
 
   get w(): number {
     return this.paper ? 5 : PLAYER_W;
+  }
+
+  get paper(): boolean {
+    return this.stringMode !== 'normal';
   }
 
   get h(): number {
@@ -127,6 +135,30 @@ export class Player {
     return this.meleeStep === 2 ? 20 : 12;
   }
 
+  private setStringMode(mode: StringMode, ps: PlayState): void {
+    if (this.stringMode === mode) return;
+    const wasPaper = this.paper;
+    this.stringMode = mode;
+    if (mode !== 'wall') this.clingDir = 0;
+    if (wasPaper === this.paper) return;
+    ps.sfx(this.paper ? 'paperOn' : 'paperOff');
+    if (this.paper) {
+      ps.particles.burst(this.x, this.centerY(), 10, '#aef4ff', 70, 0.4, 'paper');
+    }
+  }
+
+  private attachToWall(dir: number, ps: PlayState): void {
+    this.setStringMode('wall', ps);
+    // 变薄后保持朝墙一侧的边缘位置不变，避免下一帧因与墙产生缝隙而自动脱离。
+    this.x += dir * ((PLAYER_W - this.w) / 2);
+    this.clingDir = dir;
+    this.facing = dir;
+    this.vx = 0;
+    this.vy = 0;
+    this.onGround = false;
+    this.airDashed = false;
+  }
+
   update(dt: number, ps: PlayState): void {
     const input = ps.input;
 
@@ -166,7 +198,7 @@ export class Player {
       this.dashT -= dt;
       this.vx = this.facing * DASH_SPEED;
       this.vy = 0;
-      this.moveAndCollide(dt, ps, this.facing);
+      this.moveAndCollide(dt, ps);
       this.ghostAcc += dt;
       if (this.ghostAcc > 0.03) {
         this.ghostAcc = 0;
@@ -190,56 +222,47 @@ export class Player {
       ps.particles.burst(this.x - this.facing * 6, this.centerY(), 8, '#7ae0c8', 60, 0.3, 'spark');
     }
 
-    // ---- 弦化(纸片形态) & 贴墙爬行 & 空中滑翔 ----
+    // ---- 三种弦化形态：Shift 普通弦化/空中飘飞，E 贴墙 ----
     const hasPaper = ps.world.has('paper');
     const hasCling = ps.world.has('cling');
     const holdPaper = input.down('paper');
-    const pressInteract = input.pressed('interact');
+    const pressWall = input.pressed('wall');
 
     const wallLeft = this.nearSolidWall(ps, -1);
     const wallRight = this.nearSolidWall(ps, 1);
     const nearAnyWall = (wallLeft ? -1 : 0) || (wallRight ? 1 : 0);
 
-    // 贴墙按 F 键进入贴墙弦化状态 (在弦膜%旁不可进行贴墙F交互)
-    if (pressInteract && nearAnyWall !== 0 && hasPaper && this.energy > 1) {
-      if (this.clingDir !== 0) {
-        this.clingDir = 0;
-        this.paper = false;
-        ps.sfx('paperOff');
-      } else {
-        this.paper = true;
-        this.clingDir = nearAnyWall;
-        this.facing = nearAnyWall;
-        ps.sfx('paperOn');
-        ps.particles.burst(this.x, this.centerY(), 8, '#aef4ff', 70, 0.4, 'paper');
+    if (this.stringMode === 'wall') {
+      if (
+        pressWall ||
+        !hasPaper ||
+        !hasCling ||
+        this.energy <= 0 ||
+        !this.nearSolidWall(ps, this.clingDir)
+      ) {
+        this.setStringMode('normal', ps);
       }
-    } else if (holdPaper && hasPaper && this.energy > 1) {
-      if (!this.paper) {
-        this.paper = true;
-        ps.sfx('paperOn');
-        ps.particles.burst(this.x, this.centerY(), 10, '#aef4ff', 70, 0.4, 'paper');
-      }
-    } else if (!holdPaper && this.clingDir === 0 && this.paper) {
-      this.paper = false;
-      ps.sfx('paperOff');
+    } else if (pressWall && nearAnyWall !== 0 && hasPaper && hasCling && this.energy > 1) {
+      this.attachToWall(nearAnyWall, ps);
     }
 
-    if (this.clingDir !== 0) {
-      if (!this.nearSolidWall(ps, this.clingDir) || this.energy <= 0) {
-        this.clingDir = 0;
-        this.paper = false;
-        ps.sfx('paperOff');
-      }
+    if (this.stringMode !== 'wall') {
+      const desired: StringMode =
+        holdPaper && hasPaper && this.energy > 1 ? (this.onGround ? 'ground' : 'glide') : 'normal';
+      this.setStringMode(desired, ps);
     }
 
     if (this.paper) {
-      const drain = this.clingDir !== 0 ? 12 : STRING_DRAIN;
+      const drain =
+        this.stringMode === 'wall'
+          ? WALL_STRING_DRAIN
+          : this.stringMode === 'glide'
+            ? GLIDE_STRING_DRAIN
+            : STRING_DRAIN;
       this.energy = Math.max(0, this.energy - drain * dt);
       this.regenDelay = 0.55;
       if (this.energy <= 0) {
-        this.paper = false;
-        this.clingDir = 0;
-        ps.sfx('paperOff');
+        this.setStringMode('normal', ps);
       }
     } else if (this.regenDelay <= 0) {
       const regenMul = ps.world.chips.has('chip_regen') ? 1.4 : 1;
@@ -252,7 +275,9 @@ export class Player {
     const moveDir = (right ? 1 : 0) - (left ? 1 : 0);
     const maxSpeed = RUN_SPEED * (this.paper ? PAPER_SPEED_MULT : this.charging ? 0.6 : 1);
     const accel = this.onGround ? RUN_ACCEL : AIR_ACCEL;
-    if (moveDir !== 0) {
+    if (this.stringMode === 'wall') {
+      this.vx = 0;
+    } else if (moveDir !== 0) {
       this.vx = approach(this.vx, moveDir * maxSpeed, accel * dt);
       this.facing = moveDir;
       this.runPhase += dt * 13;
@@ -270,12 +295,12 @@ export class Player {
         this.dropTimer = 0.22;
         this.jumpBuffer = 0;
         this.onGround = false;
-      } else if (this.clingDir !== 0 && !this.onGround) {
+      } else if (this.stringMode === 'wall' && this.clingDir !== 0) {
         // 弦化蹬墙跳
         this.vx = -this.clingDir * WALL_JUMP_VX;
         this.vy = -WALL_JUMP_VY;
         this.facing = -this.clingDir;
-        this.clingDir = 0;
+        this.setStringMode('normal', ps);
         this.jumpsUsed = 1;
         this.jumpBuffer = 0;
         ps.sfx('doubleJump');
@@ -300,14 +325,14 @@ export class Player {
       this.vy = -120;
     }
 
-    // ---- 重力 / 贴墙上下爬行 / 空中弦化飘飞(滑翔) ----
-    if (this.clingDir !== 0) {
+    // ---- 重力 / 贴墙上下爬行 / 空中弦化飘飞 ----
+    if (this.stringMode === 'wall') {
       const up = input.down('up');
       const down = input.down('down');
       if (up) {
-        this.vy = -110;
+        this.vy = -WALL_SLIDE_SPEED;
       } else if (down) {
-        this.vy = 110;
+        this.vy = WALL_SLIDE_SPEED;
       } else {
         this.vy = 0;
       }
@@ -322,15 +347,14 @@ export class Player {
           shape: 'paper',
         });
       }
+    } else if (this.stringMode === 'glide') {
+      this.vy = Math.min(this.vy + GRAVITY * GLIDE_GRAVITY_MULT * dt, GLIDE_FALL_SPEED);
     } else {
       this.vy = Math.min(this.vy + GRAVITY * dt, MAX_FALL);
-      if (this.paper && !this.onGround && this.vy > 35) {
-        this.vy = 35; // 空中弦化飘飞(滑翔)
-      }
     }
 
     // ---- 位移与碰撞 ----
-    this.moveAndCollide(dt, ps, moveDir);
+    this.moveAndCollide(dt, ps);
 
     // ---- 战斗(纸片形态下不可攻击) ----
     if (!this.paper) {
@@ -458,8 +482,7 @@ export class Player {
     const dir = this.x < fromX ? -1 : 1;
     this.vx = dir * 150;
     this.vy = -170;
-    this.paper = false;
-    this.clingDir = 0;
+    this.setStringMode('normal', ps);
     ps.sfx('hurt');
     ps.shake(4);
     ps.particles.burst(this.x, this.centerY(), 10, '#ff5d7e', 100, 0.5);
@@ -523,11 +546,10 @@ export class Player {
     return false;
   }
 
-  private moveAndCollide(dt: number, ps: PlayState, moveDir: number): void {
+  private moveAndCollide(dt: number, ps: PlayState): void {
     // --- 水平 ---
     let nx = this.x + this.vx * dt;
     nx = clamp(nx, this.w / 2, ps.mapW - this.w / 2);
-    let hitWallDir = 0;
     {
       const r: Rect = { x: nx - this.w / 2, y: this.y - this.h, w: this.w, h: this.h };
       if (this.rectBlocked(ps, r)) {
@@ -543,23 +565,9 @@ export class Player {
           nx = this.x;
         }
         this.vx = 0;
-        hitWallDir = dir;
       }
     }
     this.x = nx;
-
-    // 弦化贴墙判定:空中 + 纸片形态 + 推向墙(需已获得「矩阵适配」)
-    if (this.paper && ps.world.has('cling') && !this.onGround && moveDir !== 0) {
-      const probe: Rect = {
-        x: this.x - this.w / 2 + moveDir * 2,
-        y: this.y - this.h + 2,
-        w: this.w,
-        h: this.h - 4,
-      };
-      this.clingDir = this.rectBlocked(ps, probe) ? moveDir : 0;
-    } else if (hitWallDir === 0) {
-      this.clingDir = 0;
-    }
 
     // --- 垂直 ---
     let ny = this.y + this.vy * dt;
@@ -606,10 +614,15 @@ export class Player {
           ps.particles.burst(this.x, ny, 4, '#9aa4c8', 40, 0.25);
         }
         this.vy = 0;
-        this.onGround = true;
-        this.jumpsUsed = 0;
-        this.coyote = COYOTE_TIME;
-        this.clingDir = 0;
+        if (this.stringMode === 'wall') {
+          this.onGround = false;
+          this.coyote = 0;
+        } else {
+          this.onGround = true;
+          this.jumpsUsed = 0;
+          this.coyote = COYOTE_TIME;
+          this.clingDir = 0;
+        }
       }
     } else {
       // 上升:只挡实体
@@ -645,6 +658,7 @@ export class Player {
       airborne: !this.onGround,
       vy: this.vy,
       paper: this.paper,
+      stringMode: this.stringMode,
       meleeT: this.meleeT > 0 ? 1 - this.meleeT / 0.2 : 0,
       meleeStep: this.meleeStep,
       shootFlash: this.shootFlashT > 0 ? this.shootFlashT / 0.09 : 0,

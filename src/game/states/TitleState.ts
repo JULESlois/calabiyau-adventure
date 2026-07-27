@@ -1,5 +1,5 @@
 import { VIEW_H, VIEW_W } from '../constants';
-import { drawChar } from '../render/sprites';
+import { drawChar, type CharPose } from '../render/sprites';
 import { makeRng } from '../utils';
 import type { Engine, GameState } from '../Engine';
 
@@ -258,12 +258,13 @@ export class TitleState implements GameState {
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.fillRect(px - 3, pedY, 30, 1);
     }
-    const idlePose = {
+    const idlePose: CharPose = {
       runPhase: 0,
       moving: false,
       airborne: false,
       vy: 0,
       paper: false,
+      stringMode: 'normal',
       meleeT: 0,
       meleeStep: 0,
       shootFlash: 0,
@@ -317,7 +318,7 @@ export class TitleState implements GameState {
         'A / D 移动   空格 / W 跳跃   S+跳 下落平台',
         'J 射击(香奈美长按蓄力)  K 近战  L 技能  Q 换人',
         '空中 S+K 下劈弹反 · U/; 冲刺(寻获后)',
-        'Shift 弦化 · Tab 地图 · Esc 暂停 · M 静音',
+        'Shift 弦化/空中飘飞 · E 贴墙 · F 交互 · Tab 地图',
         '',
         '弦化、蹬墙跳、二段跳、相位突进散落世界各处;',
         '香奈美被囚于研究区深处,声呐能显形隐藏平台。',

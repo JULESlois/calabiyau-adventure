@@ -1,6 +1,6 @@
 // 全程序化像素美术(恶魔城 / 神之亵渎 风格):
 // 厚重描边、深色分层阴影、烛火与辉光,不加载任何图片素材。
-import type { CharId } from '../types';
+import type { CharId, StringMode } from '../types';
 
 const OUTLINE = '#0e0a14';
 
@@ -56,6 +56,7 @@ export interface CharPose {
   airborne: boolean;
   vy: number;
   paper: boolean;
+  stringMode: StringMode;
   meleeT: number; // 0 无近战,>0 为挥击进度 0..1
   meleeStep: number; // 连段 0/1/2
   shootFlash: number; // 枪口焰 0..1
@@ -332,10 +333,22 @@ export function drawChar(
   ctx.save();
   ctx.translate(Math.round(x), Math.round(y));
   if (facing < 0) ctx.scale(-1, 1);
-  if (pose.paper) {
-    const flutter = Math.sin(pose.time * 14) * 0.06;
-    ctx.scale(0.26 + flutter, 1);
+  if (pose.stringMode === 'ground') {
+    const flutter = Math.sin(pose.time * 14) * 0.04;
+    ctx.scale(0.25 + flutter, 1);
     ctx.globalAlpha = 0.92;
+  } else if (pose.stringMode === 'wall') {
+    const flutter = Math.sin(pose.time * 11) * 0.025;
+    ctx.translate(1, 0);
+    ctx.rotate(flutter);
+    ctx.scale(0.18, 0.98);
+    ctx.globalAlpha = 0.94;
+  } else if (pose.stringMode === 'glide') {
+    const flutter = Math.sin(pose.time * 16) * 0.07;
+    const fallTilt = Math.max(-0.08, Math.min(0.16, pose.vy / 280));
+    ctx.rotate(-0.3 + fallTilt + flutter);
+    ctx.transform(0.38, 0, Math.sin(pose.time * 12) * 0.1, 0.92, 0, 0);
+    ctx.globalAlpha = 0.9;
   }
   if (pose.hurtFlash) ctx.globalAlpha = 0.55;
 
@@ -380,13 +393,37 @@ export function drawChar(
 
   ctx.restore();
 
-  // 纸片形态描边微光
-  if (pose.paper) {
+  // 三种弦化形态使用不同轮廓与风动提示。
+  if (pose.stringMode === 'ground') {
     ctx.save();
     ctx.globalAlpha = 0.5 + Math.sin(pose.time * 10) * 0.25;
     ctx.strokeStyle = '#aef4ff';
     ctx.lineWidth = 1;
     ctx.strokeRect(Math.round(x) - 3.5, Math.round(y) - 23.5, 7, 24);
+    ctx.restore();
+  } else if (pose.stringMode === 'wall') {
+    ctx.save();
+    ctx.globalAlpha = 0.62 + Math.sin(pose.time * 9) * 0.18;
+    ctx.strokeStyle = '#aef4ff';
+    ctx.strokeRect(Math.round(x) - 2.5, Math.round(y) - 23.5, 5, 24);
+    ctx.fillStyle = '#d8f8ff';
+    ctx.fillRect(Math.round(x) + facing * 3, Math.round(y) - 18, 1, 12);
+    ctx.restore();
+  } else if (pose.stringMode === 'glide') {
+    ctx.save();
+    ctx.translate(Math.round(x), Math.round(y));
+    if (facing < 0) ctx.scale(-1, 1);
+    ctx.rotate(-0.3 + Math.sin(pose.time * 16) * 0.06);
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = '#aef4ff';
+    ctx.strokeRect(-4.5, -23.5, 9, 24);
+    ctx.globalAlpha = 0.38;
+    ctx.fillStyle = '#d8f8ff';
+    for (let i = 0; i < 3; i++) {
+      const windX = -12 - i * 7 - ((pose.time * 35 + i * 5) % 8);
+      const windY = -18 + i * 7 + Math.sin(pose.time * 8 + i) * 2;
+      ctx.fillRect(Math.round(windX), Math.round(windY), 8 + i * 2, 1);
+    }
     ctx.restore();
   }
 

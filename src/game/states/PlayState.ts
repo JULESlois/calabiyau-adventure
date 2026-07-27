@@ -1,4 +1,4 @@
-import { COLORS, INVULN_TIME, MAX_HP, MAX_STRING, TILE, VIEW_H, VIEW_W } from '../constants';
+import { COLORS, INVULN_TIME, MAX_STRING, TILE, VIEW_H, VIEW_W } from '../constants';
 import { Boss } from '../entities/boss';
 import type { EnemyBullet, PlayerBullet } from '../entities/bullets';
 import { Enemy, type EnemyKind } from '../entities/enemies';
@@ -335,8 +335,17 @@ export class PlayState implements GameState, WorldApi {
     return t === T_SOLID || t === T_ONEWAY;
   }
 
-  fireEnemyBullet(x: number, y: number, vx: number, vy: number, dmg = 10, color = '#ff8a5c', r = 2.5): void {
-    this.enemyBullets.push({ x, y, vx, vy, r, dmg, life: 3.2, color });
+  fireEnemyBullet(
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+    dmg = 10,
+    color = '#ff8a5c',
+    r = 2.5,
+    owner?: object,
+  ): void {
+    this.enemyBullets.push({ x, y, vx, vy, r, dmg, life: 3.2, color, owner });
   }
 
   spawnEnemy(kind: string, x: number, y: number): void {
@@ -426,7 +435,7 @@ export class PlayState implements GameState, WorldApi {
         this.shopSel = (this.shopSel + 1) % n;
         this.sfx('ui');
       }
-      if (input.pressed('confirm') || input.pressed('jump')) {
+      if (input.pressed('confirm') || input.pressed('interact')) {
         this.buyShopItem(SHOP_ITEMS[this.shopSel].id);
       }
       if (input.pressed('pause') || input.pressed('map')) {
@@ -449,13 +458,15 @@ export class PlayState implements GameState, WorldApi {
           this.fastTravelIndex = (this.fastTravelIndex + 1) % n;
           this.sfx('ui');
         }
-        if (input.pressed('confirm') || input.pressed('jump') || input.pressed('interact')) {
+        if (input.pressed('confirm') || input.pressed('interact')) {
           const dest = bList[this.fastTravelIndex];
           this.overlay = 'none';
           this.sfx('ui');
           if (dest.id !== this.roomId) {
             this.engine.startRoom(dest.id, { kind: 'bench' });
-            this.toast(`已传送至 ${dest.name}`);
+            if (this.engine.state instanceof PlayState) {
+              this.engine.state.toast(`已传送至 ${dest.name}`);
+            }
           }
         }
       }
@@ -470,7 +481,7 @@ export class PlayState implements GameState, WorldApi {
       this.time += dt;
       this.overlayT += dt;
       this.particles.update(dt);
-      if (this.overlayT > 0.6 && (input.pressed('confirm') || input.pressed('jump') || input.pressed('shoot'))) {
+      if (this.overlayT > 0.6 && (input.pressed('confirm') || input.pressed('shoot'))) {
         this.overlay = 'none';
         this.sfx('ui');
       }
@@ -752,7 +763,9 @@ export class PlayState implements GameState, WorldApi {
     // 5. 贴墙弦化提示 (Wall Climb Prompt)
     const wallLeft = p.nearSolidWall(this, -1);
     const wallRight = p.nearSolidWall(this, 1);
-    this.nearWallClimb = (wallLeft || wallRight) && this.world.has('paper') && p.clingDir === 0;
+    this.nearWallClimb =
+      p.stringMode === 'wall' ||
+      ((wallLeft || wallRight) && this.world.has('paper') && this.world.has('cling'));
   }
 
   private grantAbility(kind: Ability, x: number, y: number): void {
@@ -1373,26 +1386,7 @@ export class PlayState implements GameState, WorldApi {
       ctx.globalAlpha = 1;
     }
 
-    // 房间名 / 事件提示
-    if (this.toasts.length > 0) {
-      ctx.textAlign = 'center';
-      ctx.font = '9px "SimSun", "Songti SC", serif';
-      let ty = VIEW_H - 34;
-      for (const t of this.toasts) {
-        const a = clamp(t.t / 0.5, 0, 1);
-        ctx.globalAlpha = a * 0.9;
-        ctx.fillStyle = 'rgba(8,5,14,0.75)';
-        const tw = ctx.measureText(t.msg).width;
-        ctx.fillRect(VIEW_W / 2 - tw / 2 - 6, ty - 3, tw + 12, 13);
-        ctx.fillStyle = '#d8ccb0';
-        ctx.fillText(t.msg, VIEW_W / 2, ty);
-        ctx.globalAlpha = 1;
-        ty -= 16;
-      }
-      ctx.textAlign = 'left';
-    }
-
-    this.renderOverlay(ctx);
+    this.renderToasts(ctx);
   }
 
   private renderTiles(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
@@ -1708,7 +1702,7 @@ export class PlayState implements GameState, WorldApi {
       px = this.shopSpot.x;
       py = this.shopSpot.y - 26;
     } else if (this.nearWallClimb) {
-      promptMsg = '按 [F] 贴墙弦化';
+      promptMsg = this.player.stringMode === 'wall' ? '按 [E] 脱离 · W/S 上下移动' : '按 [E] 贴墙弦化';
       px = this.player.x;
       py = this.player.y - 28;
     }

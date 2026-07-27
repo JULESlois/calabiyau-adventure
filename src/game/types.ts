@@ -2,6 +2,7 @@ import type { ParticleSystem } from './entities/particles';
 import type { Rect } from './utils';
 
 export type CharId = 'michele' | 'kanami';
+export type StringMode = 'normal' | 'ground' | 'wall' | 'glide';
 
 /** 实体与世界交互的窄接口,由 PlayState 实现 */
 export interface WorldApi {

@@ -1,4 +1,4 @@
-import { GRAVITY, MAX_FALL, TILE } from '../constants';
+import { GRAVITY, MAX_FALL } from '../constants';
 import type { Rect } from '../utils';
 import { clamp, dist } from '../utils';
 import type { WorldApi } from '../types';
@@ -68,7 +68,7 @@ export class Enemy {
     return Math.sign(-bulletVx) === Math.sign(this.dir) && bulletVx !== 0;
   }
 
-  hit(dmg: number, freeze: number, w: WorldApi): void {
+  hit(dmg: number, freeze: number, _w: WorldApi): void {
     if (this.markT > 0) dmg *= 1.3;
     this.hp -= dmg;
     this.hurtT = 0.12;
@@ -171,7 +171,7 @@ export class Enemy {
           if (this.fuseT <= 0) {
             for (let i = 0; i < 8; i++) {
               const a = (i / 8) * Math.PI * 2;
-              w.fireEnemyBullet(this.x, this.y - 6, Math.cos(a) * 130, Math.sin(a) * 130, 10, '#ff5a4a', 3);
+              w.fireEnemyBullet(this.x, this.y - 6, Math.cos(a) * 130, Math.sin(a) * 130, 10, '#ff5a4a', 3, this);
             }
             w.sfx('explosion');
             w.shake(4);

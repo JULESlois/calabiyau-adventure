@@ -14,9 +14,10 @@ export type Action =
   | 'map'
   | 'dash'
   | 'confirm'
-  | 'interact';
+  | 'interact'
+  | 'wall';
 
-const KEYMAP: Record<string, Action[]> = {
+export const KEYMAP: Readonly<Record<string, readonly Action[]>> = {
   KeyA: ['left'],
   ArrowLeft: ['left'],
   KeyD: ['right'],
@@ -26,7 +27,7 @@ const KEYMAP: Record<string, Action[]> = {
   KeyS: ['down'],
   ArrowDown: ['down'],
   Space: ['jump', 'confirm'],
-  KeyE: ['interact'],
+  KeyE: ['wall'],
   KeyF: ['interact'],
   KeyJ: ['shoot'],
   KeyK: ['melee'],
@@ -41,6 +42,26 @@ const KEYMAP: Record<string, Action[]> = {
   KeyU: ['dash'],
   Semicolon: ['dash'],
   Enter: ['confirm'],
+};
+
+/** Standard Gamepad 映射。互斥动作使用独立按键，避免一次输入触发多个玩法动作。 */
+export const GAMEPAD_BUTTON_ACTIONS: Readonly<Partial<Record<number, readonly Action[]>>> = {
+  0: ['jump', 'confirm'], // A / Cross
+  1: ['melee'], // B / Circle
+  2: ['shoot'], // X / Square
+  3: ['skill'], // Y / Triangle
+  4: ['wall'], // LB：贴墙吸附/脱离
+  5: ['dash'], // RB
+  6: ['paper'], // LT：普通弦化/空中飘飞
+  7: ['shoot'], // RT
+  8: ['map'], // Select / Back
+  9: ['pause'], // Start / Menu
+  10: ['switch'], // L3
+  11: ['interact'], // R3：场景交互
+  12: ['up'], // D-Pad Up
+  13: ['down'], // D-Pad Down
+  14: ['left'], // D-Pad Left
+  15: ['right'], // D-Pad Right
 };
 
 export class Input {
@@ -109,26 +130,14 @@ export class Input {
       if (lx > DEADZONE) currentGpActions.add('right');
       if (ly < -DEADZONE) {
         currentGpActions.add('up');
-        currentGpActions.add('jump');
       }
       if (ly > DEADZONE) currentGpActions.add('down');
 
       const b = gp.buttons;
-      if (b[0]?.pressed) { currentGpActions.add('jump'); currentGpActions.add('confirm'); currentGpActions.add('interact'); } // A / Cross
-      if (b[1]?.pressed) { currentGpActions.add('melee'); currentGpActions.add('dash'); }    // B / Circle
-      if (b[2]?.pressed) { currentGpActions.add('shoot'); currentGpActions.add('interact'); }                                  // X / Square
-      if (b[3]?.pressed) { currentGpActions.add('skill'); currentGpActions.add('interact'); }                                  // Y / Triangle
-      if (b[4]?.pressed) { currentGpActions.add('paper'); }                                  // LB
-      if (b[5]?.pressed) { currentGpActions.add('dash'); }                                   // RB
-      if (b[6]?.pressed) { currentGpActions.add('paper'); }                                  // LT
-      if (b[7]?.pressed) { currentGpActions.add('shoot'); }                                  // RT
-      if (b[8]?.pressed) { currentGpActions.add('switch'); }                                 // Select
-      if (b[9]?.pressed) { currentGpActions.add('pause'); currentGpActions.add('map'); }    // Start
-      if (b[10]?.pressed) { currentGpActions.add('switch'); }                                // L3
-      if (b[12]?.pressed) { currentGpActions.add('up'); currentGpActions.add('jump'); }     // D-Pad Up
-      if (b[13]?.pressed) { currentGpActions.add('down'); }                                  // D-Pad Down
-      if (b[14]?.pressed) { currentGpActions.add('left'); }                                  // D-Pad Left
-      if (b[15]?.pressed) { currentGpActions.add('right'); }                                 // D-Pad Right
+      for (const [index, actions] of Object.entries(GAMEPAD_BUTTON_ACTIONS)) {
+        if (!actions || !b[Number(index)]?.pressed) continue;
+        for (const action of actions) currentGpActions.add(action);
+      }
     }
 
     if (currentGpActions.size > 0 && this.onAnyKey) {

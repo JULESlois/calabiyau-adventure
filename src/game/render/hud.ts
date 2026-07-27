@@ -133,7 +133,6 @@ export function drawHUD(
 
   // ---- 技能符印(菱形)----
   const cd = player.skillCd[player.char];
-  const cdMax = isM ? 9 : 10;
   const sx = 146;
   const sy = 20;
   ctx.save();

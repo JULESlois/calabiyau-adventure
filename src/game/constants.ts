@@ -23,8 +23,12 @@ export const MAX_HP = 100;
 export const MAX_STRING = 100; // 弦能
 export const STRING_DRAIN = 34; // 每秒消耗
 export const STRING_REGEN = 26; // 每秒恢复
-export const PAPER_SPEED_MULT = 1.3;
-export const WALL_SLIDE_SPEED = 55;
+export const PAPER_SPEED_MULT = 0.82;
+export const WALL_SLIDE_SPEED = 110;
+export const GLIDE_FALL_SPEED = 42;
+export const GLIDE_GRAVITY_MULT = 0.22;
+export const GLIDE_STRING_DRAIN = 24;
+export const WALL_STRING_DRAIN = 12;
 export const WALL_JUMP_VX = 175;
 export const WALL_JUMP_VY = 300;
 

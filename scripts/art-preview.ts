@@ -44,7 +44,6 @@ function frame(now: number): void {
         moving: false,
         airborne: false,
         vy: 0,
-        paper: false,
         meleeT: 0,
         meleeStep: 0,
         shootFlash: 0,
@@ -52,6 +51,8 @@ function frame(now: number): void {
         shield: false,
         time: t,
         ...part,
+        paper: part.paper ?? false,
+        stringMode: part.stringMode ?? (part.paper ? 'ground' : 'normal'),
       };
       const x = 16 + i * CELL_W;
       const y = 34 + row * ROW_H;
