@@ -69,6 +69,8 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
+开发服务器启动后可访问 `http://localhost:3000/art-preview.html`,并排检查两名角色的待机、奔跑、起跳、滞空、下落、落地、战斗与三种弦化姿态。
+
 生产构建:
 
 ```bash
@@ -107,6 +109,7 @@ src/
     render/                   程序化像素美术、视差背景、HUD、props(调弦台/能力祭坛/香奈美)
     states/                   TitleState(继续/新游戏/说明)、PlayState(单个房间的玩法核心)
 scripts/
+  art-preview.ts              两名角色的动作矩阵预览
   check-maps.ts               世界数据校验(含出口配对与能力推进 BFS)
   harness.ts                  无 React 冒烟测试外壳
 ```

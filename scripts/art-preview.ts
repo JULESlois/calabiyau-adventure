@@ -6,7 +6,7 @@ import type { CharId } from '../src/game/types';
 const SCALE = 6;
 const CELL_W = 26;
 const ROW_H = 40;
-const LOGICAL_W = 14 + CELL_W * 9;
+const LOGICAL_W = 14 + CELL_W * 11;
 const LOGICAL_H = 100;
 
 const canvas = document.createElement('canvas');
@@ -21,9 +21,11 @@ const ctx = canvas.getContext('2d')!;
 
 const POSES: [string, Partial<CharPose>][] = [
   ['待机', {}],
-  ['奔跑', { moving: true }],
-  ['跳跃', { airborne: true, vy: -200 }],
+  ['奔跑', { moving: true, moveSpeed: 1 }],
+  ['起跳', { airborne: true, vy: -360, takeoff: 1, moveSpeed: 0.7 }],
+  ['滞空', { airborne: true, vy: 0, moveSpeed: 0.7 }],
   ['下落', { airborne: true, vy: 200 }],
+  ['落地', { landing: 1 }],
   ['射击', { shootFlash: 0.8 }],
   ['近战', { meleeT: 0.5, meleeStep: 2 }],
   ['地面弦化', { paper: true, stringMode: 'ground' }],
@@ -44,8 +46,12 @@ function frame(now: number): void {
       const pose: CharPose = {
         runPhase: t * 13,
         moving: false,
+        moveSpeed: 0,
         airborne: false,
         vy: 0,
+        takeoff: 0,
+        landing: 0,
+        turning: 0,
         meleeT: 0,
         meleeStep: 0,
         shootFlash: 0,

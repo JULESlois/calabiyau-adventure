@@ -37,6 +37,10 @@ import { makeQuickNote, makeRifleShot, makeSnipe } from './bullets';
 import { drawChar } from '../render/sprites';
 import type { PlayState } from '../states/PlayState';
 
+const TAKEOFF_ANIM_TIME = 0.12;
+const LANDING_ANIM_TIME = 0.16;
+const TURN_ANIM_TIME = 0.12;
+
 export class Player {
   x: number; // 脚底中心
   y: number;
@@ -63,6 +67,9 @@ export class Player {
   skillCd: Record<CharId, number> = { michele: 0, kanami: 0 };
   regenDelay = 0;
   runPhase = 0;
+  takeoffAnimT = 0;
+  landingAnimT = 0;
+  turnAnimT = 0;
   dead = false;
   shootFlashT = 0;
   /** 香奈美·谢幕曲蓄力(秒,满蓄 0.7) */
@@ -124,6 +131,8 @@ export class Player {
   /** 下劈命中后的反弹(重置二段跳与空中冲刺) */
   pogoBounce(): void {
     this.vy = -290;
+    this.takeoffAnimT = TAKEOFF_ANIM_TIME;
+    this.landingAnimT = 0;
     this.jumpsUsed = 1;
     this.airDashed = false;
     this.meleeT = 0;
@@ -170,6 +179,9 @@ export class Player {
     this.switchCd = Math.max(0, this.switchCd - dt);
     this.comboWindow = Math.max(0, this.comboWindow - dt);
     this.regenDelay = Math.max(0, this.regenDelay - dt);
+    this.takeoffAnimT = Math.max(0, this.takeoffAnimT - dt);
+    this.landingAnimT = Math.max(0, this.landingAnimT - dt);
+    this.turnAnimT = Math.max(0, this.turnAnimT - dt);
     this.skillCd.michele = Math.max(0, this.skillCd.michele - dt);
     this.skillCd.kanami = Math.max(0, this.skillCd.kanami - dt);
     this.dashCdT = Math.max(0, this.dashCdT - dt);
@@ -277,10 +289,14 @@ export class Player {
       this.vx = 0;
     } else if (moveDir !== 0) {
       this.vx = approach(this.vx, moveDir * maxSpeed, accel * dt);
+      if (moveDir !== this.facing && Math.abs(this.vx) > 30) this.turnAnimT = TURN_ANIM_TIME;
       this.facing = moveDir;
-      this.runPhase += dt * 13;
     } else {
       this.vx = approach(this.vx, 0, accel * dt);
+    }
+    if (this.onGround && this.stringMode === 'normal' && Math.abs(this.vx) > 12) {
+      const speedRatio = Math.min(1, Math.abs(this.vx) / RUN_SPEED);
+      this.runPhase = (this.runPhase + dt * (7 + speedRatio * 11)) % (Math.PI * 2);
     }
 
     // ---- 跳跃 ----
@@ -297,6 +313,8 @@ export class Player {
         // 弦化蹬墙跳
         this.vx = -this.clingDir * WALL_JUMP_VX;
         this.vy = -WALL_JUMP_VY;
+        this.takeoffAnimT = TAKEOFF_ANIM_TIME;
+        this.landingAnimT = 0;
         this.facing = -this.clingDir;
         this.setStringMode('normal', ps);
         this.jumpsUsed = 1;
@@ -305,6 +323,8 @@ export class Player {
         ps.particles.burst(this.x, this.y, 8, '#aef4ff', 80, 0.35, 'paper');
       } else if (grounded) {
         this.vy = -JUMP_VEL;
+        this.takeoffAnimT = TAKEOFF_ANIM_TIME;
+        this.landingAnimT = 0;
         this.onGround = false;
         this.coyote = 0;
         this.jumpsUsed = 1;
@@ -312,6 +332,8 @@ export class Player {
         ps.sfx('jump');
       } else if (this.jumpsUsed < 2 && ps.world.has('djump')) {
         this.vy = -DOUBLE_JUMP_VEL;
+        this.takeoffAnimT = TAKEOFF_ANIM_TIME;
+        this.landingAnimT = 0;
         this.jumpsUsed = 2;
         this.jumpBuffer = 0;
         ps.sfx('doubleJump');
@@ -603,7 +625,8 @@ export class Player {
         ny = Math.round(ny);
       }
       if (landed) {
-        if (this.vy > 200) {
+        const impactSpeed = this.vy;
+        if (impactSpeed > 200) {
           ps.particles.burst(this.x, ny, 4, '#9aa4c8', 40, 0.25);
         }
         this.vy = 0;
@@ -611,6 +634,10 @@ export class Player {
           this.onGround = false;
           this.coyote = 0;
         } else {
+          if (impactSpeed > 110) {
+            this.landingAnimT = LANDING_ANIM_TIME * clamp(impactSpeed / 360, 0.55, 1);
+            this.takeoffAnimT = 0;
+          }
           this.onGround = true;
           this.jumpsUsed = 0;
           this.coyote = COYOTE_TIME;
@@ -648,8 +675,12 @@ export class Player {
     drawChar(ctx, this.char, this.x, this.y, this.facing, {
       runPhase: this.runPhase,
       moving: Math.abs(this.vx) > 12,
+      moveSpeed: Math.min(1, Math.abs(this.vx) / RUN_SPEED),
       airborne: !this.onGround,
       vy: this.vy,
+      takeoff: this.takeoffAnimT / TAKEOFF_ANIM_TIME,
+      landing: this.landingAnimT / LANDING_ANIM_TIME,
+      turning: this.turnAnimT / TURN_ANIM_TIME,
       paper: this.paper,
       stringMode: this.stringMode,
       meleeT: this.meleeT > 0 ? 1 - this.meleeT / 0.2 : 0,

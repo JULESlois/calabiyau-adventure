@@ -53,8 +53,12 @@ function blitOutlined(ctx: CanvasRenderingContext2D): void {
 export interface CharPose {
   runPhase: number;
   moving: boolean;
+  moveSpeed: number; // 0..1,仅用于步频与身体前倾
   airborne: boolean;
   vy: number;
+  takeoff: number; // 1..0,起跳拉伸过渡
+  landing: number; // 1..0,落地压缩过渡
+  turning: number; // 1..0,反向移动缓冲
   paper: boolean;
   stringMode: StringMode;
   meleeT: number; // 0 无近战,>0 为挥击进度 0..1
@@ -62,6 +66,133 @@ export interface CharPose {
   shootFlash: number; // 枪口焰 0..1
   hurtFlash: boolean;
   time: number;
+}
+
+export type AirMotionStage = 'ground' | 'rise' | 'apex' | 'fall';
+
+export function resolveAirMotionStage(airborne: boolean, vy: number): AirMotionStage {
+  if (!airborne) return 'ground';
+  if (vy < -70) return 'rise';
+  if (vy <= 85) return 'apex';
+  return 'fall';
+}
+
+interface LocomotionFrame {
+  idle: boolean;
+  running: boolean;
+  air: AirMotionStage;
+  bodyY: number;
+  hairX: number;
+  hairY: number;
+  leftX: number;
+  rightX: number;
+  leftLift: number;
+  rightLift: number;
+  weaponY: number;
+  blink: boolean;
+}
+
+function locomotionFrame(pose: CharPose, idleRate: number, blinkOffset: number): LocomotionFrame {
+  const air = resolveAirMotionStage(pose.airborne, pose.vy);
+  const running = pose.moving && air === 'ground';
+  const idle = !running && air === 'ground';
+  const stride = running ? Math.sin(pose.runPhase) : 0;
+
+  let leftX = 0;
+  let rightX = 0;
+  let leftLift = 0;
+  let rightLift = 0;
+  if (running) {
+    leftX = Math.round(stride * 2);
+    rightX = -leftX;
+    leftLift = Math.round(Math.max(0, stride) * 2);
+    rightLift = Math.round(Math.max(0, -stride) * 2);
+  } else if (air === 'rise') {
+    leftX = -1;
+    rightX = 1;
+    leftLift = 3;
+    rightLift = 1;
+  } else if (air === 'apex') {
+    leftX = -1;
+    rightX = 1;
+    leftLift = 2;
+    rightLift = 3;
+  } else if (air === 'fall') {
+    leftX = -1;
+    rightX = 1;
+    leftLift = 0;
+    rightLift = 1;
+  }
+
+  const idleWave = Math.sin(pose.time * idleRate);
+  const bodyY =
+    pose.landing > 0.05 || pose.takeoff > 0.2
+      ? 1
+      : running
+        ? -Math.round(Math.abs(Math.sin(pose.runPhase * 2)))
+        : idle && idleWave > 0.62
+          ? -1
+          : 0;
+  const hairX = running ? -1 - Math.round(Math.abs(stride)) : air === 'ground' ? 0 : -1;
+  const hairY = air === 'rise' ? 2 : air === 'fall' ? -2 : air === 'apex' ? -1 : 0;
+  const blinkPhase = (pose.time + blinkOffset) % 4.6;
+
+  return {
+    idle,
+    running,
+    air,
+    bodyY,
+    hairX,
+    hairY,
+    leftX,
+    rightX,
+    leftLift,
+    rightLift,
+    weaponY: running ? Math.round(Math.abs(Math.sin(pose.runPhase))) : 0,
+    blink: idle && blinkPhase > 4.42,
+  };
+}
+
+function applyNormalMotion(ctx: CanvasRenderingContext2D, pose: CharPose): void {
+  if (pose.stringMode !== 'normal') return;
+
+  const speed = Math.max(0, Math.min(1, pose.moveSpeed));
+  if (pose.airborne) {
+    const stage = resolveAirMotionStage(true, pose.vy);
+    if (stage === 'rise') {
+      ctx.rotate(0.055 * speed);
+      ctx.scale(0.95, 1.055);
+    } else if (stage === 'apex') {
+      ctx.rotate(0.025 * speed + Math.sin(pose.time * 5) * 0.008);
+      ctx.scale(1.035, 0.975);
+    } else {
+      ctx.rotate(-0.035 * speed);
+      ctx.scale(0.975, 1.035);
+    }
+  } else if (pose.moving) {
+    const stride = Math.sin(pose.runPhase);
+    ctx.translate(0, -Math.abs(Math.sin(pose.runPhase * 2)) * 0.55);
+    ctx.rotate(0.025 + speed * 0.035 + Math.cos(pose.runPhase) * 0.008);
+    const contact = Math.pow(Math.abs(stride), 6) * speed;
+    ctx.scale(1 + contact * 0.018, 1 - contact * 0.022);
+  } else {
+    const breath = (Math.sin(pose.time * 2.05) + 1) * 0.5;
+    ctx.translate(0, -breath * 0.28);
+    ctx.rotate(Math.sin(pose.time * 1.05) * 0.006);
+    ctx.scale(1 - breath * 0.006, 1 + breath * 0.008);
+  }
+
+  if (pose.takeoff > 0) {
+    ctx.scale(1 - pose.takeoff * 0.045, 1 + pose.takeoff * 0.065);
+  }
+  if (!pose.airborne && pose.landing > 0) {
+    const impact = pose.landing * pose.landing;
+    ctx.scale(1 + impact * 0.09, 1 - impact * 0.115);
+  }
+  if (!pose.airborne && pose.turning > 0) {
+    ctx.rotate(-pose.turning * 0.075);
+    ctx.scale(1 - pose.turning * 0.045, 1 + pose.turning * 0.025);
+  }
 }
 
 // 配色采样自官方立绘(refs: docs/ref_images/):
@@ -132,24 +263,24 @@ const KANAMI = {
 
 function paintMichele(g: CanvasRenderingContext2D, pose: CharPose): void {
   const t = pose.time;
-  const idle = !pose.moving && !pose.airborne;
-  const bob = idle ? (Math.sin(t * 2.2) > 0.2 ? 1 : 0) : pose.moving && !pose.airborne && Math.abs(Math.sin(pose.runPhase)) > 0.6 ? -1 : 0;
-  const top = ORIGIN_Y - 22 + bob;
+  const motion = locomotionFrame(pose, 2.2, 0);
+  const top = ORIGIN_Y - 22 + motion.bodyY;
   const x0 = ORIGIN_X;
-  const sway = Math.round(Math.sin(t * 2.6) * 1);
-  const legSwing = pose.moving && !pose.airborne ? Math.round(Math.sin(pose.runPhase) * 2) : 0;
-  const airLeg = pose.airborne ? (pose.vy < 0 ? -2 : 1) : 0;
+  const sway = motion.running
+    ? Math.round(Math.sin(pose.runPhase - 0.8))
+    : Math.round(Math.sin(t * 2.6));
+  const tailY = motion.hairY;
 
   // ---- 高位长双马尾(暖金,垂至膝,后层带摆动)----
-  px(g, x0 - 8, top + 1 + sway, 2, 17, MICHELE.hair);
-  px(g, x0 + 6, top + 1 - sway, 2, 17, MICHELE.hair);
-  px(g, x0 - 8, top + 1 + sway, 1, 17, MICHELE.hairDk);
-  px(g, x0 + 7, top + 1 - sway, 1, 17, MICHELE.hairDk);
-  px(g, x0 - 7, top + 18 + sway, 1, 2, MICHELE.hairDk); // 尾梢
-  px(g, x0 + 6, top + 18 - sway, 1, 2, MICHELE.hairDk);
+  px(g, x0 - 8 + motion.hairX, top + 1 + sway + tailY, 2, 17, MICHELE.hair);
+  px(g, x0 + 6 + motion.hairX, top + 1 - sway + tailY, 2, 17, MICHELE.hair);
+  px(g, x0 - 8 + motion.hairX, top + 1 + sway + tailY, 1, 17, MICHELE.hairDk);
+  px(g, x0 + 7 + motion.hairX, top + 1 - sway + tailY, 1, 17, MICHELE.hairDk);
+  px(g, x0 - 8 + motion.hairX, top + 18 + sway + tailY, 2, 2, MICHELE.hairDk); // 尾梢
+  px(g, x0 + 6 + motion.hairX, top + 18 - sway + tailY, 2, 2, MICHELE.hairDk);
   // 蓝发绳(高位)
-  px(g, x0 - 8, top + 2 + sway, 2, 1, MICHELE.tie);
-  px(g, x0 + 6, top + 2 - sway, 2, 1, MICHELE.tie);
+  px(g, x0 - 8 + motion.hairX, top + 2 + sway + tailY, 2, 1, MICHELE.tie);
+  px(g, x0 + 6 + motion.hairX, top + 2 - sway + tailY, 2, 1, MICHELE.tie);
 
   // ---- 黑色科技猫耳头饰 ----
   px(g, x0 - 5, top - 2, 3, 3, MICHELE.ear);
@@ -170,8 +301,13 @@ function paintMichele(g: CanvasRenderingContext2D, pose: CharPose): void {
   // ---- 脸(蓝瞳)----
   px(g, x0 - 3, top + 4, 6, 4, MICHELE.skin);
   px(g, x0 - 3, top + 7, 6, 1, MICHELE.skinDk);
-  px(g, x0 - 2, top + 5, 1, 2, MICHELE.eye);
-  px(g, x0 + 1, top + 5, 1, 2, MICHELE.eye);
+  if (motion.blink) {
+    px(g, x0 - 2, top + 6, 1, 1, MICHELE.eye);
+    px(g, x0 + 1, top + 6, 1, 1, MICHELE.eye);
+  } else {
+    px(g, x0 - 2, top + 5, 1, 2, MICHELE.eye);
+    px(g, x0 + 1, top + 5, 1, 2, MICHELE.eye);
+  }
 
   // ---- 白色连体衣 + 蓝色短外套(红衬里)+ 黑领带金铃铛 + 棕腰带 ----
   px(g, x0 - 4, top + 8, 8, 5, MICHELE.white);
@@ -190,63 +326,69 @@ function paintMichele(g: CanvasRenderingContext2D, pose: CharPose): void {
   px(g, x0 - 4, top + 14, 8, 1, MICHELE.whiteDk);
 
   // ---- 手臂 / 警探突击步枪(枪灰)----
-  const armSwing = pose.moving && !pose.airborne ? Math.round(Math.sin(pose.runPhase + Math.PI) * 1) : 0;
+  const armSwing = motion.running ? Math.round(Math.sin(pose.runPhase + Math.PI)) : 0;
+  const weaponY = motion.weaponY;
   if (pose.meleeT > 0) {
     const sw = Math.round(pose.meleeT * 7);
     px(g, x0 + 1 + sw, top + 9, 5, 2, MICHELE.skin);
     px(g, x0 + 5 + sw, top + 8, 3, 3, MICHELE.gun);
   } else {
-    px(g, x0 - 6, top + 9 + armSwing, 2, 4, MICHELE.blue); // 后臂(蓝袖)
-    px(g, x0 + 2, top + 10, 3, 2, MICHELE.skin); // 前臂
-    px(g, x0 + 4, top + 10, 2, 2, MICHELE.glove); // 指切手套
+    px(g, x0 - 6, top + 9 + armSwing + weaponY, 2, 4, MICHELE.blue); // 后臂(蓝袖)
+    px(g, x0 + 2, top + 10 + weaponY, 3, 2, MICHELE.skin); // 前臂
+    px(g, x0 + 4, top + 10 + weaponY, 2, 2, MICHELE.glove); // 指切手套
     // 警探:枪身 / 上导轨 / 光学瞄具 / 托 / 弹匣 / 枪口传感
-    px(g, x0 + 3, top + 8, 8, 2, MICHELE.gun);
-    px(g, x0 + 3, top + 8, 8, 1, MICHELE.gunHi);
-    px(g, x0 + 2, top + 9, 1, 2, MICHELE.gunDk);
-    px(g, x0 + 5, top + 10, 2, 2, MICHELE.gunDk);
-    px(g, x0 + 6, top + 7, 2, 1, MICHELE.gunDk);
-    px(g, x0 + 10, top + 8, 1, 1, MICHELE.gunGlow);
+    px(g, x0 + 3, top + 8 + weaponY, 8, 2, MICHELE.gun);
+    px(g, x0 + 3, top + 8 + weaponY, 8, 1, MICHELE.gunHi);
+    px(g, x0 + 2, top + 9 + weaponY, 1, 2, MICHELE.gunDk);
+    px(g, x0 + 5, top + 10 + weaponY, 2, 2, MICHELE.gunDk);
+    px(g, x0 + 6, top + 7 + weaponY, 2, 1, MICHELE.gunDk);
+    px(g, x0 + 10, top + 8 + weaponY, 1, 1, MICHELE.gunGlow);
   }
 
   // ---- 裸腿 + 腿环 + 黑靴(蓝底)----
-  const lL = pose.airborne ? airLeg : legSwing > 0 ? -1 : 0;
-  const lR = pose.airborne ? -airLeg : legSwing < 0 ? -1 : 0;
+  const leftX = x0 - 3 + motion.leftX;
+  const rightX = x0 + 1 + motion.rightX;
+  const leftBootY = top + 19 - motion.leftLift;
+  const rightBootY = top + 19 - motion.rightLift;
   // 左腿
-  px(g, x0 - 3, top + 15, 2, Math.max(0, 4 + lL), MICHELE.skin);
-  px(g, x0 - 3, top + 16, 2, 1, MICHELE.strap);
-  px(g, x0 - 3, top + 19 + lL, 2, 3, MICHELE.boots);
-  px(g, x0 - 3, top + 19 + lL, 2, 1, MICHELE.bootsHi);
-  px(g, x0 - 3, top + 21 + lL, 2, 1, MICHELE.sole);
+  px(g, leftX, top + 15, 2, Math.max(1, 4 - motion.leftLift), MICHELE.skin);
+  px(g, leftX, top + 16, 2, 1, MICHELE.strap);
+  px(g, leftX, leftBootY, 2, 3, MICHELE.boots);
+  px(g, leftX, leftBootY, 2, 1, MICHELE.bootsHi);
+  px(g, leftX, leftBootY + 2, 3, 1, MICHELE.sole);
   // 右腿
-  px(g, x0 + 1, top + 15, 2, Math.max(0, 4 + lR), MICHELE.skin);
-  px(g, x0 + 1, top + 16, 2, 1, MICHELE.strap);
-  px(g, x0 + 1, top + 19 + lR, 2, 3, MICHELE.boots);
-  px(g, x0 + 1, top + 19 + lR, 2, 1, MICHELE.bootsHi);
-  px(g, x0 + 1, top + 21 + lR, 2, 1, MICHELE.sole);
+  px(g, rightX, top + 15, 2, Math.max(1, 4 - motion.rightLift), MICHELE.skin);
+  px(g, rightX, top + 16, 2, 1, MICHELE.strap);
+  px(g, rightX, rightBootY, 2, 3, MICHELE.boots);
+  px(g, rightX, rightBootY, 2, 1, MICHELE.bootsHi);
+  px(g, rightX, rightBootY + 2, 3, 1, MICHELE.sole);
 }
 
 function paintKanami(g: CanvasRenderingContext2D, pose: CharPose): void {
   const t = pose.time;
-  const idle = !pose.moving && !pose.airborne;
-  const bob = idle ? (Math.sin(t * 2.0) > 0.2 ? 1 : 0) : pose.moving && !pose.airborne && Math.abs(Math.sin(pose.runPhase)) > 0.6 ? -1 : 0;
-  const top = ORIGIN_Y - 22 + bob;
+  const motion = locomotionFrame(pose, 2, 1.7);
+  const top = ORIGIN_Y - 22 + motion.bodyY;
   const x0 = ORIGIN_X;
-  const sway = Math.round(Math.sin(t * 2.2) * 1);
-  const legSwing = pose.moving && !pose.airborne ? Math.round(Math.sin(pose.runPhase) * 2) : 0;
-  const airLeg = pose.airborne ? (pose.vy < 0 ? -2 : 1) : 0;
+  const sway = motion.running
+    ? Math.round(Math.sin(pose.runPhase - 1.05))
+    : Math.round(Math.sin(t * 2.2));
+  const tailY = motion.hairY;
+  const ribbonTrail = motion.hairX - (motion.running || motion.air !== 'ground' ? 1 : 0);
 
   // ---- 背后淡金飘带(最后层)----
-  px(g, x0 - 8, top + 10 + sway, 1, 8, KANAMI.streamer);
-  px(g, x0 + 7, top + 10 - sway, 1, 8, KANAMI.streamer);
+  px(g, x0 - 8 + ribbonTrail, top + 10 + sway + tailY, 1, 7, KANAMI.streamer);
+  px(g, x0 - 10 + ribbonTrail, top + 16 + sway + tailY, 3, 1, KANAMI.streamer);
+  px(g, x0 + 6 + ribbonTrail, top + 10 - sway + tailY, 1, 7, KANAMI.streamer);
+  px(g, x0 + 4 + ribbonTrail, top + 16 - sway + tailY, 3, 1, KANAMI.streamer);
 
   // ---- 后发(淡紫长发及腰,粉色挑染)----
-  px(g, x0 - 6, top + 2 + sway, 2, 14, KANAMI.hair);
-  px(g, x0 + 4, top + 2 - sway, 2, 14, KANAMI.hair);
-  px(g, x0 - 6, top + 12 + sway, 2, 4, KANAMI.hairDk); // 发尾阴影
-  px(g, x0 + 4, top + 12 - sway, 2, 4, KANAMI.hairDk);
-  px(g, x0 + 5, top + 4 - sway, 1, 9, KANAMI.streak); // 粉挑染
-  px(g, x0 - 7, top + 9 + sway, 1, 6, KANAMI.hairDk); // 外侧发丝
-  px(g, x0 + 6, top + 9 - sway, 1, 6, KANAMI.hairDk);
+  px(g, x0 - 6 + motion.hairX, top + 2 + sway + tailY, 2, 14, KANAMI.hair);
+  px(g, x0 + 4 + motion.hairX, top + 2 - sway + tailY, 2, 14, KANAMI.hair);
+  px(g, x0 - 6 + motion.hairX, top + 12 + sway + tailY, 2, 4, KANAMI.hairDk); // 发尾阴影
+  px(g, x0 + 4 + motion.hairX, top + 12 - sway + tailY, 2, 4, KANAMI.hairDk);
+  px(g, x0 + 5 + motion.hairX, top + 4 - sway + tailY, 1, 9, KANAMI.streak); // 粉挑染
+  px(g, x0 - 7 + motion.hairX, top + 9 + sway + tailY, 1, 6, KANAMI.hairDk); // 外侧发丝
+  px(g, x0 + 6 + motion.hairX, top + 9 - sway + tailY, 1, 6, KANAMI.hairDk);
 
   // ---- 呆毛 + 侧发饰 ----
   px(g, x0 - 1, top - 3, 2, 1, KANAMI.hair);
@@ -264,55 +406,64 @@ function paintKanami(g: CanvasRenderingContext2D, pose: CharPose): void {
   // ---- 脸(蓝紫瞳)----
   px(g, x0 - 3, top + 4, 6, 4, KANAMI.skin);
   px(g, x0 - 3, top + 7, 6, 1, KANAMI.skinDk);
-  px(g, x0 - 2, top + 5, 1, 2, KANAMI.eye);
-  px(g, x0 + 1, top + 5, 1, 2, KANAMI.eye);
+  if (motion.blink) {
+    px(g, x0 - 2, top + 6, 1, 1, KANAMI.eye);
+    px(g, x0 + 1, top + 6, 1, 1, KANAMI.eye);
+  } else {
+    px(g, x0 - 2, top + 5, 1, 2, KANAMI.eye);
+    px(g, x0 + 1, top + 5, 1, 2, KANAMI.eye);
+  }
 
   // ---- 黑色露肩上衣 + 粉腰带 + 白色层叠裙(深粉裙缘)----
   px(g, x0 - 4, top + 8, 8, 1, KANAMI.skin); // 露肩
   px(g, x0 - 4, top + 9, 8, 3, KANAMI.top);
   px(g, x0 - 4, top + 9, 8, 1, KANAMI.topHi);
   px(g, x0 - 4, top + 12, 8, 1, KANAMI.beltPink);
-  px(g, x0 - 5, top + 13, 10, 2, KANAMI.skirt);
-  px(g, x0 - 5, top + 13, 10, 1, '#ffffff');
-  px(g, x0 - 5, top + 14, 10, 1, KANAMI.deepPink);
-  px(g, x0 - 5, top + 13, 1, 2, KANAMI.skirtDk);
-  px(g, x0 + 4, top + 13, 1, 2, KANAMI.skirtDk);
+  const skirtFlare = motion.air !== 'ground' || (motion.running && Math.abs(Math.sin(pose.runPhase)) > 0.65) ? 1 : 0;
+  px(g, x0 - 5 - skirtFlare, top + 13, 10 + skirtFlare * 2, 2, KANAMI.skirt);
+  px(g, x0 - 5 - skirtFlare, top + 13, 10 + skirtFlare * 2, 1, '#ffffff');
+  px(g, x0 - 5 - skirtFlare, top + 14, 10 + skirtFlare * 2, 1, KANAMI.deepPink);
+  px(g, x0 - 5 - skirtFlare, top + 13, 1, 2, KANAMI.skirtDk);
+  px(g, x0 + 4 + skirtFlare, top + 13, 1, 2, KANAMI.skirtDk);
 
   // ---- 手臂(黑袖+粉手套)/ 谢幕曲狙击枪(枪灰,大瞄准镜)----
-  const armSwing = pose.moving && !pose.airborne ? Math.round(Math.sin(pose.runPhase + Math.PI) * 1) : 0;
+  const armSwing = motion.running ? Math.round(Math.sin(pose.runPhase + Math.PI)) : 0;
+  const weaponY = motion.weaponY;
   if (pose.meleeT > 0) {
     const sw = Math.round(pose.meleeT * 7);
     px(g, x0 + 1 + sw, top + 9, 5, 2, KANAMI.sleeve);
     px(g, x0 + 5 + sw, top + 7, 3, 4, KANAMI.mic);
     px(g, x0 + 5 + sw, top + 7, 3, 1, KANAMI.micGlow);
   } else {
-    px(g, x0 - 6, top + 9 + armSwing, 2, 4, KANAMI.sleeve); // 后臂黑袖
-    px(g, x0 + 2, top + 10, 3, 2, KANAMI.sleeve); // 前臂黑袖
-    px(g, x0 + 4, top + 10, 2, 2, KANAMI.glovePink); // 粉手套
+    px(g, x0 - 6, top + 9 + armSwing + weaponY, 2, 4, KANAMI.sleeve); // 后臂黑袖
+    px(g, x0 + 2, top + 10 + weaponY, 3, 2, KANAMI.sleeve); // 前臂黑袖
+    px(g, x0 + 4, top + 10 + weaponY, 2, 2, KANAMI.glovePink); // 粉手套
     // 谢幕曲:枪身 / 上棱线 / 大瞄准镜 / 弹匣 / 枪托 / 枪口制退器 / 粉饰条
-    px(g, x0 + 1, top + 8, 11, 2, KANAMI.rifle);
-    px(g, x0 + 1, top + 8, 11, 1, KANAMI.rifleHi);
-    px(g, x0 + 4, top + 6, 4, 2, KANAMI.scope);
-    px(g, x0 + 4, top + 6, 4, 1, '#4a4e5a');
-    px(g, x0 + 6, top + 10, 2, 1, KANAMI.rifleDk);
-    px(g, x0 + 1, top + 10, 2, 1, KANAMI.rifleDk);
-    px(g, x0 + 12, top + 8, 1, 2, KANAMI.rifleDk);
-    px(g, x0 + 9, top + 9, 2, 1, KANAMI.accent);
+    px(g, x0 + 1, top + 8 + weaponY, 11, 2, KANAMI.rifle);
+    px(g, x0 + 1, top + 8 + weaponY, 11, 1, KANAMI.rifleHi);
+    px(g, x0 + 4, top + 6 + weaponY, 4, 2, KANAMI.scope);
+    px(g, x0 + 4, top + 6 + weaponY, 4, 1, '#4a4e5a');
+    px(g, x0 + 6, top + 10 + weaponY, 2, 1, KANAMI.rifleDk);
+    px(g, x0 + 1, top + 10 + weaponY, 2, 1, KANAMI.rifleDk);
+    px(g, x0 + 12, top + 8 + weaponY, 1, 2, KANAMI.rifleDk);
+    px(g, x0 + 9, top + 9 + weaponY, 2, 1, KANAMI.accent);
   }
 
   // ---- 白色过膝长靴(粉靴口 / 灰趾)----
-  const lL = pose.airborne ? airLeg : legSwing > 0 ? -1 : 0;
-  const lR = pose.airborne ? -airLeg : legSwing < 0 ? -1 : 0;
+  const leftX = x0 - 3 + motion.leftX;
+  const rightX = x0 + 1 + motion.rightX;
+  const leftBootY = top + 16 - motion.leftLift;
+  const rightBootY = top + 16 - motion.rightLift;
   // 左腿
-  px(g, x0 - 3, top + 15, 2, 1, KANAMI.kneePink);
-  px(g, x0 - 3, top + 16, 2, Math.max(0, 5 + lL), KANAMI.boot);
-  px(g, x0 - 3, top + 16, 1, 1, KANAMI.bootDk);
-  px(g, x0 - 3, top + 21 + lL, 2, 1, KANAMI.toe);
+  px(g, leftX, top + 15, 2, 1, KANAMI.kneePink);
+  px(g, leftX, leftBootY, 2, 5, KANAMI.boot);
+  px(g, leftX, leftBootY, 1, 1, KANAMI.bootDk);
+  px(g, leftX, top + 21 - motion.leftLift, 3, 1, KANAMI.toe);
   // 右腿
-  px(g, x0 + 1, top + 15, 2, 1, KANAMI.kneePink);
-  px(g, x0 + 1, top + 16, 2, Math.max(0, 5 + lR), KANAMI.boot);
-  px(g, x0 + 2, top + 16, 1, 1, KANAMI.bootDk);
-  px(g, x0 + 1, top + 21 + lR, 2, 1, KANAMI.toe);
+  px(g, rightX, top + 15, 2, 1, KANAMI.kneePink);
+  px(g, rightX, rightBootY, 2, 5, KANAMI.boot);
+  px(g, rightX + 1, rightBootY, 1, 1, KANAMI.bootDk);
+  px(g, rightX, top + 21 - motion.rightLift, 3, 1, KANAMI.toe);
 }
 
 /** 绘制角色。(x, y) 是脚底中心,facing: 1 右 / -1 左 */
@@ -332,6 +483,7 @@ export function drawChar(
   ctx.save();
   ctx.translate(Math.round(x), Math.round(y));
   if (facing < 0) ctx.scale(-1, 1);
+  applyNormalMotion(ctx, pose);
   if (pose.stringMode === 'ground') {
     const flutter = Math.sin(pose.time * 14) * 0.04;
     ctx.scale(0.25 + flutter, 1);

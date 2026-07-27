@@ -261,8 +261,12 @@ export class TitleState implements GameState {
     const idlePose: CharPose = {
       runPhase: 0,
       moving: false,
+      moveSpeed: 0,
       airborne: false,
       vy: 0,
+      takeoff: 0,
+      landing: 0,
+      turning: 0,
       paper: false,
       stringMode: 'normal',
       meleeT: 0,
