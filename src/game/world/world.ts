@@ -10,13 +10,14 @@
 //   D  能力·相位突进(冲刺)      S  引航者商人(记忆芯片商店)
 //   G  香奈美(救援,解锁切换角色)
 //   *  弦晶(全局唯一,拾取后永久记录)  h  回复心  e  弦能电池
+//   a/b/c/d  隐藏遗珍芯片(灯芯/潮息/回声/反应堆)
 //   1  巡逻机器人    2  浮游炮        3  炮塔      4  盾卫
-//   M  横向移动平台  N  纵向移动平台  B  Boss
+//   M  横向移动平台  N  纵向移动平台  U  飘飞上升气流  B  Boss
 
 import type { LevelTheme } from '../levels/levels';
 
 export type Ability = 'paper' | 'cling' | 'djump' | 'dash' | 'kanami';
-export type ZoneId = 'coast' | 'lab' | 'sky' | 'hangar';
+export type ZoneId = 'coast' | 'tide' | 'lab' | 'choir' | 'sky' | 'hangar';
 export type ExitSide = 'left' | 'right' | 'down';
 
 export interface ZoneDef {
@@ -68,6 +69,18 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
       ambient: 'rgba(200,110,60,0.06)',
     },
   },
+  tide: {
+    id: 'tide',
+    name: '沉潮地窟',
+    subtitle: '被海水遗忘的旧城区,泵轮仍在黑暗中缓慢转动。',
+    song: 2,
+    theme: {
+      skyTop: '#07131a', skyBottom: '#16323a', far: '#17323a', mid: '#102a31',
+      near: '#091b22', tileBase: '#29454a', tileEdge: '#8db8ad', tileDark: '#14272b',
+      accent: '#8de0c4', fog: 'rgba(80,150,145,0.10)', ember: '#9bd7c7',
+      ambient: 'rgba(50,120,120,0.06)',
+    },
+  },
   lab: {
     id: 'lab',
     name: '中央研究区',
@@ -78,6 +91,18 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
       near: '#0a1020', tileBase: '#2a2c44', tileEdge: '#9aa8d8', tileDark: '#161828',
       accent: '#7ef0ff', fog: 'rgba(100,130,200,0.09)', ember: '#aac8e8',
       ambient: 'rgba(90,120,200,0.05)',
+    },
+  },
+  choir: {
+    id: 'choir',
+    name: '弦声圣堂',
+    subtitle: '废弃的共鸣礼堂仍在回应每一发子弹与每一次脚步。',
+    song: 3,
+    theme: {
+      skyTop: '#130b20', skyBottom: '#3b244b', far: '#33203f', mid: '#24172f',
+      near: '#170e20', tileBase: '#43354f', tileEdge: '#d0a7cc', tileDark: '#251a2c',
+      accent: '#f0b4dc', fog: 'rgba(175,100,175,0.10)', ember: '#efb8dc',
+      ambient: 'rgba(145,70,145,0.06)',
     },
   },
   sky: {
@@ -158,7 +183,7 @@ const R: RoomDef[] = [];
 }
 
 {
-  // 长廊:巡逻机器人;地板中部有弦膜舱口,坠入研究区(需弦化)。
+  // 长廊:巡逻机器人;地板中部有弦膜舱口,坠入沉潮地窟(需弦化)。
   const g = grid(64, 17);
   rect(g, 14, 16, 0, 63, '#');
   rect(g, 14, 16, 30, 32, '%'); // 地板弦膜舱口
@@ -176,7 +201,7 @@ const R: RoomDef[] = [];
     exits: [
       { side: 'left', from: 11, to: 13, target: 'coast_start', ex: 46, ey: 13 },
       { side: 'right', from: 11, to: 13, target: 'coast_cliff', ex: 3, ey: 13 },
-      { side: 'down', from: 30, to: 32, target: 'lab_gate', ex: 11, ey: 2, needs: ['paper'] },
+      { side: 'down', from: 30, to: 32, target: 'tide_cistern', ex: 4, ey: 4, needs: ['paper'] },
     ],
   });
 }
@@ -190,6 +215,7 @@ const R: RoomDef[] = [];
   rect(g, 14, 16, 18, 30, '#');
   rect(g, 12, 12, 22, 25, '=');
   rect(g, 14, 16, 31, 59, '#');
+  rect(g, 14, 16, 34, 36, '%'); // 纸片化可坠入走私暗港
   rect(g, 13, 13, 40, 42, '^'); // 地表尖刺
   set(g, 13, 50, '1');
   set(g, 13, 55, '6'); // 刺镰魔怪
@@ -203,6 +229,7 @@ const R: RoomDef[] = [];
     exits: [
       { side: 'left', from: 11, to: 13, target: 'coast_walk', ex: 60, ey: 13 },
       { side: 'right', from: 11, to: 13, target: 'coast_shrine', ex: 3, ey: 13 },
+      { side: 'down', from: 34, to: 36, target: 'coast_smuggler', ex: 4, ey: 13, needs: ['paper'] },
     ],
   });
 }
@@ -219,11 +246,233 @@ const R: RoomDef[] = [];
   // 弦膜密龛
   rect(g, 9, 9, 33, 39, '#');
   rect(g, 10, 13, 33, 33, '%');
+  rect(g, 11, 13, 39, 39, '%'); // 未取得弦化时不能绕过祭坛离开
   set(g, 13, 37, '*');
   R.push({
     id: 'coast_shrine', zone: 'coast', name: '海滨 · 弦之祭坛', rows: rows(g),
     mapX: 5, mapY: 2,
-    exits: [{ side: 'left', from: 11, to: 13, target: 'coast_cliff', ex: 56, ey: 13 }],
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'coast_cliff', ex: 56, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'coast_underpier', ex: 3, ey: 13, needs: ['paper'] },
+    ],
+  });
+}
+
+{
+  // 潮下廊桥:获得弦化后的正式测试。弦膜分割战场,移动平台跨越尖刺潮沟。
+  const g = grid(58, 17);
+  rect(g, 14, 16, 0, 57, '#');
+  rect(g, 13, 13, 13, 18, '^');
+  set(g, 10, 16, 'M');
+  rect(g, 8, 13, 27, 27, '%');
+  rect(g, 10, 10, 31, 35, '=');
+  set(g, 9, 33, '*');
+  rect(g, 13, 13, 39, 42, '^');
+  set(g, 13, 23, '2');
+  set(g, 13, 35, '5');
+  set(g, 13, 49, '3');
+  set(g, 13, 53, 'e');
+  R.push({
+    id: 'coast_underpier', zone: 'coast', name: '海滨 · 潮下廊桥', rows: rows(g),
+    mapX: 6, mapY: 2,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'coast_shrine', ex: 36, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'coast_tideworks', ex: 3, ey: 10 },
+    ],
+  });
+}
+
+{
+  // 盐蚀泵塔:由上层入口下降到旧城区,纵向平台与弦膜交替。
+  const g = grid(36, 34);
+  rect(g, 11, 13, 0, 8, '#');
+  rect(g, 31, 33, 0, 35, '#');
+  rect(g, 14, 14, 11, 17, '=');
+  rect(g, 20, 20, 23, 29, '=');
+  rect(g, 25, 25, 8, 13, '=');
+  rect(g, 21, 30, 18, 18, '%');
+  set(g, 17, 25, 'N');
+  set(g, 24, 11, '*');
+  set(g, 30, 7, '6');
+  set(g, 30, 25, '4');
+  set(g, 30, 31, 'h');
+  R.push({
+    id: 'coast_tideworks', zone: 'coast', name: '海滨 · 盐蚀泵塔', rows: rows(g),
+    mapX: 8, mapY: 3, mapH: 2,
+    exits: [
+      { side: 'left', from: 8, to: 10, target: 'coast_underpier', ex: 54, ey: 13 },
+      { side: 'right', from: 28, to: 30, target: 'tide_entry', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 走私暗港:由断崖秘密坠入口进入,声呐可揭示上层赃物架。
+  const g = grid(52, 17);
+  rect(g, 14, 16, 0, 51, '#');
+  rect(g, 8, 13, 13, 13, '%');
+  rect(g, 10, 10, 18, 22, '=');
+  rect(g, 8, 8, 25, 29, 'H');
+  set(g, 7, 27, '*');
+  rect(g, 12, 12, 34, 38, '=');
+  set(g, 13, 18, '1');
+  set(g, 13, 31, '5');
+  set(g, 13, 43, '6');
+  set(g, 13, 47, '*');
+  R.push({
+    id: 'coast_smuggler', zone: 'coast', name: '海滨 · 走私暗港', rows: rows(g),
+    mapX: 4, mapY: 6,
+    exits: [{ side: 'right', from: 11, to: 13, target: 'coast_stormwall', ex: 3, ey: 13 }],
+  });
+}
+
+{
+  // 风暴防波堤:移动平台与炮火制造可选择的上下路线。
+  const g = grid(60, 17);
+  rect(g, 14, 16, 0, 11, '#');
+  rect(g, 16, 16, 12, 19, '#');
+  rect(g, 15, 15, 12, 19, '^');
+  rect(g, 14, 16, 20, 33, '#');
+  rect(g, 16, 16, 34, 41, '#');
+  rect(g, 15, 15, 34, 41, '^');
+  rect(g, 14, 16, 42, 59, '#');
+  set(g, 10, 16, 'M');
+  set(g, 9, 37, 'M');
+  set(g, 13, 25, '3');
+  set(g, 13, 48, '4');
+  set(g, 8, 38, '*');
+  R.push({
+    id: 'coast_stormwall', zone: 'coast', name: '海滨 · 风暴防波堤', rows: rows(g),
+    mapX: 3, mapY: 5,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'coast_smuggler', ex: 48, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'coast_beacon', ex: 3, ey: 29 },
+    ],
+  });
+}
+
+{
+  // 旧灯芯室:竖向回环终点,攀上后从升降井中段返回研究区交通网。
+  const g = grid(36, 34);
+  rect(g, 31, 33, 0, 35, '#');
+  rect(g, 25, 25, 5, 11, '=');
+  rect(g, 20, 20, 17, 23, '=');
+  rect(g, 15, 15, 7, 12, 'H');
+  rect(g, 28, 28, 4, 10, '=');
+  rect(g, 22, 22, 11, 17, '=');
+  rect(g, 17, 17, 18, 24, '=');
+  rect(g, 15, 15, 25, 30, '=');
+  rect(g, 13, 13, 21, 26, '=');
+  rect(g, 11, 13, 27, 35, '#');
+  set(g, 19, 20, 'N');
+  set(g, 14, 9, '*');
+  set(g, 10, 32, 'a');
+  set(g, 30, 14, '2');
+  set(g, 30, 25, 'e');
+  R.push({
+    id: 'coast_beacon', zone: 'coast', name: '海滨 · 旧灯芯室', rows: rows(g),
+    mapX: 2, mapY: 5, mapH: 2,
+    exits: [
+      { side: 'left', from: 28, to: 30, target: 'coast_stormwall', ex: 56, ey: 13 },
+      { side: 'right', from: 8, to: 10, target: 'lab_lift', ex: 3, ey: 20 },
+    ],
+  });
+}
+
+// ======== 沉潮地窟 tide ========
+
+{
+  // 地窟入口:长下坡后的安静地标,让玩家建立新区域方向感。
+  const g = grid(52, 17);
+  rect(g, 14, 16, 0, 51, '#');
+  rect(g, 12, 13, 12, 17, '#');
+  rect(g, 10, 13, 18, 23, '#');
+  rect(g, 12, 12, 29, 34, '=');
+  set(g, 13, 8, 'T');
+  set(g, 9, 21, '*');
+  set(g, 13, 38, '1');
+  set(g, 13, 45, '5');
+  R.push({
+    id: 'tide_entry', zone: 'tide', name: '沉潮 · 褪色门楼', rows: rows(g),
+    mapX: 7, mapY: 7,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'coast_tideworks', ex: 32, ey: 29 },
+      { side: 'right', from: 11, to: 13, target: 'tide_cistern', ex: 3, ey: 8 },
+    ],
+  });
+}
+
+{
+  // 倒悬蓄水池:上层来自门楼/海滨舱口,主路线向井底下降;井底弦膜藏支线。
+  const g = grid(36, 34);
+  rect(g, 9, 11, 0, 8, '#');
+  rect(g, 31, 33, 0, 35, '#');
+  rect(g, 31, 33, 16, 18, '%');
+  rect(g, 14, 14, 13, 19, '=');
+  rect(g, 20, 20, 23, 29, '=');
+  rect(g, 25, 25, 8, 14, '=');
+  set(g, 17, 25, 'N');
+  set(g, 24, 11, '*');
+  set(g, 30, 6, '6');
+  set(g, 30, 24, '3');
+  set(g, 8, 6, 'e');
+  R.push({
+    id: 'tide_cistern', zone: 'tide', name: '沉潮 · 倒悬蓄水池', rows: rows(g),
+    mapX: 6, mapY: 6, mapH: 2,
+    exits: [
+      { side: 'left', from: 6, to: 8, target: 'tide_entry', ex: 48, ey: 13 },
+      { side: 'right', from: 28, to: 30, target: 'tide_pumps', ex: 3, ey: 30 },
+      { side: 'down', from: 16, to: 18, target: 'tide_reliquary', ex: 4, ey: 13, needs: ['paper'] },
+    ],
+  });
+}
+
+{
+  // 无名遗龛:坠入式隐藏房,用弦膜与隐藏平台保护区域级奖励。
+  const g = grid(48, 17);
+  rect(g, 14, 16, 0, 47, '#');
+  rect(g, 8, 13, 12, 12, '%');
+  rect(g, 10, 10, 17, 21, 'H');
+  rect(g, 8, 8, 25, 29, 'H');
+  rect(g, 6, 6, 33, 38, '#');
+  set(g, 5, 35, '*');
+  set(g, 5, 37, 'b');
+  set(g, 13, 18, '5');
+  set(g, 13, 30, '6');
+  set(g, 13, 41, '*');
+  R.push({
+    id: 'tide_reliquary', zone: 'tide', name: '沉潮 · 无名遗龛', rows: rows(g),
+    mapX: 5, mapY: 8,
+    exits: [{ side: 'right', from: 11, to: 13, target: 'tide_pumps', ex: 3, ey: 21, needs: ['kanami'] }],
+  });
+}
+
+{
+  // 三阀泵房:两条入口在不同高度汇合,纵向移动平台将玩家送往研究区门厅上层。
+  const g = grid(56, 34);
+  rect(g, 31, 33, 0, 55, '#');
+  rect(g, 22, 24, 0, 8, '#');
+  rect(g, 11, 13, 47, 55, '#');
+  rect(g, 25, 25, 13, 19, '=');
+  rect(g, 22, 22, 18, 23, '=');
+  rect(g, 19, 19, 25, 31, '=');
+  rect(g, 17, 17, 33, 38, '=');
+  rect(g, 14, 14, 36, 42, '=');
+  set(g, 26, 16, 'N');
+  set(g, 21, 38, 'N');
+  set(g, 13, 39, '2');
+  set(g, 30, 20, '4');
+  set(g, 30, 36, '6');
+  set(g, 18, 28, '*');
+  set(g, 30, 48, 'h');
+  R.push({
+    id: 'tide_pumps', zone: 'tide', name: '沉潮 · 三阀泵房', rows: rows(g),
+    mapX: 5, mapY: 6, mapH: 2,
+    exits: [
+      { side: 'left', from: 28, to: 30, target: 'tide_cistern', ex: 32, ey: 30 },
+      { side: 'left', from: 19, to: 21, target: 'tide_reliquary', ex: 44, ey: 13 },
+      { side: 'right', from: 8, to: 10, target: 'lab_gate', ex: 3, ey: 10 },
+    ],
   });
 }
 
@@ -245,26 +494,62 @@ const R: RoomDef[] = [];
     id: 'lab_lift', zone: 'lab', name: '研究区 · 升降井', rows: rows(g),
     mapX: 1, mapY: 2, mapH: 2,
     exits: [
+      { side: 'left', from: 19, to: 21, target: 'coast_beacon', ex: 32, ey: 10 },
       { side: 'right', from: 11, to: 13, target: 'coast_start', ex: 3, ey: 13, needs: ['cling'] },
-      { side: 'right', from: 28, to: 30, target: 'lab_gate', ex: 3, ey: 13 },
+      { side: 'right', from: 28, to: 30, target: 'lab_gate', ex: 3, ey: 30 },
     ],
   });
 }
 
 {
-  // 门厅:自长廊坠入之处;调弦台。
-  const g = grid(56, 17);
-  rect(g, 14, 16, 0, 55, '#');
-  set(g, 13, 18, 'T');
-  set(g, 13, 30, 'S'); // 引航者商人
-  rect(g, 12, 12, 26, 29, '=');
-  set(g, 13, 44, '3');
-  set(g, 13, 50, 'h');
+  // 门厅:多高度中央枢纽。下层连主研究区/升降井,上层连沉潮地窟/弦声圣堂。
+  const g = grid(44, 34);
+  rect(g, 31, 33, 0, 43, '#');
+  rect(g, 11, 13, 0, 8, '#');
+  rect(g, 11, 13, 35, 43, '#');
+  rect(g, 22, 22, 35, 43, '#');
+  rect(g, 25, 25, 8, 14, '=');
+  rect(g, 22, 22, 13, 18, '=');
+  rect(g, 19, 19, 18, 24, '=');
+  rect(g, 14, 14, 28, 34, '=');
+  set(g, 26, 11, 'N');
+  set(g, 17, 21, 'N');
+  set(g, 30, 12, 'T');
+  set(g, 30, 24, 'S'); // 引航者商人
+  set(g, 13, 30, '3');
+  set(g, 30, 36, 'h');
   R.push({
     id: 'lab_gate', zone: 'lab', name: '研究区 · 门厅', rows: rows(g),
-    mapX: 3, mapY: 3,
+    mapX: 3, mapY: 3, mapH: 2,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'lab_lift', ex: 24, ey: 30 },
+      { side: 'left', from: 8, to: 10, target: 'tide_pumps', ex: 52, ey: 10 },
+      { side: 'left', from: 28, to: 30, target: 'lab_lift', ex: 24, ey: 30 },
+      { side: 'right', from: 8, to: 10, target: 'choir_nave', ex: 3, ey: 13 },
+      { side: 'right', from: 19, to: 21, target: 'lab_service', ex: 3, ey: 13, needs: ['dash'] },
+      { side: 'right', from: 28, to: 30, target: 'lab_observation', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 标本观察廊:上下两路围绕玻璃隔舱交错,玩家可选择平台战或地面近战。
+  const g = grid(58, 17);
+  rect(g, 14, 16, 0, 57, '#');
+  rect(g, 8, 13, 18, 18, '#');
+  rect(g, 8, 13, 39, 39, '#');
+  rect(g, 10, 10, 7, 15, '=');
+  rect(g, 8, 8, 23, 34, '=');
+  rect(g, 10, 10, 43, 51, '=');
+  set(g, 7, 28, '*');
+  set(g, 13, 12, '4');
+  set(g, 13, 26, '1');
+  set(g, 13, 34, '5');
+  set(g, 13, 47, '3');
+  R.push({
+    id: 'lab_observation', zone: 'lab', name: '研究区 · 标本观察廊', rows: rows(g),
+    mapX: 4, mapY: 4,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'lab_gate', ex: 40, ey: 30 },
       { side: 'right', from: 11, to: 13, target: 'lab_cells', ex: 3, ey: 13 },
     ],
   });
@@ -290,8 +575,32 @@ const R: RoomDef[] = [];
     id: 'lab_cells', zone: 'lab', name: '研究区 · 拘留舱', rows: rows(g),
     mapX: 4, mapY: 3,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'lab_gate', ex: 52, ey: 13 },
-      { side: 'right', from: 11, to: 13, target: 'lab_maze', ex: 3, ey: 13 },
+      { side: 'left', from: 11, to: 13, target: 'lab_observation', ex: 54, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'lab_resonance', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 谐振档案库:救出香奈美后立刻让声呐显形路径,先安全展示再加入敌人压力。
+  const g = grid(54, 17);
+  rect(g, 14, 16, 0, 53, '#');
+  rect(g, 11, 13, 12, 12, '%');
+  rect(g, 11, 11, 17, 21, 'H');
+  rect(g, 9, 9, 25, 29, 'H');
+  rect(g, 7, 7, 33, 37, 'H');
+  rect(g, 10, 10, 41, 45, '=');
+  set(g, 6, 35, '*');
+  set(g, 13, 19, '2');
+  set(g, 13, 31, '5');
+  set(g, 13, 45, '3');
+  set(g, 13, 49, 'e');
+  R.push({
+    id: 'lab_resonance', zone: 'lab', name: '研究区 · 谐振档案库', rows: rows(g),
+    mapX: 5, mapY: 4,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'lab_cells', ex: 60, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'lab_maze', ex: 3, ey: 13, needs: ['kanami'] },
     ],
   });
 }
@@ -315,7 +624,57 @@ const R: RoomDef[] = [];
     id: 'lab_maze', zone: 'lab', name: '研究区 · 弦膜密室', rows: rows(g),
     mapX: 5, mapY: 3,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'lab_cells', ex: 60, ey: 13 },
+      { side: 'left', from: 11, to: 13, target: 'lab_resonance', ex: 50, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'lab_coolant', ex: 3, ey: 8 },
+    ],
+  });
+}
+
+{
+  // 冷却中枢:从高层入口下降,移动平台穿过弦膜隔板,路线在底部重新汇合。
+  const g = grid(40, 34);
+  rect(g, 9, 11, 0, 8, '#');
+  rect(g, 31, 33, 0, 39, '#');
+  rect(g, 13, 13, 12, 18, '=');
+  rect(g, 19, 19, 24, 31, '=');
+  rect(g, 25, 25, 8, 15, '=');
+  rect(g, 16, 30, 20, 20, '%');
+  set(g, 17, 27, 'N');
+  set(g, 23, 11, 'M');
+  set(g, 18, 27, '*');
+  set(g, 30, 9, '5');
+  set(g, 30, 25, '4');
+  set(g, 30, 33, 'h');
+  R.push({
+    id: 'lab_coolant', zone: 'lab', name: '研究区 · 冷却中枢', rows: rows(g),
+    mapX: 7, mapY: 4, mapH: 2,
+    exits: [
+      { side: 'left', from: 6, to: 8, target: 'lab_maze', ex: 52, ey: 13 },
+      { side: 'right', from: 28, to: 30, target: 'lab_quarantine', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 隔离场:敌人组合考试,平台位置迫使玩家在换角、下劈与纸片闪避间切换。
+  const g = grid(62, 17);
+  rect(g, 14, 16, 0, 61, '#');
+  rect(g, 12, 12, 9, 15, '=');
+  rect(g, 10, 10, 24, 31, '=');
+  rect(g, 12, 12, 41, 47, '=');
+  rect(g, 13, 13, 33, 36, '^');
+  set(g, 13, 12, '6');
+  set(g, 13, 21, '5');
+  set(g, 13, 29, '2');
+  set(g, 13, 43, '4');
+  set(g, 13, 52, '3');
+  set(g, 9, 27, '*');
+  set(g, 13, 57, 'h');
+  R.push({
+    id: 'lab_quarantine', zone: 'lab', name: '研究区 · 失控隔离场', rows: rows(g),
+    mapX: 8, mapY: 5,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'lab_coolant', ex: 36, ey: 29 },
       { side: 'right', from: 11, to: 13, target: 'lab_matrix', ex: 3, ey: 10 },
     ],
   });
@@ -339,8 +698,133 @@ const R: RoomDef[] = [];
     id: 'lab_matrix', zone: 'lab', name: '研究区 · 矩阵适配室', rows: rows(g),
     mapX: 6, mapY: 3, mapH: 2,
     exits: [
-      { side: 'left', from: 8, to: 10, target: 'lab_maze', ex: 52, ey: 13 },
+      { side: 'left', from: 8, to: 10, target: 'lab_quarantine', ex: 58, ey: 13 },
+      { side: 'left', from: 28, to: 30, target: 'lab_service', ex: 56, ey: 13, needs: ['dash'] },
       { side: 'right', from: 8, to: 10, target: 'sky_gate', ex: 4, ey: 46 },
+    ],
+  });
+}
+
+{
+  // 检修暗线:短而危险的冲刺捷径,从矩阵室井底直接返回门厅中层。
+  const g = grid(60, 17);
+  rect(g, 14, 16, 0, 10, '#');
+  rect(g, 16, 16, 11, 19, '#');
+  rect(g, 15, 15, 11, 19, '^');
+  rect(g, 14, 16, 20, 31, '#');
+  rect(g, 16, 16, 32, 42, '#');
+  rect(g, 15, 15, 32, 42, '^');
+  rect(g, 14, 16, 43, 59, '#');
+  set(g, 10, 15, 'M');
+  set(g, 9, 37, 'M');
+  rect(g, 7, 7, 25, 29, 'H');
+  set(g, 6, 27, '*');
+  set(g, 13, 25, '3');
+  set(g, 13, 49, '6');
+  R.push({
+    id: 'lab_service', zone: 'lab', name: '研究区 · 检修暗线', rows: rows(g),
+    mapX: 4, mapY: 5,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'lab_gate', ex: 40, ey: 21 },
+      { side: 'right', from: 11, to: 13, target: 'lab_matrix', ex: 3, ey: 29, needs: ['dash'] },
+    ],
+  });
+}
+
+// ======== 弦声圣堂 choir ========
+
+{
+  // 中殿:从研究区上层进入的可选区域,调弦台与三层看台构成安全前厅。
+  const g = grid(56, 17);
+  rect(g, 14, 16, 0, 55, '#');
+  rect(g, 11, 11, 10, 17, '=');
+  rect(g, 8, 8, 23, 31, '=');
+  rect(g, 11, 11, 38, 46, '=');
+  set(g, 13, 9, 'T');
+  set(g, 7, 27, '*');
+  set(g, 13, 21, '2');
+  set(g, 13, 34, '4');
+  set(g, 13, 48, '6');
+  R.push({
+    id: 'choir_nave', zone: 'choir', name: '圣堂 · 失声中殿', rows: rows(g),
+    mapX: 3, mapY: 0,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'lab_gate', ex: 40, ey: 10 },
+      { side: 'right', from: 11, to: 13, target: 'choir_crypt', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 无词墓廊:纸片通道隐藏在柱列后,井口可坠入更深的遗物室。
+  const g = grid(60, 17);
+  rect(g, 14, 16, 0, 59, '#');
+  rect(g, 14, 16, 31, 33, '%');
+  rect(g, 8, 13, 15, 15, '%');
+  rect(g, 10, 10, 20, 25, '=');
+  rect(g, 8, 8, 37, 42, 'H');
+  set(g, 7, 39, '*');
+  set(g, 13, 22, '5');
+  set(g, 13, 41, '3');
+  set(g, 13, 50, '6');
+  R.push({
+    id: 'choir_crypt', zone: 'choir', name: '圣堂 · 无词墓廊', rows: rows(g),
+    mapX: 4, mapY: 0,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'choir_nave', ex: 52, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'choir_belfry', ex: 3, ey: 46, needs: ['cling'] },
+      { side: 'down', from: 31, to: 33, target: 'choir_reliquary', ex: 4, ey: 13, needs: ['paper'] },
+    ],
+  });
+}
+
+{
+  // 回声遗物室:只有声呐能铺出完整路径,奖励后从钟塔中层离开。
+  const g = grid(48, 17);
+  rect(g, 14, 16, 0, 47, '#');
+  rect(g, 11, 11, 10, 14, 'H');
+  rect(g, 9, 9, 18, 22, 'H');
+  rect(g, 7, 7, 26, 30, 'H');
+  rect(g, 9, 9, 35, 39, '=');
+  set(g, 6, 28, '*');
+  set(g, 8, 37, 'c');
+  set(g, 13, 17, '2');
+  set(g, 13, 31, '5');
+  set(g, 13, 42, '*');
+  R.push({
+    id: 'choir_reliquary', zone: 'choir', name: '圣堂 · 回声遗物室', rows: rows(g),
+    mapX: 5, mapY: -1,
+    exits: [{ side: 'right', from: 11, to: 13, target: 'choir_belfry', ex: 3, ey: 29, needs: ['kanami'] }],
+  });
+}
+
+{
+  // 断钟塔:三层出口把墓廊、隐藏遗物室和天穹竖廊织成跨区捷径。
+  const g = grid(36, 51);
+  rect(g, 48, 50, 0, 35, '#');
+  rect(g, 30, 32, 0, 8, '#');
+  rect(g, 10, 12, 27, 35, '#');
+  rect(g, 35, 47, 12, 13, '#');
+  rect(g, 33, 47, 17, 18, '#');
+  rect(g, 19, 33, 7, 8, '#');
+  rect(g, 17, 31, 12, 13, '#');
+  rect(g, 8, 22, 20, 21, '#');
+  rect(g, 10, 24, 25, 26, '#');
+  rect(g, 38, 38, 22, 28, '=');
+  rect(g, 24, 24, 15, 20, '=');
+  rect(g, 13, 13, 8, 14, '=');
+  set(g, 44, 15, '2');
+  set(g, 27, 10, '6');
+  set(g, 14, 23, '2');
+  set(g, 23, 17, '*');
+  set(g, 47, 27, 'e');
+  R.push({
+    id: 'choir_belfry', zone: 'choir', name: '圣堂 · 断钟塔', rows: rows(g),
+    mapX: 6, mapY: -1, mapH: 3,
+    exits: [
+      { side: 'left', from: 44, to: 46, target: 'choir_crypt', ex: 56, ey: 13 },
+      { side: 'left', from: 27, to: 29, target: 'choir_reliquary', ex: 44, ey: 13 },
+      { side: 'right', from: 7, to: 9, target: 'sky_gate', ex: 4, ey: 25, needs: ['cling'] },
     ],
   });
 }
@@ -372,6 +856,7 @@ const R: RoomDef[] = [];
     mapX: 7, mapY: 1, mapH: 3,
     exits: [
       { side: 'left', from: 44, to: 46, target: 'lab_matrix', ex: 37, ey: 10, needs: ['cling'] },
+      { side: 'left', from: 23, to: 25, target: 'choir_belfry', ex: 32, ey: 9, needs: ['cling'] },
       { side: 'right', from: 8, to: 10, target: 'sky_corridor', ex: 3, ey: 13, needs: ['cling'] },
     ],
   });
@@ -381,6 +866,7 @@ const R: RoomDef[] = [];
   // 天穹回廊:调弦台;上层高台需「弦翼」(二段跳)。
   const g = grid(64, 17);
   rect(g, 14, 16, 0, 63, '#');
+  rect(g, 14, 16, 20, 22, '%'); // 声呐档案馆的秘密坠入口
   set(g, 13, 12, 'T');
   rect(g, 12, 12, 24, 26, '=');
   // 高台:距地面 4 格,需二段跳
@@ -395,8 +881,34 @@ const R: RoomDef[] = [];
     mapX: 8, mapY: 1,
     exits: [
       { side: 'left', from: 11, to: 13, target: 'sky_gate', ex: 25, ey: 10 },
-      { side: 'right', from: 11, to: 13, target: 'sky_wing', ex: 3, ey: 13 },
-      { side: 'right', from: 7, to: 9, target: 'sky_peak', ex: 3, ey: 13, needs: ['djump'] },
+      { side: 'right', from: 11, to: 13, target: 'sky_windworks', ex: 3, ey: 13 },
+      { side: 'down', from: 20, to: 22, target: 'sky_archive', ex: 4, ey: 13, needs: ['paper', 'kanami'] },
+    ],
+  });
+}
+
+{
+  // 风箱庭:上升气流只托住空中飘飞的纸片,将 Shift 飘飞变成独立路线机制。
+  const g = grid(60, 17);
+  rect(g, 14, 16, 0, 59, '#');
+  rect(g, 13, 13, 13, 20, '^');
+  rect(g, 13, 13, 39, 47, '^');
+  set(g, 13, 17, 'U');
+  set(g, 13, 43, 'U');
+  rect(g, 8, 8, 14, 20, '=');
+  rect(g, 6, 6, 27, 33, '=');
+  rect(g, 8, 8, 41, 47, '=');
+  set(g, 5, 30, '*');
+  set(g, 13, 27, '2');
+  set(g, 13, 34, '3');
+  set(g, 13, 52, '6');
+  set(g, 13, 56, 'e');
+  R.push({
+    id: 'sky_windworks', zone: 'sky', name: '天穹 · 风箱庭', rows: rows(g),
+    mapX: 9, mapY: 1,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'sky_corridor', ex: 60, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'sky_wing', ex: 3, ey: 13, needs: ['paper'] },
     ],
   });
 }
@@ -413,33 +925,110 @@ const R: RoomDef[] = [];
   set(g, 13, 43, 'J');
   rect(g, 10, 10, 8, 11, '='); // 二段跳可及的高台
   set(g, 9, 9, '*');
+  rect(g, 10, 12, 44, 47, '#'); // 取得二段跳后从上层出口离开
   R.push({
     id: 'sky_wing', zone: 'sky', name: '天穹 · 弦翼圣所', rows: rows(g),
-    mapX: 9, mapY: 1,
-    exits: [{ side: 'left', from: 11, to: 13, target: 'sky_corridor', ex: 60, ey: 13 }],
+    mapX: 10, mapY: 1,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'sky_windworks', ex: 56, ey: 13 },
+      { side: 'right', from: 7, to: 9, target: 'sky_orrery', ex: 3, ey: 13, needs: ['djump'] },
+    ],
   });
 }
 
 {
-  // 天穹之巅:浮岛跳跃(需二段跳),通往机库。
-  const g = grid(56, 17);
-  rect(g, 14, 16, 0, 8, '#'); // 入口岛
-  rect(g, 12, 14, 14, 18, '#');
-  rect(g, 10, 12, 24, 28, '#');
-  rect(g, 8, 10, 33, 37, '#');
-  rect(g, 6, 16, 43, 55, '#'); // 终端高塔
-  set(g, 11, 16, '*');
-  set(g, 7, 35, '*');
-  rect(g, 8, 8, 19, 22, 'H'); // 隐藏平台(声呐显形)
-  set(g, 7, 20, '*');
-  set(g, 13, 20, '2');
-  set(g, 9, 31, '2');
+  // 轨道仪:二段跳后立刻进入移动平台组合题,下层尖刺迫使玩家规划落点。
+  const g = grid(64, 17);
+  rect(g, 14, 16, 0, 10, '#');
+  rect(g, 16, 16, 11, 52, '#');
+  rect(g, 15, 15, 11, 52, '^');
+  rect(g, 14, 16, 53, 63, '#');
+  set(g, 11, 16, 'M');
+  set(g, 8, 27, 'N');
+  set(g, 10, 39, 'M');
+  set(g, 7, 49, 'N');
+  rect(g, 6, 6, 30, 34, 'H');
+  set(g, 5, 32, '*');
+  set(g, 13, 7, 'e');
+  set(g, 13, 57, '2');
+  R.push({
+    id: 'sky_orrery', zone: 'sky', name: '天穹 · 失衡轨道仪', rows: rows(g),
+    mapX: 11, mapY: 1,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'sky_wing', ex: 40, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'sky_peak', ex: 3, ey: 30, needs: ['djump'] },
+    ],
+  });
+}
+
+{
+  // 云背档案馆:长廊秘密坠入口,声呐平台通向钟摆塔的技巧支线。
+  const g = grid(54, 17);
+  rect(g, 14, 16, 0, 53, '#');
+  rect(g, 8, 13, 12, 12, '%');
+  rect(g, 11, 11, 17, 21, 'H');
+  rect(g, 8, 8, 26, 30, 'H');
+  rect(g, 10, 10, 36, 41, 'H');
+  set(g, 7, 28, '*');
+  set(g, 13, 20, '5');
+  set(g, 13, 34, '3');
+  set(g, 13, 46, '6');
+  set(g, 13, 50, '*');
+  R.push({
+    id: 'sky_archive', zone: 'sky', name: '天穹 · 云背档案馆', rows: rows(g),
+    mapX: 9, mapY: 3,
+    exits: [{ side: 'right', from: 11, to: 13, target: 'sky_belltower', ex: 3, ey: 29, needs: ['kanami'] }],
+  });
+}
+
+{
+  // 钟摆塔:无人机与炮弹既是威胁也是下劈跳板,最终接入天穹之巅上层。
+  const g = grid(36, 34);
+  rect(g, 31, 33, 0, 35, '#');
+  rect(g, 10, 12, 27, 35, '#');
+  rect(g, 25, 25, 7, 13, '=');
+  rect(g, 20, 20, 20, 26, '=');
+  rect(g, 15, 15, 8, 14, '=');
+  set(g, 27, 18, 'N');
+  set(g, 23, 10, '2');
+  set(g, 18, 23, '3');
+  set(g, 13, 11, '2');
+  set(g, 14, 11, '*');
+  set(g, 30, 29, 'e');
+  R.push({
+    id: 'sky_belltower', zone: 'sky', name: '天穹 · 钟摆塔', rows: rows(g),
+    mapX: 10, mapY: 3, mapH: 2,
+    exits: [
+      { side: 'left', from: 28, to: 30, target: 'sky_archive', ex: 50, ey: 13 },
+      { side: 'right', from: 7, to: 9, target: 'sky_peak', ex: 3, ey: 9, needs: ['djump'] },
+    ],
+  });
+}
+
+{
+  // 天穹之巅:主路线与钟塔支线在不同高度汇合,攀升后进入机库装配线。
+  const g = grid(56, 34);
+  rect(g, 31, 33, 0, 10, '#');
+  rect(g, 10, 12, 0, 8, '#');
+  rect(g, 10, 12, 47, 55, '#');
+  rect(g, 26, 28, 15, 20, '#');
+  rect(g, 21, 23, 25, 30, '#');
+  rect(g, 16, 18, 34, 39, '#');
+  rect(g, 12, 12, 41, 46, 'H');
+  set(g, 25, 17, '*');
+  set(g, 20, 27, '2');
+  set(g, 15, 36, '*');
+  set(g, 11, 43, '*');
+  set(g, 24, 26, 'U');
+  set(g, 30, 7, 'e');
+  set(g, 17, 36, '2');
   R.push({
     id: 'sky_peak', zone: 'sky', name: '天穹 · 之巅', rows: rows(g),
-    mapX: 9, mapY: 0,
+    mapX: 12, mapY: 0, mapH: 2,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'sky_corridor', ex: 60, ey: 9 },
-      { side: 'right', from: 3, to: 5, target: 'hangar_gate', ex: 3, ey: 13 },
+      { side: 'left', from: 28, to: 30, target: 'sky_orrery', ex: 60, ey: 13 },
+      { side: 'left', from: 7, to: 9, target: 'sky_belltower', ex: 32, ey: 9 },
+      { side: 'right', from: 7, to: 9, target: 'hangar_assembly', ex: 3, ey: 13 },
     ],
   });
 }
@@ -447,18 +1036,74 @@ const R: RoomDef[] = [];
 // ======== 塔顶机库 hangar ========
 
 {
+  // 装配线:纸片、飘飞、冲刺与敌弹下劈的综合考试,下方藏反应堆旁路。
+  const g = grid(64, 17);
+  rect(g, 14, 16, 0, 63, '#');
+  rect(g, 14, 16, 30, 32, '%');
+  rect(g, 8, 13, 15, 15, '%');
+  rect(g, 10, 10, 20, 25, '=');
+  rect(g, 8, 8, 36, 42, 'H');
+  rect(g, 11, 11, 49, 55, '=');
+  set(g, 9, 22, 'M');
+  set(g, 7, 39, '*');
+  set(g, 13, 10, '6');
+  set(g, 13, 23, '3');
+  set(g, 13, 38, '4');
+  set(g, 13, 51, '5');
+  set(g, 13, 58, '2');
+  R.push({
+    id: 'hangar_assembly', zone: 'hangar', name: '机库 · 悬吊装配线', rows: rows(g),
+    mapX: 13, mapY: 0,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'sky_peak', ex: 52, ey: 9 },
+      { side: 'right', from: 11, to: 13, target: 'hangar_gate', ex: 3, ey: 30 },
+      { side: 'down', from: 30, to: 32, target: 'hangar_reactor', ex: 4, ey: 13, needs: ['paper'] },
+    ],
+  });
+}
+
+{
+  // 反应堆旁路:可选高压战斗房,完成后从前厅上层回到 Boss 路线。
+  const g = grid(56, 17);
+  rect(g, 14, 16, 0, 55, '#');
+  rect(g, 13, 13, 17, 20, '^');
+  rect(g, 13, 13, 35, 38, '^');
+  rect(g, 10, 10, 8, 13, '=');
+  rect(g, 8, 8, 24, 30, '=');
+  rect(g, 10, 10, 43, 48, '=');
+  set(g, 7, 27, '*');
+  set(g, 7, 25, 'd');
+  set(g, 13, 11, '5');
+  set(g, 13, 16, '6');
+  set(g, 13, 27, '4');
+  set(g, 13, 33, '2');
+  set(g, 13, 45, '3');
+  set(g, 13, 50, '*');
+  R.push({
+    id: 'hangar_reactor', zone: 'hangar', name: '机库 · 反应堆旁路', rows: rows(g),
+    mapX: 13, mapY: 2,
+    exits: [{ side: 'right', from: 11, to: 13, target: 'hangar_gate', ex: 3, ey: 9 }],
+  });
+}
+
+{
   // 机库前厅:大战前的宁静;调弦台。
-  const g = grid(40, 17);
-  rect(g, 14, 16, 0, 39, '#');
-  set(g, 13, 16, 'T');
-  set(g, 13, 24, 'h');
-  set(g, 13, 27, 'e');
+  const g = grid(40, 34);
+  rect(g, 31, 33, 0, 39, '#');
+  rect(g, 10, 12, 0, 8, '#');
+  rect(g, 23, 23, 12, 18, '=');
+  rect(g, 17, 17, 22, 28, '=');
+  set(g, 21, 15, 'N');
+  set(g, 30, 16, 'T');
+  set(g, 30, 24, 'h');
+  set(g, 30, 27, 'e');
   R.push({
     id: 'hangar_gate', zone: 'hangar', name: '机库 · 前厅', rows: rows(g),
-    mapX: 10, mapY: 0,
+    mapX: 14, mapY: 0, mapH: 2,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'sky_peak', ex: 52, ey: 5 },
-      { side: 'right', from: 11, to: 13, target: 'hangar_boss', ex: 3, ey: 13 },
+      { side: 'left', from: 7, to: 9, target: 'hangar_reactor', ex: 52, ey: 13 },
+      { side: 'left', from: 28, to: 30, target: 'hangar_assembly', ex: 60, ey: 13 },
+      { side: 'right', from: 28, to: 30, target: 'hangar_boss', ex: 3, ey: 13 },
     ],
   });
 }
@@ -474,8 +1119,8 @@ const R: RoomDef[] = [];
   set(g, 13, 33, 'B');
   R.push({
     id: 'hangar_boss', zone: 'hangar', name: '塔顶机库', rows: rows(g),
-    mapX: 11, mapY: 0,
-    exits: [{ side: 'left', from: 11, to: 13, target: 'hangar_gate', ex: 36, ey: 13 }],
+    mapX: 15, mapY: 1,
+    exits: [{ side: 'left', from: 11, to: 13, target: 'hangar_gate', ex: 36, ey: 30 }],
   });
 }
 
@@ -519,6 +1164,27 @@ export interface ShopItem {
   desc: string;
   cost: number;
 }
+
+export interface HiddenChip {
+  id: string;
+  name: string;
+  desc: string;
+}
+
+/** 支线尽头的独有遗珍,不进入商店。 */
+export const HIDDEN_CHIPS: HiddenChip[] = [
+  { id: 'relic_beacon', name: '遗珍·不熄灯芯', desc: '生命上限 +10' },
+  { id: 'relic_tide', name: '遗珍·沉潮薄鳃', desc: '空中飘飞的弦能消耗 -25%' },
+  { id: 'relic_echo', name: '遗珍·无词音叉', desc: '隐藏平台显形时间延长至 9 秒' },
+  { id: 'relic_reactor', name: '遗珍·余热电枢', desc: '相位突进恢复时间 -40%' },
+];
+
+export const HIDDEN_CHIP_MARKERS: Readonly<Record<string, string>> = {
+  a: 'relic_beacon',
+  b: 'relic_tide',
+  c: 'relic_echo',
+  d: 'relic_reactor',
+};
 
 /** 引航者商店:记忆芯片(购入后永久生效) */
 export const SHOP_ITEMS: ShopItem[] = [

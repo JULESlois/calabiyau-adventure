@@ -266,7 +266,7 @@ export class Player {
       (this.onGround || !this.airDashed)
     ) {
       this.dashT = DASH_TIME;
-      this.dashCdT = DASH_CD;
+      this.dashCdT = ps.world.chips.has('relic_reactor') ? DASH_CD * 0.6 : DASH_CD;
       if (!this.onGround) this.airDashed = true;
       this.vy = 0;
       ps.sfx('doubleJump');
@@ -313,12 +313,14 @@ export class Player {
     }
 
     if (this.paper) {
-      const drain =
+      const baseDrain =
         this.stringMode === 'wall'
           ? WALL_STRING_DRAIN
           : this.stringMode === 'glide'
             ? GLIDE_STRING_DRAIN
             : STRING_DRAIN;
+      const drain =
+        this.stringMode === 'glide' && ps.world.chips.has('relic_tide') ? baseDrain * 0.75 : baseDrain;
       this.energy = Math.max(0, this.energy - drain * dt);
       this.regenDelay = 0.55;
       if (this.energy <= 0) {

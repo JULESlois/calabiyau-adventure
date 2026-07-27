@@ -25,6 +25,8 @@ import { clamp, lerp, rectsOverlap, type Rect } from '../utils';
 import type { Engine, GameState } from '../Engine';
 import {
   ABILITY_INFO,
+  HIDDEN_CHIPS,
+  HIDDEN_CHIP_MARKERS,
   ROOMS,
   ROOM_LIST,
   SHOP_ITEMS,
@@ -57,6 +59,13 @@ interface Mover {
   phase: number;
 }
 
+interface Updraft {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 interface BenchSpot {
   x: number;
   y: number;
@@ -72,7 +81,14 @@ interface AbilitySpot {
 type Overlay = 'none' | 'pause' | 'dead' | 'ability' | 'victory' | 'map' | 'shop' | 'fast_travel';
 
 const TOTAL_CRYSTALS = totalCrystals();
-const ZONE_INDEX: Record<string, number> = { coast: 1, lab: 2, sky: 3, hangar: 4 };
+const ZONE_INDEX: Record<string, number> = {
+  coast: 1,
+  tide: 2,
+  lab: 2,
+  choir: 4,
+  sky: 3,
+  hangar: 4,
+};
 
 export class PlayState implements GameState, WorldApi {
   roomId: string;
@@ -84,8 +100,9 @@ export class PlayState implements GameState, WorldApi {
   boss: Boss | null = null;
   playerBullets: PlayerBullet[] = [];
   enemyBullets: EnemyBullet[] = [];
-  pickups: (Pickup & { id?: string })[] = [];
+  pickups: (Pickup & { id?: string; chipId?: string })[] = [];
   movers: Mover[] = [];
+  updrafts: Updraft[] = [];
   turrets: CatTurret[] = [];
   darts: SonarDart[] = [];
   /** 显形中的隐藏平台:tile 索引 → 剩余秒数 */
@@ -170,6 +187,18 @@ export class PlayState implements GameState, WorldApi {
           }
           break;
         }
+        case 'a':
+        case 'b':
+        case 'c':
+        case 'd': {
+          const chipId = HIDDEN_CHIP_MARKERS[s.char];
+          if (!world.chips.has(chipId)) {
+            const pk = makePickup(cx, s.row * TILE + TILE / 2, 'relic') as Pickup & { chipId?: string };
+            pk.chipId = chipId;
+            this.pickups.push(pk);
+          }
+          break;
+        }
         case 'h':
           this.pickups.push(makePickup(cx, s.row * TILE + TILE / 2, 'heart'));
           break;
@@ -210,6 +239,9 @@ export class PlayState implements GameState, WorldApi {
             prevX: cx, prevY: s.row * TILE, w: 40, h: 6,
             axis: 'v', range: 62, speed: 0.9, phase: s.col * 0.7,
           });
+          break;
+        case 'U':
+          this.updrafts.push({ x: cx - 48, y: bottom - 104, w: 96, h: 104 });
           break;
         case 'B':
           if (world.flags.has('boss:guardian')) {
@@ -500,6 +532,7 @@ export class PlayState implements GameState, WorldApi {
 
     // 玩家
     this.player.update(dt, this);
+    this.applyUpdrafts(dt);
     this.rideMovers();
 
     // 房间出口(可能切换状态,之后立即返回)
@@ -840,7 +873,7 @@ export class PlayState implements GameState, WorldApi {
       for (let c = c0; c <= c1; c++) {
         if (this.level.tiles[r * this.level.w + c] !== T_HIDDEN) continue;
         if (!this.hiddenReveal.has(r * this.level.w + c)) fresh = true;
-        this.hiddenReveal.set(r * this.level.w + c, 6);
+        this.hiddenReveal.set(r * this.level.w + c, this.world.chips.has('relic_echo') ? 9 : 6);
       }
     }
     if (fresh) this.sfx('crystal');
@@ -886,6 +919,28 @@ export class PlayState implements GameState, WorldApi {
         p.onGround = true;
         p.jumpsUsed = 0;
         p.x += m.x - m.prevX;
+      }
+    }
+  }
+
+  private applyUpdrafts(dt: number): void {
+    const p = this.player;
+    if (p.stringMode !== 'glide') return;
+    const pr = p.rect();
+    for (const u of this.updrafts) {
+      if (!rectsOverlap(pr, u)) continue;
+      p.vy = Math.max(-150, p.vy - 520 * dt);
+      if (Math.random() < 0.35) {
+        this.particles.spawn({
+          x: p.x + (Math.random() - 0.5) * 14,
+          y: p.y - Math.random() * p.h,
+          vx: (Math.random() - 0.5) * 12,
+          vy: -40 - Math.random() * 35,
+          life: 0.35,
+          color: '#e8f4ff',
+          shape: 'paper',
+          size: 1,
+        });
       }
     }
   }
@@ -1176,6 +1231,21 @@ export class PlayState implements GameState, WorldApi {
             this.sfx('crystal');
             this.particles.burst(pk.x, pk.y, 10, '#ff8ad0', 80, 0.5, 'spark');
             break;
+          case 'relic': {
+            if (pk.chipId) {
+              this.world.chips.add(pk.chipId);
+              if (pk.chipId === 'relic_beacon') {
+                this.world.hpMax += 10;
+                p.hp = Math.min(this.world.hpMax, p.hp + 10);
+              }
+              const relic = HIDDEN_CHIPS.find((item) => item.id === pk.chipId);
+              if (relic) this.toast(`获得 ${relic.name}`);
+              this.engine.persistWorld();
+            }
+            this.sfx('crystal');
+            this.particles.burst(pk.x, pk.y, 14, '#ffe9a8', 95, 0.65, 'spark');
+            break;
+          }
           default:
             break;
         }
@@ -1222,6 +1292,26 @@ export class PlayState implements GameState, WorldApi {
     ctx.translate(-cx, -cy);
 
     this.renderTiles(ctx, cx, cy);
+
+    // 上升气流:只对空中飘飞状态生效。
+    for (const u of this.updrafts) {
+      ctx.save();
+      ctx.globalAlpha = 0.07;
+      ctx.fillStyle = this.zone.theme.accent;
+      ctx.fillRect(u.x, u.y, u.w, u.h);
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = this.zone.theme.accent;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 9; i++) {
+        const xx = u.x + 7 + ((i * 29 + this.time * 24) % Math.max(1, u.w - 14));
+        const yy = u.y + u.h - ((i * 31 + this.time * 46) % u.h);
+        ctx.beginPath();
+        ctx.moveTo(Math.round(xx), Math.round(yy + 9));
+        ctx.quadraticCurveTo(xx + Math.sin(this.time * 2 + i) * 4, yy + 4, xx, yy);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
     // 移动平台
     const theme = this.zone.theme;
@@ -1541,8 +1631,34 @@ export class PlayState implements GameState, WorldApi {
     const oy = Math.round((VIEW_H - (maxY - minY + 1) * ch) / 2) + 8;
 
     const zoneColor: Record<string, string> = {
-      coast: '#c2743e', lab: '#5a78c8', sky: '#a8b0cc', hangar: '#c85a5c',
+      coast: '#c2743e', tide: '#58a894', lab: '#5a78c8',
+      choir: '#b878b8', sky: '#a8b0cc', hangar: '#c85a5c',
     };
+
+    // 已探索房间之间的连线,让地图呈现真实回环而不是孤立色块。
+    const linked = new Set<string>();
+    ctx.lineWidth = 1;
+    for (const r of ROOM_LIST) {
+      if (!this.world.visited.has(r.id)) continue;
+      for (const e of r.exits) {
+        if (!this.world.visited.has(e.target)) continue;
+        const key = [r.id, e.target].sort().join('|');
+        if (linked.has(key)) continue;
+        linked.add(key);
+        const target = ROOMS[e.target];
+        const x0 = ox + (r.mapX - minX + 0.5) * cw;
+        const y0 = oy + (r.mapY - minY + (r.mapH ?? 1) / 2) * ch;
+        const x1 = ox + (target.mapX - minX + 0.5) * cw;
+        const y1 = oy + (target.mapY - minY + (target.mapH ?? 1) / 2) * ch;
+        ctx.globalAlpha = 0.16;
+        ctx.strokeStyle = zoneColor[r.zone];
+        ctx.beginPath();
+        ctx.moveTo(Math.round(x0), Math.round(y0));
+        ctx.lineTo(Math.round(x1), Math.round(y1));
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
 
     for (const r of ROOM_LIST) {
       if (!this.world.visited.has(r.id)) continue;
@@ -1574,7 +1690,7 @@ export class PlayState implements GameState, WorldApi {
     ctx.fillText('欧拉 · 弦络图', VIEW_W / 2, 22);
     ctx.font = '8px "SimSun", "Songti SC", serif';
     ctx.fillStyle = '#8a7a98';
-    ctx.fillText(`当前:${this.room.name}    ◆ 弦晶 ${this.world.crystals.size}/${TOTAL_CRYSTALS}    · 青点为调弦台`, VIEW_W / 2, VIEW_H - 24);
+    ctx.fillText(`${this.room.name}    ◆ ${this.world.crystals.size}/${TOTAL_CRYSTALS}`, VIEW_W / 2, VIEW_H - 24);
     ctx.fillText('Tab / Esc 关闭', VIEW_W / 2, VIEW_H - 12);
     ctx.textAlign = 'left';
   }

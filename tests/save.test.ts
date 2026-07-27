@@ -36,6 +36,20 @@ test('valid saves are normalized before deserialization', () => {
   assert.equal(world.dust, 80);
 });
 
+test('hidden relic chips persist and contribute their permanent stat bonus', () => {
+  const parsed = parseWorldSave({
+    ...validSave,
+    chips: ['chip_hp', 'relic_beacon', 'relic_echo'],
+    hpMax: 9999,
+  });
+
+  assert.ok(parsed);
+  assert.equal(parsed.hpMax, 135);
+  const world = WorldState.deserialize(parsed);
+  assert.equal(world.hpMax, 135);
+  assert.deepEqual([...world.chips], ['chip_hp', 'relic_beacon', 'relic_echo']);
+});
+
 test('invalid or partial v2 saves are rejected without throwing', () => {
   const invalidValues: unknown[] = [
     null,

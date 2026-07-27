@@ -3,10 +3,10 @@
 
 import type { CharId } from '../types';
 import { MAX_HP, MAX_STRING } from '../constants';
-import { ROOMS, SHOP_ITEMS, START_ROOM, type Ability } from './world';
+import { HIDDEN_CHIPS, ROOMS, SHOP_ITEMS, START_ROOM, type Ability } from './world';
 
 const KNOWN_ABILITIES = new Set<Ability>(['paper', 'cling', 'djump', 'dash', 'kanami']);
-const KNOWN_CHIPS = new Set(SHOP_ITEMS.map((item) => item.id));
+const KNOWN_CHIPS = new Set([...SHOP_ITEMS, ...HIDDEN_CHIPS].map((item) => item.id));
 
 export interface WorldSave {
   version: 2;
@@ -86,7 +86,7 @@ export class WorldState {
     w.cleared = !!d.cleared;
     w.dust = typeof d.dust === 'number' && Number.isSafeInteger(d.dust) ? Math.max(0, d.dust) : 0;
     for (const c of d.chips ?? []) if (KNOWN_CHIPS.has(c)) w.chips.add(c);
-    w.hpMax = w.chips.has('chip_hp') ? MAX_HP + 25 : MAX_HP;
+    w.hpMax = MAX_HP + (w.chips.has('chip_hp') ? 25 : 0) + (w.chips.has('relic_beacon') ? 10 : 0);
     w.hp = Math.min(w.hp, w.hpMax);
     return w;
   }

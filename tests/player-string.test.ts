@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DT, GLIDE_FALL_SPEED, WALL_JUMP_VY } from '../src/game/constants';
+import { DASH_CD, DT, GLIDE_FALL_SPEED, WALL_JUMP_VY } from '../src/game/constants';
 import { Player } from '../src/game/entities/Player';
 import type { Action } from '../src/game/Input';
 import { T_EMPTY, T_SOLID } from '../src/game/levels/levels';
@@ -283,6 +283,32 @@ test('glide consumes jump input without triggering an extra airborne jump', () =
   assert.equal(player.jumpBuffer, 0);
   assert.ok(player.vy >= 0);
   assert.ok(player.vy <= GLIDE_FALL_SPEED);
+});
+
+test('hidden relics reduce glide drain and dash recovery without changing input rules', () => {
+  const normal = makeState(['paper']);
+  const relic = makeState(['paper']);
+  relic.state.world.chips.add('relic_tide');
+  const normalPlayer = new Player(120, 80);
+  const relicPlayer = new Player(120, 80);
+  for (const input of [normal.input, relic.input]) {
+    input.held.add('paper');
+    input.justPressed.add('paper');
+  }
+  normalPlayer.update(DT, normal.state);
+  relicPlayer.update(DT, relic.state);
+  const normalDrain = 100 - normalPlayer.energy;
+  const relicDrain = 100 - relicPlayer.energy;
+  assert.ok(relicDrain < normalDrain);
+  assert.ok(Math.abs(relicDrain / normalDrain - 0.75) < 0.01);
+
+  const dash = makeState(['dash']);
+  dash.state.world.chips.add('relic_reactor');
+  dash.input.justPressed.add('dash');
+  const dashPlayer = new Player(120, 80);
+  dashPlayer.onGround = true;
+  dashPlayer.update(DT, dash.state);
+  assert.equal(dashPlayer.dashCdT, DASH_CD * 0.6);
 });
 
 test('glide pose leans the character head toward the facing direction', () => {

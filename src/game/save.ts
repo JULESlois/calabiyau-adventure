@@ -1,11 +1,11 @@
 // 存档 v2:世界状态(能力/旗标/收集/地图/重生锚)整体序列化。
 import { MAX_HP } from './constants';
-import { ROOMS, SHOP_ITEMS, type Ability } from './world/world';
+import { HIDDEN_CHIPS, ROOMS, SHOP_ITEMS, type Ability } from './world/world';
 import type { WorldSave } from './world/WorldState';
 
 const KEY = 'calabiyau_stringbound_save_v2';
 const ABILITIES = new Set<Ability>(['paper', 'cling', 'djump', 'dash', 'kanami']);
-const CHIPS = new Set(SHOP_ITEMS.map((item) => item.id));
+const CHIPS = new Set([...SHOP_ITEMS, ...HIDDEN_CHIPS].map((item) => item.id));
 const MAX_LIST_LENGTH = 4096;
 const MAX_VALUE_LENGTH = 256;
 
@@ -45,7 +45,7 @@ export function parseWorldSave(value: unknown): WorldSave | null {
   ) {
     return null;
   }
-  const hpMax = chips.includes('chip_hp') ? MAX_HP + 25 : MAX_HP;
+  const hpMax = MAX_HP + (chips.includes('chip_hp') ? 25 : 0) + (chips.includes('relic_beacon') ? 10 : 0);
 
   return {
     version: 2,

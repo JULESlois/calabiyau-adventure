@@ -748,7 +748,13 @@ export function drawPickup(
 
   // 辉光
   ctx.globalCompositeOperation = 'lighter';
-  const glowC = kind === 'heart' ? 'rgba(255,80,110,0.14)' : kind === 'energy' ? 'rgba(110,230,255,0.14)' : 'rgba(255,120,200,0.16)';
+  const glowC = kind === 'heart'
+    ? 'rgba(255,80,110,0.14)'
+    : kind === 'energy'
+      ? 'rgba(110,230,255,0.14)'
+      : kind === 'relic'
+        ? 'rgba(255,220,130,0.18)'
+        : 'rgba(255,120,200,0.16)';
   ctx.fillStyle = glowC;
   ctx.beginPath();
   ctx.arc(0, -1, 8 + Math.sin(t * 5) * 1.5, 0, Math.PI * 2);
@@ -787,6 +793,17 @@ export function drawPickup(
       px(ctx, -1, 0, 2, 2, '#b0508e');
       ctx.globalAlpha = 1;
       px(ctx, -1, -4, 1, 2, '#fff0fa');
+      break;
+    }
+    case 'relic': {
+      const glow = 0.7 + Math.sin(t * 4) * 0.25;
+      ctx.globalAlpha = glow;
+      px(ctx, -4, -5, 8, 10, '#49361b');
+      px(ctx, -3, -4, 6, 8, '#d8ae58');
+      px(ctx, -1, -6, 2, 12, '#ffe9a8');
+      px(ctx, -2, -2, 4, 4, '#8ee8f4');
+      px(ctx, -1, -1, 2, 2, '#effcff');
+      ctx.globalAlpha = 1;
       break;
     }
     default:

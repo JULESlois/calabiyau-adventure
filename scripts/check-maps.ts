@@ -6,6 +6,7 @@ import { ROOMS, ROOM_LIST, START_ROOM, ZONES, type Ability } from '../src/game/w
 declare const process: { exit(code: number): void };
 
 let errors = 0;
+const knownSpawns = new Set('PTFWJGDS*heabcd123456MNUB'.split(''));
 const err = (msg: string) => {
   errors++;
   console.error(`  [错误] ${msg}`);
@@ -30,7 +31,7 @@ for (const room of ROOM_LIST) {
 
   // 地面实体下方必须有支撑('2' 浮游炮除外)
   for (const s of lvl.spawns) {
-    if (!'PTFWJGDS13456B'.includes(s.char)) continue;
+    if (!'PTFWJGDSabcd13456B'.includes(s.char)) continue;
     let supported = false;
     for (let r = s.row + 1; r < lvl.h; r++) {
       const t = tileAt(s.col, r);
@@ -91,6 +92,9 @@ for (const room of ROOM_LIST) {
   }
 
   const chars = lvl.spawns.map((s) => s.char);
+  for (const ch of chars) {
+    if (!knownSpawns.has(ch)) err(`未知生成标记: ${ch}`);
+  }
   const count = (c: string) => chars.filter((x) => x === c).length;
   console.log(
     `  [通过] 尺寸 ${lvl.w}×${lvl.h},出口 ${room.exits.length},弦晶 ${count('*')},敌人 ${
@@ -108,11 +112,50 @@ if (globalCount('B') !== 1) err(`Boss B 数量 = ${globalCount('B')},应为 1`);
 for (const ch of ['F', 'W', 'J', 'G', 'D']) {
   if (globalCount(ch) !== 1) err(`能力 ${ch} 数量 = ${globalCount(ch)},应为 1`);
 }
+for (const ch of ['a', 'b', 'c', 'd']) {
+  if (globalCount(ch) !== 1) err(`隐藏遗珍 ${ch} 数量 = ${globalCount(ch)},应为 1`);
+}
 if (globalCount('S') !== 1) err(`商人 S 数量 = ${globalCount('S')},应为 1`);
 for (const z of Object.values(ZONES)) {
   const benches = ROOM_LIST.filter((r) => r.zone === z.id && r.rows.some((row) => row.includes('T')));
   if (benches.length === 0) err(`场景 ${z.name} 没有调弦台`);
 }
+
+// ---------------- 世界规模与拓扑预算 ----------------
+if (ROOM_LIST.length < 38) err(`房间总数 ${ROOM_LIST.length},扩展世界至少需要 38 间`);
+if (Object.keys(ZONES).length < 6) err(`场景总数 ${Object.keys(ZONES).length},至少需要 6 个主题区域`);
+if (globalCount('*') < 40) err(`弦晶总数 ${globalCount('*')},探索奖励密度不足`);
+
+const edges = new Set<string>();
+const neighbours = new Map<string, Set<string>>();
+for (const room of ROOM_LIST) neighbours.set(room.id, new Set());
+for (const room of ROOM_LIST) {
+  for (const exit of room.exits) {
+    const key = [room.id, exit.target].sort().join('|');
+    edges.add(key);
+    neighbours.get(room.id)?.add(exit.target);
+    neighbours.get(exit.target)?.add(room.id);
+  }
+}
+const cycleRank = edges.size - ROOM_LIST.length + 1;
+const junctions = [...neighbours.values()].filter((links) => links.size >= 3).length;
+const dynamicRooms = ROOM_LIST.filter((room) => room.rows.some((row) => /[MNU]/.test(row))).length;
+if (cycleRank < 8) err(`世界独立环路仅 ${cycleRank},至少需要 8 个`);
+if (junctions < 10) err(`三向以上枢纽仅 ${junctions},至少需要 10 个`);
+if (dynamicRooms < 12) err(`使用移动平台/气流的房间仅 ${dynamicRooms},至少需要 12 个`);
+
+const occupiedMapCells = new Map<string, string>();
+for (const room of ROOM_LIST) {
+  for (let y = room.mapY; y < room.mapY + (room.mapH ?? 1); y++) {
+    const key = `${room.mapX},${y}`;
+    const previous = occupiedMapCells.get(key);
+    if (previous) err(`地图格 ${key} 被 ${previous} 与 ${room.id} 重叠占用`);
+    else occupiedMapCells.set(key, room.id);
+  }
+}
+console.log(
+  `  [通过] 世界规模 ${ROOM_LIST.length} 房间 / ${Object.keys(ZONES).length} 区域 / ${edges.size} 连接 / ${cycleRank} 环路 / ${junctions} 枢纽`,
+);
 
 // ---------------- 能力推进可达性(BFS 到不动点) ----------------
 const abilityOf: Record<string, Ability> = { F: 'paper', W: 'cling', J: 'djump', D: 'dash', G: 'kanami' };
