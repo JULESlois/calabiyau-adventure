@@ -548,6 +548,25 @@ export class Player {
     return false;
   }
 
+  /** 返回本帧脚底向下跨过的首个可站立砖块顶面。 */
+  private landingSurfaceY(ps: PlayState, prevFeet: number, nextFeet: number): number | null {
+    const c0 = Math.floor((this.x - this.w / 2) / TILE);
+    const c1 = Math.floor((this.x + this.w / 2 - 0.001) / TILE);
+    const rowStart = Math.max(0, Math.floor((prevFeet - 0.001) / TILE));
+    const rowEnd = Math.floor(nextFeet / TILE);
+
+    for (let row = rowStart; row <= rowEnd; row++) {
+      const top = row * TILE;
+      if (prevFeet > top + 0.5 || nextFeet < top) continue;
+
+      for (let c = c0; c <= c1; c++) {
+        const tile = ps.tileAt(c, row);
+        if (this.solidForMe(tile) || (tile === T_ONEWAY && this.dropTimer <= 0)) return top;
+      }
+    }
+    return null;
+  }
+
   /** 检查指定方向 (dir: -1 左 / 1 右) 是否紧贴普通实体墙 (排除弦膜%) */
   nearSolidWall(ps: PlayState, dir: number): boolean {
     const r = this.rect();
@@ -598,34 +617,14 @@ export class Player {
     if (this.vy >= 0) {
       // 下落:检查实体 + 单向平台
       const prevFeet = this.y;
-      const r: Rect = { x: this.x - this.w / 2, y: ny - this.h, w: this.w, h: this.h };
-      let landed = false;
-      if (this.rectBlocked(ps, r)) {
+      const surfaceY = this.landingSurfaceY(ps, prevFeet, ny);
+      let landed = surfaceY !== null;
+      if (surfaceY !== null) {
+        // 脚底直接吸附到砖块顶面，避免逐像素回退留下 1px 间隙。
+        ny = surfaceY;
+      } else if (this.rectBlocked(ps, { x: this.x - this.w / 2, y: ny - this.h, w: this.w, h: this.h })) {
+        // 异常重叠时保留逐像素脱困，正常落地由上方的跨面检测处理。
         landed = true;
-      } else if (this.dropTimer <= 0) {
-        // 单向平台:仅当之前脚在平台顶上方
-        const rowNew = Math.floor((ny - 0.001) / TILE);
-        const rowPrev = Math.floor((prevFeet - 0.001) / TILE);
-        if (rowNew > rowPrev || (this.vy > 0 && prevFeet <= rowNew * TILE + 0.5)) {
-          const c0 = Math.floor((this.x - this.w / 2) / TILE);
-          const c1 = Math.floor((this.x + this.w / 2 - 0.001) / TILE);
-          for (let row = Math.max(rowPrev, 0); row <= rowNew; row++) {
-            const top = row * TILE;
-            if (prevFeet <= top + 0.5 && ny >= top) {
-              for (let c = c0; c <= c1; c++) {
-                if (ps.tileAt(c, row) === T_ONEWAY) {
-                  ny = top;
-                  landed = true;
-                  break;
-                }
-              }
-            }
-            if (landed) break;
-          }
-        }
-      }
-      if (landed && this.rectBlocked(ps, { x: this.x - this.w / 2, y: ny - this.h, w: this.w, h: this.h })) {
-        // 从实体块上方精确落地
         let steps = Math.ceil(this.vy * dt) + 1;
         while (steps-- > 0 && this.rectBlocked(ps, { x: this.x - this.w / 2, y: ny - this.h, w: this.w, h: this.h })) {
           ny -= 1;

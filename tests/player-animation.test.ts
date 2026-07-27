@@ -81,6 +81,24 @@ test('a real downward impact starts one landing animation and normal ground cont
   assert.ok(player.landingAnimT < landingAfterImpact);
 });
 
+test('standing and walking stay grounded on the exact solid tile top every frame', () => {
+  const floor = (_col: number, row: number) => (row >= 8 ? T_SOLID : T_EMPTY);
+
+  for (const action of [null, 'right'] as const) {
+    const { input, state } = makeState(floor);
+    const player = new Player(120, 128);
+    player.onGround = true;
+    if (action) input.held.add(action);
+
+    for (let frame = 0; frame < 12; frame++) {
+      player.update(DT, state);
+      assert.equal(player.y, 128, `${action ?? 'idle'} frame ${frame}: feet left the tile top`);
+      assert.equal(player.vy, 0, `${action ?? 'idle'} frame ${frame}: vertical speed was not cleared`);
+      assert.equal(player.onGround, true, `${action ?? 'idle'} frame ${frame}: ground state flickered`);
+    }
+  }
+});
+
 test('reversing direction at speed starts a short turning transition', () => {
   const floor = (_col: number, row: number) => (row >= 8 ? T_SOLID : T_EMPTY);
   const { input, state } = makeState(floor);
