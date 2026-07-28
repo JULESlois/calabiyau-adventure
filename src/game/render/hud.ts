@@ -1,4 +1,4 @@
-import { MAX_STRING, VIEW_W, VIEW_H } from '../constants';
+import { VIEW_W, VIEW_H } from '../constants';
 import type { Player } from '../entities/Player';
 import type { Boss } from '../entities/boss';
 import type { WorldState } from '../world/WorldState';
@@ -129,7 +129,7 @@ export function drawHUD(
   const hpFill = lowHp && Math.floor(performance.now() / 300) % 2 === 0 ? '#e04a5c' : '#a82838';
   ornateBar(ctx, 38, 19, 72, 5, player.hp / world.hpMax, hpFill, '#e8707c', '#26090f');
   // 弦能条
-  ornateBar(ctx, 38, 27, 72, 4, player.energy / MAX_STRING, '#4ab4cc', '#a8ecf4', '#0a2028');
+  ornateBar(ctx, 38, 27, 72, 4, player.energy / world.energyMax, '#4ab4cc', '#a8ecf4', '#0a2028');
 
   // ---- 技能符印(菱形)----
   const cd = player.skillCd[player.char];

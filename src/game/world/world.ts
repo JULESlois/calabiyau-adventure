@@ -4,7 +4,7 @@
 // 房间网格用建造函数生成(rect/set),避免手写 ASCII 对齐错误。
 // 图例(与旧版一致,新增几种):
 //   #  实体砖块      =  单向平台      ^  尖刺        %  弦膜(纸片形态可穿过)
-//   H  隐藏平台(香奈美声呐显形后短暂实体化)
+//   H  隐藏平台(香奈美声呐显形后短暂实体化)      &  极性弦膜(I 终端切换)
 //   P  新游戏出生点  T  调弦台(休息点/重生锚)      E  终局传送门(Boss 房)
 //   F  能力·弦化     W  能力·矩阵适配(蹬墙跳)      J  能力·弦翼(二段跳)
 //   D  能力·相位突进(冲刺)      S  引航者商人(记忆芯片商店)
@@ -13,8 +13,10 @@
 //   a/b/c/d  隐藏遗珍芯片(灯芯/潮息/回声/反应堆)
 //   1  巡逻机器人    2  浮游炮        3  炮塔      4  盾卫
 //   M  横向移动平台  N  纵向移动平台  U  飘飞上升气流  B  Boss
+//   >/< 沉潮压力喷流  I  极性终端  O  圣堂共鸣器  K/k 右/左传送带
 
 import type { LevelTheme } from '../levels/levels';
+import { MAX_HP, MAX_STRING } from '../constants';
 
 export type Ability = 'paper' | 'cling' | 'djump' | 'dash' | 'kanami';
 export type ZoneId = 'coast' | 'tide' | 'lab' | 'choir' | 'sky' | 'hangar';
@@ -41,6 +43,16 @@ export interface ExitDef {
   needs?: Ability[];
 }
 
+export interface ShortcutDef {
+  /** 全局唯一,写入存档。 */
+  id: string;
+  name: string;
+  /** 关闭时按实体砖处理的 tile 矩形。 */
+  gate: { col: number; row: number; w: number; h: number };
+  /** 从远端路线抵达后按 F 开启的位置。row 为角色站立格。 */
+  lever: { col: number; row: number };
+}
+
 export interface RoomDef {
   id: string;
   zone: ZoneId;
@@ -52,6 +64,8 @@ export interface RoomDef {
   mapY: number;
   /** 地图屏纵向占格(默认 1) */
   mapH?: number;
+  /** 从远端开启、跨房间持久化的真正捷径。 */
+  shortcuts?: ShortcutDef[];
 }
 
 // ---------------- 场景定义(沿用四关的主题与配乐) ----------------
@@ -354,6 +368,7 @@ const R: RoomDef[] = [];
 {
   // 旧灯芯室:竖向回环终点,攀上后从升降井中段返回研究区交通网。
   const g = grid(36, 34);
+  rect(g, 6, 6, 24, 35, '#'); // 捷径闸上方封顶,避免从顶部绕过
   rect(g, 31, 33, 0, 35, '#');
   rect(g, 25, 25, 5, 11, '=');
   rect(g, 20, 20, 17, 23, '=');
@@ -372,6 +387,11 @@ const R: RoomDef[] = [];
   R.push({
     id: 'coast_beacon', zone: 'coast', name: '海滨 · 旧灯芯室', rows: rows(g),
     mapX: 2, mapY: 5, mapH: 2,
+    shortcuts: [{
+      id: 'beacon_lift', name: '灯芯升降闸',
+      gate: { col: 27, row: 7, w: 1, h: 4 },
+      lever: { col: 30, row: 10 },
+    }],
     exits: [
       { side: 'left', from: 28, to: 30, target: 'coast_stormwall', ex: 56, ey: 13 },
       { side: 'right', from: 8, to: 10, target: 'lab_lift', ex: 3, ey: 20 },
@@ -390,6 +410,7 @@ const R: RoomDef[] = [];
   rect(g, 12, 12, 29, 34, '=');
   set(g, 13, 8, 'T');
   set(g, 9, 21, '*');
+  set(g, 13, 27, '>');
   set(g, 13, 38, '1');
   set(g, 13, 45, '5');
   R.push({
@@ -413,6 +434,7 @@ const R: RoomDef[] = [];
   rect(g, 25, 25, 8, 14, '=');
   set(g, 17, 25, 'N');
   set(g, 24, 11, '*');
+  set(g, 30, 12, '>');
   set(g, 30, 6, '6');
   set(g, 30, 24, '3');
   set(g, 8, 6, 'e');
@@ -460,6 +482,7 @@ const R: RoomDef[] = [];
   rect(g, 14, 14, 36, 42, '=');
   set(g, 26, 16, 'N');
   set(g, 21, 38, 'N');
+  set(g, 30, 10, '>');
   set(g, 13, 39, '2');
   set(g, 30, 20, '4');
   set(g, 30, 36, '6');
@@ -504,10 +527,13 @@ const R: RoomDef[] = [];
 {
   // 门厅:多高度中央枢纽。下层连主研究区/升降井,上层连沉潮地窟/弦声圣堂。
   const g = grid(44, 34);
+  rect(g, 6, 6, 0, 14, '#'); // 沉潮回程闸封顶
+  rect(g, 11, 13, 9, 14, '#');
+  rect(g, 17, 17, 31, 43, '#'); // 检修暗线闸封顶
   rect(g, 31, 33, 0, 43, '#');
   rect(g, 11, 13, 0, 8, '#');
   rect(g, 11, 13, 35, 43, '#');
-  rect(g, 22, 22, 35, 43, '#');
+  rect(g, 22, 22, 34, 43, '#');
   rect(g, 25, 25, 8, 14, '=');
   rect(g, 22, 22, 13, 18, '=');
   rect(g, 19, 19, 18, 24, '=');
@@ -521,6 +547,18 @@ const R: RoomDef[] = [];
   R.push({
     id: 'lab_gate', zone: 'lab', name: '研究区 · 门厅', rows: rows(g),
     mapX: 3, mapY: 3, mapH: 2,
+    shortcuts: [
+      {
+        id: 'tide_return', name: '沉潮回程闸',
+        gate: { col: 9, row: 7, w: 1, h: 4 },
+        lever: { col: 4, row: 10 },
+      },
+      {
+        id: 'service_hatch', name: '检修暗线闸',
+        gate: { col: 34, row: 18, w: 1, h: 4 },
+        lever: { col: 40, row: 21 },
+      },
+    ],
     exits: [
       { side: 'left', from: 8, to: 10, target: 'tide_pumps', ex: 52, ey: 10 },
       { side: 'left', from: 28, to: 30, target: 'lab_lift', ex: 24, ey: 30 },
@@ -536,7 +574,7 @@ const R: RoomDef[] = [];
   const g = grid(58, 17);
   rect(g, 14, 16, 0, 57, '#');
   rect(g, 8, 13, 18, 18, '#');
-  rect(g, 8, 13, 39, 39, '#');
+  rect(g, 8, 13, 39, 39, '&');
   rect(g, 10, 10, 7, 15, '=');
   rect(g, 8, 8, 23, 34, '=');
   rect(g, 10, 10, 43, 51, '=');
@@ -544,6 +582,7 @@ const R: RoomDef[] = [];
   set(g, 13, 12, '4');
   set(g, 13, 26, '1');
   set(g, 13, 34, '5');
+  set(g, 13, 36, 'I');
   set(g, 13, 47, '3');
   R.push({
     id: 'lab_observation', zone: 'lab', name: '研究区 · 标本观察廊', rows: rows(g),
@@ -638,11 +677,12 @@ const R: RoomDef[] = [];
   rect(g, 13, 13, 12, 18, '=');
   rect(g, 19, 19, 24, 31, '=');
   rect(g, 25, 25, 8, 15, '=');
-  rect(g, 16, 30, 20, 20, '%');
+  rect(g, 16, 30, 20, 20, '&');
   set(g, 17, 27, 'N');
   set(g, 23, 11, 'M');
   set(g, 18, 27, '*');
   set(g, 30, 9, '5');
+  set(g, 30, 16, 'I');
   set(g, 30, 25, '4');
   set(g, 30, 33, 'h');
   R.push({
@@ -738,10 +778,11 @@ const R: RoomDef[] = [];
   const g = grid(56, 17);
   rect(g, 14, 16, 0, 55, '#');
   rect(g, 11, 11, 10, 17, '=');
-  rect(g, 8, 8, 23, 31, '=');
+  rect(g, 8, 8, 23, 31, 'H');
   rect(g, 11, 11, 38, 46, '=');
   set(g, 13, 9, 'T');
   set(g, 7, 27, '*');
+  set(g, 13, 28, 'O');
   set(g, 13, 21, '2');
   set(g, 13, 34, '4');
   set(g, 13, 48, '6');
@@ -764,6 +805,7 @@ const R: RoomDef[] = [];
   rect(g, 10, 10, 20, 25, '=');
   rect(g, 8, 8, 37, 42, 'H');
   set(g, 7, 39, '*');
+  set(g, 13, 37, 'O');
   set(g, 13, 22, '5');
   set(g, 13, 41, '3');
   set(g, 13, 50, '6');
@@ -787,6 +829,7 @@ const R: RoomDef[] = [];
   rect(g, 7, 7, 26, 30, 'H');
   rect(g, 9, 9, 35, 39, '=');
   set(g, 6, 28, '*');
+  set(g, 13, 24, 'O');
   set(g, 8, 37, 'c');
   set(g, 13, 17, '2');
   set(g, 13, 31, '5');
@@ -801,6 +844,7 @@ const R: RoomDef[] = [];
 {
   // 断钟塔:三层出口把墓廊、隐藏遗物室和天穹竖廊织成跨区捷径。
   const g = grid(36, 51);
+  rect(g, 5, 5, 20, 35, '#'); // 高层回程闸封顶
   rect(g, 48, 50, 0, 35, '#');
   rect(g, 30, 32, 0, 8, '#');
   rect(g, 10, 12, 27, 35, '#');
@@ -821,6 +865,11 @@ const R: RoomDef[] = [];
   R.push({
     id: 'choir_belfry', zone: 'choir', name: '圣堂 · 断钟塔', rows: rows(g),
     mapX: 6, mapY: -1, mapH: 3,
+    shortcuts: [{
+      id: 'belfry_return', name: '断钟回程闸',
+      gate: { col: 27, row: 6, w: 1, h: 4 },
+      lever: { col: 32, row: 9 },
+    }],
     exits: [
       { side: 'left', from: 44, to: 46, target: 'choir_crypt', ex: 56, ey: 13 },
       { side: 'left', from: 27, to: 29, target: 'choir_reliquary', ex: 44, ey: 13 },
@@ -1045,6 +1094,8 @@ const R: RoomDef[] = [];
   rect(g, 8, 8, 36, 42, 'H');
   rect(g, 11, 11, 49, 55, '=');
   set(g, 9, 22, 'M');
+  set(g, 13, 18, 'K');
+  set(g, 13, 46, 'k');
   set(g, 7, 39, '*');
   set(g, 13, 10, '6');
   set(g, 13, 23, '3');
@@ -1073,6 +1124,8 @@ const R: RoomDef[] = [];
   rect(g, 10, 10, 43, 48, '=');
   set(g, 7, 27, '*');
   set(g, 7, 25, 'd');
+  set(g, 13, 22, 'K');
+  set(g, 13, 40, 'k');
   set(g, 13, 11, '5');
   set(g, 13, 16, '6');
   set(g, 13, 27, '4');
@@ -1089,17 +1142,24 @@ const R: RoomDef[] = [];
 {
   // 机库前厅:大战前的宁静;调弦台。
   const g = grid(40, 34);
+  rect(g, 6, 6, 0, 14, '#'); // 反应堆回程闸封顶
   rect(g, 31, 33, 0, 39, '#');
-  rect(g, 10, 12, 0, 8, '#');
+  rect(g, 10, 12, 0, 14, '#');
   rect(g, 23, 23, 12, 18, '=');
   rect(g, 17, 17, 22, 28, '=');
   set(g, 21, 15, 'N');
   set(g, 30, 16, 'T');
   set(g, 30, 24, 'h');
   set(g, 30, 27, 'e');
+  set(g, 30, 33, 'K');
   R.push({
     id: 'hangar_gate', zone: 'hangar', name: '机库 · 前厅', rows: rows(g),
     mapX: 14, mapY: 0, mapH: 2,
+    shortcuts: [{
+      id: 'reactor_return', name: '反应堆回程闸',
+      gate: { col: 9, row: 7, w: 1, h: 3 },
+      lever: { col: 4, row: 9 },
+    }],
     exits: [
       { side: 'left', from: 7, to: 9, target: 'hangar_reactor', ex: 52, ey: 13 },
       { side: 'left', from: 28, to: 30, target: 'hangar_assembly', ex: 60, ey: 13 },
@@ -1129,6 +1189,7 @@ const R: RoomDef[] = [];
 export const ROOMS: Record<string, RoomDef> = Object.fromEntries(R.map((r) => [r.id, r]));
 export const ROOM_LIST: RoomDef[] = R;
 export const START_ROOM = 'coast_start';
+export const SHORTCUT_IDS = new Set(ROOM_LIST.flatMap((room) => room.shortcuts?.map((s) => s.id) ?? []));
 
 export const ABILITY_INFO: Record<Ability, { name: string; desc: string; hint: string }> = {
   paper: {
@@ -1193,6 +1254,38 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'chip_regen', name: '记忆芯片·快弦回路', desc: '弦能回复速度 +40%', cost: 60 },
   { id: 'chip_magnet', name: '记忆芯片·晶尘磁石', desc: '晶尘吸取范围大幅扩大', cost: 50 },
 ];
+
+export interface CrystalMilestone {
+  count: number;
+  name: string;
+  desc: string;
+  hpBonus?: number;
+  energyBonus?: number;
+}
+
+/** 弦晶不再只是计数:四段共鸣提供可感知的永久成长。 */
+export const CRYSTAL_MILESTONES: CrystalMilestone[] = [
+  { count: 8, name: '微光共鸣', desc: '弦能上限 +10', energyBonus: 10 },
+  { count: 18, name: '稳固共鸣', desc: '生命上限 +10', hpBonus: 10 },
+  { count: 30, name: '潮汐共鸣', desc: '弦能上限 +15', energyBonus: 15 },
+  { count: 42, name: '弦界共鸣', desc: '生命上限 +15', hpBonus: 15 },
+];
+
+export function progressionStats(
+  crystalCount: number,
+  chips: ReadonlySet<string>,
+): { hpMax: number; energyMax: number } {
+  let hpMax = MAX_HP;
+  let energyMax = MAX_STRING;
+  if (chips.has('chip_hp')) hpMax += 25;
+  if (chips.has('relic_beacon')) hpMax += 10;
+  for (const milestone of CRYSTAL_MILESTONES) {
+    if (crystalCount < milestone.count) continue;
+    hpMax += milestone.hpBonus ?? 0;
+    energyMax += milestone.energyBonus ?? 0;
+  }
+  return { hpMax, energyMax };
+}
 
 /** 全世界弦晶总数(静态统计) */
 export function totalCrystals(): number {

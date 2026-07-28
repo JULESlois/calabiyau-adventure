@@ -329,7 +329,7 @@ export class Player {
       }
     } else if (this.regenDelay <= 0) {
       const regenMul = ps.world.chips.has('chip_regen') ? 1.4 : 1;
-      this.energy = Math.min(MAX_STRING, this.energy + STRING_REGEN * regenMul * dt);
+      this.energy = Math.min(ps.world.energyMax, this.energy + STRING_REGEN * regenMul * dt);
     }
 
     // ---- 水平移动 ----

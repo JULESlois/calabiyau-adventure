@@ -27,6 +27,7 @@ function makeState(tileAt: (col: number, row: number) => number = () => T_EMPTY)
     world: {
       has: () => false,
       chips: new Set<string>(),
+      energyMax: 100,
     },
     mapW: 480,
     mapH: 270,

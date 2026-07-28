@@ -1,6 +1,13 @@
-// 存档 v2:世界状态(能力/旗标/收集/地图/重生锚)整体序列化。
+// 存档 v2:世界状态(能力/旗标/收集/捷径/地图/重生锚)整体序列化。
 import { MAX_HP } from './constants';
-import { HIDDEN_CHIPS, ROOMS, SHOP_ITEMS, type Ability } from './world/world';
+import {
+  HIDDEN_CHIPS,
+  progressionStats,
+  ROOMS,
+  SHOP_ITEMS,
+  SHORTCUT_IDS,
+  type Ability,
+} from './world/world';
 import type { WorldSave } from './world/WorldState';
 
 const KEY = 'calabiyau_stringbound_save_v2';
@@ -38,6 +45,8 @@ export function parseWorldSave(value: unknown): WorldSave | null {
 
   const chips = value.chips === undefined ? [] : readStringList(value.chips);
   if (!chips || chips.some((chip) => !CHIPS.has(chip))) return null;
+  const shortcuts = value.shortcuts === undefined ? [] : readStringList(value.shortcuts);
+  if (!shortcuts || shortcuts.some((shortcut) => !SHORTCUT_IDS.has(shortcut))) return null;
 
   if (
     value.hpMax !== undefined &&
@@ -45,7 +54,7 @@ export function parseWorldSave(value: unknown): WorldSave | null {
   ) {
     return null;
   }
-  const hpMax = MAX_HP + (chips.includes('chip_hp') ? 25 : 0) + (chips.includes('relic_beacon') ? 10 : 0);
+  const hpMax = progressionStats(crystals.length, new Set(chips)).hpMax;
 
   return {
     version: 2,
@@ -58,6 +67,7 @@ export function parseWorldSave(value: unknown): WorldSave | null {
     cleared: value.cleared,
     dust,
     chips,
+    shortcuts,
     hpMax,
   };
 }

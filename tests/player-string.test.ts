@@ -29,6 +29,7 @@ function makeState(abilities: Ability[] = []) {
     world: {
       has: (ability: Ability) => owned.has(ability),
       chips: new Set<string>(),
+      energyMax: 100,
     },
     mapW: 480,
     mapH: 270,

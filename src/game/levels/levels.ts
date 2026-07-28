@@ -1,7 +1,7 @@
 // tile 解析与常量。房间数据见 ../world/world.ts。
 // 图例:
 //   #  实体砖块        =  单向平台        ^  尖刺        %  弦膜(纸片形态可穿过)
-//   H  隐藏平台(香奈美的声呐显形后短暂实体化)
+//   H  隐藏平台(香奈美的声呐显形后短暂实体化)  &  极性弦膜(I 终端切换)
 //   其余字符视为实体生成点(spawns),由 PlayState 解释。
 
 export interface LevelTheme {
@@ -26,6 +26,7 @@ export const T_ONEWAY = 2;
 export const T_SPIKE = 3;
 export const T_MEMBRANE = 4;
 export const T_HIDDEN = 5; // 隐藏平台:被声呐显形后短暂实体化
+export const T_POLARITY = 6; // 研究区极性弦膜:由房间终端切换
 
 export interface SpawnPoint {
   char: string;
@@ -55,6 +56,7 @@ export function parseRows(rows: string[]): ParsedRows {
         case '^': tiles[r * w + c] = T_SPIKE; break;
         case '%': tiles[r * w + c] = T_MEMBRANE; break;
         case 'H': tiles[r * w + c] = T_HIDDEN; break;
+        case '&': tiles[r * w + c] = T_POLARITY; break;
         case '.': case ' ': break;
         default:
           spawns.push({ char: ch, col: c, row: r });

@@ -1,12 +1,12 @@
 // 世界数据静态校验:房间尺寸、生成点支撑、出口配对、能力推进可达性。
 // 运行: npm run check:maps
-import { parseRows, T_MEMBRANE, T_ONEWAY, T_SOLID } from '../src/game/levels/levels';
+import { parseRows, T_EMPTY, T_MEMBRANE, T_ONEWAY, T_SOLID } from '../src/game/levels/levels';
 import { ROOMS, ROOM_LIST, START_ROOM, ZONES, type Ability } from '../src/game/world/world';
 
 declare const process: { exit(code: number): void };
 
 let errors = 0;
-const knownSpawns = new Set('PTFWJGDS*heabcd123456MNUB'.split(''));
+const knownSpawns = new Set('PTFWJGDS*heabcd123456MNUB><IOKk'.split(''));
 const err = (msg: string) => {
   errors++;
   console.error(`  [错误] ${msg}`);
@@ -31,7 +31,7 @@ for (const room of ROOM_LIST) {
 
   // 地面实体下方必须有支撑('2' 浮游炮除外)
   for (const s of lvl.spawns) {
-    if (!'PTFWJGDSabcd13456B'.includes(s.char)) continue;
+    if (!'PTFWJGDSabcd13456BIOKk><'.includes(s.char)) continue;
     let supported = false;
     for (let r = s.row + 1; r < lvl.h; r++) {
       const t = tileAt(s.col, r);
@@ -96,6 +96,33 @@ for (const room of ROOM_LIST) {
     if (!knownSpawns.has(ch)) err(`未知生成标记: ${ch}`);
   }
   const count = (c: string) => chars.filter((x) => x === c).length;
+
+  for (const shortcut of room.shortcuts ?? []) {
+    const { gate, lever } = shortcut;
+    if (gate.w < 1 || gate.h < 1) err(`捷径 ${shortcut.id} 门体尺寸无效`);
+    if (gate.col < 0 || gate.row < 0 || gate.col + gate.w > lvl.w || gate.row + gate.h > lvl.h) {
+      err(`捷径 ${shortcut.id} 门体越界`);
+    } else {
+      for (let r = gate.row; r < gate.row + gate.h; r++) {
+        for (let c = gate.col; c < gate.col + gate.w; c++) {
+          if (lvl.tiles[r * lvl.w + c] !== T_EMPTY) err(`捷径 ${shortcut.id} 门体覆盖了静态地形 (${c},${r})`);
+          if (lvl.spawns.some((spawn) => spawn.col === c && spawn.row === r)) {
+            err(`捷径 ${shortcut.id} 门体覆盖了生成点 (${c},${r})`);
+          }
+        }
+      }
+    }
+    if (lever.col < 0 || lever.col >= lvl.w || lever.row < 0 || lever.row >= lvl.h - 1) {
+      err(`捷径 ${shortcut.id} 开关越界`);
+    } else {
+      const below = tileAt(lever.col, lever.row + 1);
+      if (below !== T_SOLID && below !== T_ONEWAY) err(`捷径 ${shortcut.id} 开关下方没有支撑`);
+      if (lvl.tiles[lever.row * lvl.w + lever.col] !== T_EMPTY) err(`捷径 ${shortcut.id} 开关嵌入静态地形`);
+      if (lvl.spawns.some((spawn) => spawn.col === lever.col && spawn.row === lever.row)) {
+        err(`捷径 ${shortcut.id} 开关与生成点重叠`);
+      }
+    }
+  }
   console.log(
     `  [通过] 尺寸 ${lvl.w}×${lvl.h},出口 ${room.exits.length},弦晶 ${count('*')},敌人 ${
       count('1') + count('2') + count('3') + count('4') + count('5') + count('6')
@@ -120,6 +147,27 @@ for (const z of Object.values(ZONES)) {
   const benches = ROOM_LIST.filter((r) => r.zone === z.id && r.rows.some((row) => row.includes('T')));
   if (benches.length === 0) err(`场景 ${z.name} 没有调弦台`);
 }
+
+const shortcutIds = new Set<string>();
+for (const room of ROOM_LIST) {
+  for (const shortcut of room.shortcuts ?? []) {
+    if (shortcutIds.has(shortcut.id)) err(`捷径 id 重复: ${shortcut.id}`);
+    shortcutIds.add(shortcut.id);
+  }
+}
+if (shortcutIds.size < 5) err(`永久捷径仅 ${shortcutIds.size} 个,至少需要 5 个`);
+if (ROOM_LIST.filter((r) => r.zone === 'tide').reduce((n, r) => n + [...r.rows.join('')].filter((c) => c === '>' || c === '<').length, 0) < 3) {
+  err('沉潮地窟压力喷流少于 3 个');
+}
+if (globalCount('I') < 2 || ROOM_LIST.filter((r) => r.zone === 'lab').reduce((n, r) => n + [...r.rows.join('')].filter((c) => c === '&').length, 0) < 10) {
+  err('中央研究区的极性终端/极性膜不足');
+}
+if (globalCount('O') < 3) err(`弦声圣堂共鸣器仅 ${globalCount('O')} 个,至少需要 3 个`);
+if (globalCount('K') + globalCount('k') < 5) err('塔顶机库传送带少于 5 条');
+console.log(
+  `  [通过] 区域机关 ${shortcutIds.size} 捷径 / ${globalCount('>') + globalCount('<')} 喷流 / ` +
+    `${globalCount('I')} 极性终端 / ${globalCount('O')} 共鸣器 / ${globalCount('K') + globalCount('k')} 传送带`,
+);
 
 // ---------------- 世界规模与拓扑预算 ----------------
 if (ROOM_LIST.length < 38) err(`房间总数 ${ROOM_LIST.length},扩展世界至少需要 38 间`);

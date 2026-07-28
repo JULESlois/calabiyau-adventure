@@ -1,5 +1,5 @@
 import { AudioSys } from './Audio';
-import { DT, MAX_STRING, VIEW_H, VIEW_W } from './constants';
+import { DT, VIEW_H, VIEW_W } from './constants';
 import { Input } from './Input';
 import { clearWorldSave, loadWorldSave, storeWorldSave } from './save';
 import { PlayState, type EntryInfo } from './states/PlayState';
@@ -48,13 +48,13 @@ export class Engine {
     const d = loadWorldSave();
     this.world = d ? WorldState.deserialize(d) : new WorldState();
     this.world.hp = this.world.hpMax;
-    this.world.energy = MAX_STRING;
+    this.world.energy = this.world.energyMax;
     this.startRoom(this.world.benchRoom, { kind: 'bench' });
   }
 
   respawnAtBench(): void {
     this.world.hp = this.world.hpMax;
-    this.world.energy = MAX_STRING;
+    this.world.energy = this.world.energyMax;
     this.startRoom(this.world.benchRoom, { kind: 'bench' });
   }
 
@@ -91,13 +91,16 @@ export class Engine {
               x: Math.round(s.player.x),
               y: Math.round(s.player.y),
               hp: s.player.hp,
+              hpMax: this.world.hpMax,
               energy: Math.round(s.player.energy),
+              energyMax: this.world.energyMax,
               char: s.player.char,
               paper: s.player.paper,
               stringMode: s.player.stringMode,
               overlay: s.overlay,
               abilities: [...this.world.abilities],
               crystals: this.world.crystals.size,
+              shortcuts: [...this.world.shortcuts],
               visited: [...this.world.visited],
               enemies: s.enemies.filter((e) => !e.dead).length,
               boss: s.boss ? { state: s.boss.state, hp: s.boss.hp } : null,

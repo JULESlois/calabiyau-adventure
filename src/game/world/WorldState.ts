@@ -3,7 +3,15 @@
 
 import type { CharId } from '../types';
 import { MAX_HP, MAX_STRING } from '../constants';
-import { HIDDEN_CHIPS, ROOMS, SHOP_ITEMS, START_ROOM, type Ability } from './world';
+import {
+  HIDDEN_CHIPS,
+  progressionStats,
+  ROOMS,
+  SHOP_ITEMS,
+  SHORTCUT_IDS,
+  START_ROOM,
+  type Ability,
+} from './world';
 
 const KNOWN_ABILITIES = new Set<Ability>(['paper', 'cling', 'djump', 'dash', 'kanami']);
 const KNOWN_CHIPS = new Set([...SHOP_ITEMS, ...HIDDEN_CHIPS].map((item) => item.id));
@@ -19,6 +27,7 @@ export interface WorldSave {
   cleared: boolean;
   dust?: number;
   chips?: string[];
+  shortcuts?: string[];
   hpMax?: number;
 }
 
@@ -38,8 +47,12 @@ export class WorldState {
   dust = 0;
   /** 已购记忆芯片(永久生效) */
   chips = new Set<string>();
-  /** 生命上限(强健弦芯可提升) */
+  /** 已从远端开启的永久捷径 */
+  shortcuts = new Set<string>();
+  /** 生命上限(弦晶共鸣与强健弦芯可提升) */
   hpMax = MAX_HP;
+  /** 弦能上限(弦晶共鸣可提升) */
+  energyMax = MAX_STRING;
 
   // ---- 房间之间携带的运行时状态(存档时按调弦台满状态处理) ----
   char: CharId = 'michele';
@@ -59,6 +72,14 @@ export class WorldState {
     return `${room}:${col}:${row}`;
   }
 
+  recalculateStats(): void {
+    const stats = progressionStats(this.crystals.size, this.chips);
+    this.hpMax = stats.hpMax;
+    this.energyMax = stats.energyMax;
+    this.hp = Math.min(this.hp, this.hpMax);
+    this.energy = Math.min(this.energy, this.energyMax);
+  }
+
   serialize(): WorldSave {
     return {
       version: 2,
@@ -71,6 +92,7 @@ export class WorldState {
       cleared: this.cleared,
       dust: this.dust,
       chips: [...this.chips],
+      shortcuts: [...this.shortcuts],
       hpMax: this.hpMax,
     };
   }
@@ -86,8 +108,8 @@ export class WorldState {
     w.cleared = !!d.cleared;
     w.dust = typeof d.dust === 'number' && Number.isSafeInteger(d.dust) ? Math.max(0, d.dust) : 0;
     for (const c of d.chips ?? []) if (KNOWN_CHIPS.has(c)) w.chips.add(c);
-    w.hpMax = MAX_HP + (w.chips.has('chip_hp') ? 25 : 0) + (w.chips.has('relic_beacon') ? 10 : 0);
-    w.hp = Math.min(w.hp, w.hpMax);
+    for (const s of d.shortcuts ?? []) if (SHORTCUT_IDS.has(s)) w.shortcuts.add(s);
+    w.recalculateStats();
     return w;
   }
 }

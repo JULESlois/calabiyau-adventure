@@ -1,4 +1,4 @@
-import { COLORS, INVULN_TIME, MAX_STRING, TILE, VIEW_H, VIEW_W } from '../constants';
+import { COLORS, INVULN_TIME, TILE, VIEW_H, VIEW_W } from '../constants';
 import { Boss } from '../entities/boss';
 import type { EnemyBullet, PlayerBullet } from '../entities/bullets';
 import { Enemy, type EnemyKind } from '../entities/enemies';
@@ -11,6 +11,7 @@ import {
   T_HIDDEN,
   T_MEMBRANE,
   T_ONEWAY,
+  T_POLARITY,
   T_SOLID,
   T_SPIKE,
   type ParsedRows,
@@ -25,6 +26,7 @@ import { clamp, lerp, rectsOverlap, type Rect } from '../utils';
 import type { Engine, GameState } from '../Engine';
 import {
   ABILITY_INFO,
+  CRYSTAL_MILESTONES,
   HIDDEN_CHIPS,
   HIDDEN_CHIP_MARKERS,
   ROOMS,
@@ -35,6 +37,7 @@ import {
   type Ability,
   type ExitDef,
   type RoomDef,
+  type ShortcutDef,
   type ZoneDef,
 } from '../world/world';
 import type { WorldState } from '../world/WorldState';
@@ -64,6 +67,35 @@ interface Updraft {
   y: number;
   w: number;
   h: number;
+}
+
+interface PressureJet {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  dir: -1 | 1;
+  phase: number;
+}
+
+interface Resonator {
+  x: number;
+  y: number;
+  phase: number;
+  beat: number;
+}
+
+interface Conveyor {
+  x: number;
+  y: number;
+  w: number;
+  dir: -1 | 1;
+}
+
+interface ShortcutRuntime {
+  def: ShortcutDef;
+  gate: Rect;
+  lever: { x: number; y: number };
 }
 
 interface BenchSpot {
@@ -103,6 +135,12 @@ export class PlayState implements GameState, WorldApi {
   pickups: (Pickup & { id?: string; chipId?: string })[] = [];
   movers: Mover[] = [];
   updrafts: Updraft[] = [];
+  pressureJets: PressureJet[] = [];
+  resonators: Resonator[] = [];
+  conveyors: Conveyor[] = [];
+  polaritySpots: { x: number; y: number }[] = [];
+  polarityOpen = false;
+  shortcuts: ShortcutRuntime[] = [];
   turrets: CatTurret[] = [];
   darts: SonarDart[] = [];
   /** 显形中的隐藏平台:tile 索引 → 剩余秒数 */
@@ -117,6 +155,8 @@ export class PlayState implements GameState, WorldApi {
   private nearShop = false;
   private nearAbilitySpot: AbilitySpot | null = null;
   private nearKanamiSpot: { x: number; y: number } | null = null;
+  private nearShortcutSpot: ShortcutRuntime | null = null;
+  private nearPolaritySpot: { x: number; y: number } | null = null;
   particles = new ParticleSystem();
   bg: Background;
 
@@ -150,6 +190,19 @@ export class PlayState implements GameState, WorldApi {
     this.bg = new Background(this.zone.theme, ZONE_INDEX[this.room.zone], this.mapW);
 
     const world = this.world;
+    this.shortcuts = (this.room.shortcuts ?? []).map((def) => ({
+      def,
+      gate: {
+        x: def.gate.col * TILE,
+        y: def.gate.row * TILE,
+        w: def.gate.w * TILE,
+        h: def.gate.h * TILE,
+      },
+      lever: {
+        x: def.lever.col * TILE + TILE / 2,
+        y: (def.lever.row + 1) * TILE,
+      },
+    }));
     let startX = 40;
     let startY = 100;
     for (const s of this.level.spawns) {
@@ -242,6 +295,29 @@ export class PlayState implements GameState, WorldApi {
           break;
         case 'U':
           this.updrafts.push({ x: cx - 48, y: bottom - 104, w: 96, h: 104 });
+          break;
+        case '>':
+        case '<': {
+          const dir = s.char === '>' ? 1 : -1;
+          this.pressureJets.push({
+            x: dir > 0 ? cx - 8 : cx - 88,
+            y: bottom - 48,
+            w: 96,
+            h: 48,
+            dir,
+            phase: s.col * 0.31,
+          });
+          break;
+        }
+        case 'I':
+          this.polaritySpots.push({ x: cx, y: bottom });
+          break;
+        case 'O':
+          this.resonators.push({ x: cx, y: bottom - 9, phase: s.col * 0.07, beat: -1 });
+          break;
+        case 'K':
+        case 'k':
+          this.conveyors.push({ x: cx - 32, y: bottom - 4, w: 64, dir: s.char === 'K' ? 1 : -1 });
           break;
         case 'B':
           if (world.flags.has('boss:guardian')) {
@@ -339,7 +415,13 @@ export class PlayState implements GameState, WorldApi {
   tileAt(c: number, r: number): number {
     if (c < 0 || c >= this.level.w) return T_SOLID; // 左右边界为墙
     if (r < 0 || r >= this.level.h) return T_EMPTY; // 上下开放
+    for (const shortcut of this.shortcuts) {
+      if (this.world.shortcuts.has(shortcut.def.id)) continue;
+      const g = shortcut.def.gate;
+      if (c >= g.col && c < g.col + g.w && r >= g.row && r < g.row + g.h) return T_SOLID;
+    }
     const t = this.level.tiles[r * this.level.w + c];
+    if (t === T_POLARITY) return this.polarityOpen ? T_EMPTY : T_MEMBRANE;
     if (t === T_HIDDEN) {
       return (this.hiddenReveal.get(r * this.level.w + c) ?? 0) > 0 ? T_SOLID : T_EMPTY;
     }
@@ -529,11 +611,14 @@ export class PlayState implements GameState, WorldApi {
       if (m.axis === 'h') m.x = m.baseX + s;
       else m.y = m.baseY + s;
     }
+    this.updateResonators();
 
     // 玩家
     this.player.update(dt, this);
     this.applyUpdrafts(dt);
+    this.applyPressureJets(dt);
     this.rideMovers();
+    this.rideConveyors(dt);
 
     // 房间出口(可能切换状态,之后立即返回)
     if (this.checkExits()) return;
@@ -691,6 +776,42 @@ export class PlayState implements GameState, WorldApi {
     if (p.dead) return;
     const pr = p.rect();
 
+    // 永久捷径开关:只在关闭时显示 F,从远端开启后立即持久化。
+    this.nearShortcutSpot = null;
+    for (const shortcut of this.shortcuts) {
+      if (this.world.shortcuts.has(shortcut.def.id)) continue;
+      const zone: Rect = { x: shortcut.lever.x - 12, y: shortcut.lever.y - 28, w: 24, h: 28 };
+      if (!rectsOverlap(pr, zone)) continue;
+      this.nearShortcutSpot = shortcut;
+      if (this.input.pressed('interact')) {
+        this.world.shortcuts.add(shortcut.def.id);
+        this.engine.persistWorld();
+        this.sfx('switch');
+        this.shake(2);
+        this.toast(`${shortcut.def.name} 已开启`);
+        this.particles.burst(shortcut.lever.x, shortcut.lever.y - 12, 16, '#ffe9a8', 85, 0.55, 'spark');
+        this.nearShortcutSpot = null;
+        return;
+      }
+      break;
+    }
+
+    // 研究区极性终端:切换本房间的极性弦膜。
+    this.nearPolaritySpot = null;
+    for (const spot of this.polaritySpots) {
+      const zone: Rect = { x: spot.x - 12, y: spot.y - 28, w: 24, h: 28 };
+      if (!rectsOverlap(pr, zone)) continue;
+      this.nearPolaritySpot = spot;
+      if (this.input.pressed('interact')) {
+        this.polarityOpen = !this.polarityOpen;
+        this.sfx('switch');
+        this.toast(this.polarityOpen ? '极性膜：开放' : '极性膜：封锁');
+        this.particles.burst(spot.x, spot.y - 12, 12, '#7ef0ff', 70, 0.4, 'spark');
+        return;
+      }
+      break;
+    }
+
     // 1. 调弦台 (Bench)
     this.nearBenchSpot = null;
     for (const b of this.benches) {
@@ -701,10 +822,10 @@ export class PlayState implements GameState, WorldApi {
           b.resting = true;
           const w = this.world;
           p.hp = w.hpMax;
-          p.energy = MAX_STRING;
+          p.energy = w.energyMax;
           w.benchRoom = this.roomId;
           w.hp = w.hpMax;
-          w.energy = MAX_STRING;
+          w.energy = w.energyMax;
           w.char = p.char;
           this.engine.persistWorld();
           this.sfx('checkpoint');
@@ -799,12 +920,12 @@ export class PlayState implements GameState, WorldApi {
       return;
     }
     w.dust -= item.cost;
+    const previousHpMax = w.hpMax;
     w.chips.add(id);
-    if (id === 'chip_hp') {
-      w.hpMax += 25;
-      this.player.hp = Math.min(w.hpMax, this.player.hp + 25);
-      w.hp = this.player.hp;
-    }
+    w.recalculateStats();
+    const hpGain = w.hpMax - previousHpMax;
+    if (hpGain > 0) this.player.hp = Math.min(w.hpMax, this.player.hp + hpGain);
+    w.hp = this.player.hp;
     this.engine.persistWorld();
     this.sfx('crystal');
     this.sfx('checkpoint');
@@ -942,6 +1063,79 @@ export class PlayState implements GameState, WorldApi {
           size: 1,
         });
       }
+    }
+  }
+
+  private pressureJetActive(jet: PressureJet): boolean {
+    return Math.sin(this.time * 2.2 + jet.phase) > -0.2;
+  }
+
+  private applyPressureJets(dt: number): void {
+    const p = this.player;
+    if (p.stringMode === 'wall') return;
+    const pr = p.rect();
+    for (const jet of this.pressureJets) {
+      if (!this.pressureJetActive(jet) || !rectsOverlap(pr, jet)) continue;
+      const force = p.paper ? 520 : 260;
+      p.vx = clamp(p.vx + jet.dir * force * dt, -190, 190);
+      if (Math.random() < 0.18) {
+        this.particles.spawn({
+          x: p.x - jet.dir * (4 + Math.random() * 10),
+          y: p.centerY() + (Math.random() - 0.5) * 16,
+          vx: jet.dir * (45 + Math.random() * 35),
+          vy: (Math.random() - 0.5) * 18,
+          life: 0.28,
+          color: '#8de0c4',
+          shape: 'spark',
+          size: 1,
+        });
+      }
+    }
+  }
+
+  private rideConveyors(dt: number): void {
+    const p = this.player;
+    if (!p.onGround || p.stringMode === 'wall') return;
+    for (const belt of this.conveyors) {
+      if (p.x < belt.x || p.x > belt.x + belt.w || Math.abs(p.y - (belt.y + 4)) > 5) continue;
+      p.vx = clamp(p.vx + belt.dir * 420 * dt, -155, 155);
+    }
+  }
+
+  private updateResonators(): void {
+    for (const resonator of this.resonators) {
+      const beat = Math.floor((this.time + resonator.phase) / 2.8);
+      if (beat === resonator.beat) continue;
+      resonator.beat = beat;
+      const radius = 150;
+      const c0 = Math.max(0, Math.floor((resonator.x - radius) / TILE));
+      const c1 = Math.min(this.level.w - 1, Math.floor((resonator.x + radius) / TILE));
+      const r0 = Math.max(0, Math.floor((resonator.y - radius) / TILE));
+      const r1 = Math.min(this.level.h - 1, Math.floor((resonator.y + radius) / TILE));
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) {
+          if (this.level.tiles[r * this.level.w + c] !== T_HIDDEN) continue;
+          const x = c * TILE + TILE / 2;
+          const y = r * TILE + TILE / 2;
+          if (Math.hypot(x - resonator.x, y - resonator.y) <= radius) {
+            this.hiddenReveal.set(r * this.level.w + c, 1.2);
+          }
+        }
+      }
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        this.particles.spawn({
+          x: resonator.x + Math.cos(a) * 8,
+          y: resonator.y + Math.sin(a) * 8,
+          vx: Math.cos(a) * 120,
+          vy: Math.sin(a) * 120,
+          life: 0.42,
+          color: '#f0b4dc',
+          shape: 'note',
+          size: 1,
+        });
+      }
+      if (Math.hypot(this.playerX - resonator.x, this.playerY - resonator.y) < 240) this.sfx('switch');
     }
   }
 
@@ -1219,13 +1413,22 @@ export class PlayState implements GameState, WorldApi {
             this.particles.burst(pk.x, pk.y, 8, '#ff5d7e', 70, 0.4);
             break;
           case 'energy':
-            p.energy = Math.min(MAX_STRING, p.energy + 45);
+            p.energy = Math.min(this.world.energyMax, p.energy + 45);
             this.sfx('pickup');
             this.particles.burst(pk.x, pk.y, 8, '#7ef0ff', 70, 0.4);
             break;
           case 'crystal':
             if (pk.id) {
+              const previousHpMax = this.world.hpMax;
+              const previousEnergyMax = this.world.energyMax;
               this.world.crystals.add(pk.id);
+              this.world.recalculateStats();
+              const hpGain = this.world.hpMax - previousHpMax;
+              const energyGain = this.world.energyMax - previousEnergyMax;
+              if (hpGain > 0) p.hp = Math.min(this.world.hpMax, p.hp + hpGain);
+              if (energyGain > 0) p.energy = Math.min(this.world.energyMax, p.energy + energyGain);
+              const milestone = CRYSTAL_MILESTONES.find((item) => item.count === this.world.crystals.size);
+              if (milestone) this.toast(`${milestone.name} · ${milestone.desc}`);
               this.engine.persistWorld();
             }
             this.sfx('crystal');
@@ -1233,11 +1436,11 @@ export class PlayState implements GameState, WorldApi {
             break;
           case 'relic': {
             if (pk.chipId) {
+              const previousHpMax = this.world.hpMax;
               this.world.chips.add(pk.chipId);
-              if (pk.chipId === 'relic_beacon') {
-                this.world.hpMax += 10;
-                p.hp = Math.min(this.world.hpMax, p.hp + 10);
-              }
+              this.world.recalculateStats();
+              const hpGain = this.world.hpMax - previousHpMax;
+              if (hpGain > 0) p.hp = Math.min(this.world.hpMax, p.hp + hpGain);
               const relic = HIDDEN_CHIPS.find((item) => item.id === pk.chipId);
               if (relic) this.toast(`获得 ${relic.name}`);
               this.engine.persistWorld();
@@ -1292,6 +1495,7 @@ export class PlayState implements GameState, WorldApi {
     ctx.translate(-cx, -cy);
 
     this.renderTiles(ctx, cx, cy);
+    this.renderWorldMechanics(ctx);
 
     // 上升气流:只对空中飘飞状态生效。
     for (const u of this.updrafts) {
@@ -1444,6 +1648,92 @@ export class PlayState implements GameState, WorldApi {
     this.renderToasts(ctx);
   }
 
+  private renderWorldMechanics(ctx: CanvasRenderingContext2D): void {
+    const theme = this.zone.theme;
+
+    for (const jet of this.pressureJets) {
+      const active = this.pressureJetActive(jet);
+      ctx.save();
+      ctx.globalAlpha = active ? 0.2 : 0.06;
+      ctx.fillStyle = '#8de0c4';
+      ctx.fillRect(jet.x, jet.y, jet.w, jet.h);
+      ctx.strokeStyle = '#b8f4df';
+      ctx.globalAlpha = active ? 0.48 : 0.14;
+      for (let i = 0; i < 6; i++) {
+        const travel = ((this.time * (active ? 72 : 18) + i * 19) % jet.w);
+        const x = jet.dir > 0 ? jet.x + travel : jet.x + jet.w - travel;
+        const y = jet.y + 7 + ((i * 13) % Math.max(8, jet.h - 14));
+        ctx.beginPath();
+        ctx.moveTo(Math.round(x - jet.dir * 10), Math.round(y));
+        ctx.lineTo(Math.round(x), Math.round(y));
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    for (const belt of this.conveyors) {
+      ctx.fillStyle = '#1b2028';
+      ctx.fillRect(belt.x, belt.y, belt.w, 4);
+      ctx.fillStyle = theme.accent;
+      for (let i = 0; i < belt.w; i += 10) {
+        const raw = (this.time * 30 * belt.dir + i) % belt.w;
+        const off = Math.floor((raw + belt.w) % belt.w);
+        ctx.fillRect(belt.x + off, belt.y + 1, 4, 1);
+      }
+      ctx.fillStyle = '#758090';
+      ctx.fillRect(belt.x, belt.y, belt.w, 1);
+    }
+
+    for (const resonator of this.resonators) {
+      const cycle = ((this.time + resonator.phase) % 2.8) / 2.8;
+      ctx.save();
+      ctx.globalAlpha = (1 - cycle) * 0.3;
+      ctx.strokeStyle = '#f0b4dc';
+      ctx.beginPath();
+      ctx.arc(resonator.x, resonator.y, 8 + cycle * 70, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#39243f';
+      ctx.fillRect(resonator.x - 6, resonator.y - 7, 12, 7);
+      ctx.fillStyle = '#f0b4dc';
+      ctx.fillRect(resonator.x - 2, resonator.y - 12, 4, 7);
+      ctx.fillStyle = '#fff0fa';
+      ctx.fillRect(resonator.x - 1, resonator.y - 11, 2, 2);
+      ctx.restore();
+    }
+
+    for (const spot of this.polaritySpots) {
+      ctx.fillStyle = '#18243a';
+      ctx.fillRect(spot.x - 6, spot.y - 18, 12, 18);
+      ctx.strokeStyle = '#7088b8';
+      ctx.strokeRect(spot.x - 5.5, spot.y - 17.5, 11, 17);
+      ctx.fillStyle = this.polarityOpen ? '#8de0c4' : '#e878c0';
+      ctx.fillRect(spot.x - 2, spot.y - 14, 4, 4);
+    }
+
+    for (const shortcut of this.shortcuts) {
+      const open = this.world.shortcuts.has(shortcut.def.id);
+      if (!open) {
+        const gate = shortcut.gate;
+        ctx.fillStyle = 'rgba(20,18,28,0.78)';
+        ctx.fillRect(gate.x, gate.y, gate.w, gate.h);
+        ctx.strokeStyle = '#b58b4a';
+        ctx.strokeRect(gate.x + 0.5, gate.y + 0.5, gate.w - 1, gate.h - 1);
+        ctx.fillStyle = '#74654f';
+        for (let x = gate.x + 3; x < gate.x + gate.w; x += 6) ctx.fillRect(x, gate.y, 2, gate.h);
+        for (let y = gate.y + 7; y < gate.y + gate.h; y += 12) ctx.fillRect(gate.x, y, gate.w, 2);
+      }
+      const lever = shortcut.lever;
+      ctx.fillStyle = '#25222c';
+      ctx.fillRect(lever.x - 6, lever.y - 17, 12, 17);
+      ctx.strokeStyle = '#75664d';
+      ctx.strokeRect(lever.x - 5.5, lever.y - 16.5, 11, 16);
+      ctx.fillStyle = open ? '#8de0c4' : '#d8a850';
+      ctx.fillRect(lever.x - 2, lever.y - 13, 4, 4);
+      ctx.fillRect(lever.x - (open ? 1 : 4), lever.y - 10, 2, 6);
+    }
+  }
+
   private renderTiles(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
     const theme = this.zone.theme;
     const c0 = Math.max(0, Math.floor(cx / TILE));
@@ -1585,6 +1875,23 @@ export class PlayState implements GameState, WorldApi {
             ctx.globalAlpha = 1;
             break;
           }
+          case T_POLARITY: {
+            const pulse = 0.35 + Math.sin(this.time * 4 + (c + r) * 0.7) * 0.15;
+            ctx.globalAlpha = this.polarityOpen ? 0.12 : pulse + 0.18;
+            ctx.fillStyle = this.polarityOpen ? '#8de0c4' : '#7060d0';
+            ctx.fillRect(x + 2, y, TILE - 4, TILE);
+            ctx.globalAlpha = this.polarityOpen ? 0.3 : 0.8;
+            ctx.fillStyle = this.polarityOpen ? '#b8f4df' : '#e878c0';
+            ctx.fillRect(x + 1, y, TILE - 2, 1);
+            ctx.fillRect(x + 1, y + TILE - 1, TILE - 2, 1);
+            if (!this.polarityOpen) {
+              const off = Math.floor(this.time * 12) % 5;
+              ctx.fillRect(x + 4 + off, y + 2, 1, TILE - 4);
+              ctx.fillRect(x + 10 - off, y + 2, 1, TILE - 4);
+            }
+            ctx.globalAlpha = 1;
+            break;
+          }
           default:
             break;
         }
@@ -1677,6 +1984,11 @@ export class PlayState implements GameState, WorldApi {
       if (r.rows.some((row) => row.includes('T'))) {
         ctx.fillStyle = '#8ee8f4';
         ctx.fillRect(x + cw / 2 - 1, y + h / 2 - 1, 3, 3);
+      }
+      if (r.shortcuts?.length) {
+        const allOpen = r.shortcuts.every((shortcut) => this.world.shortcuts.has(shortcut.id));
+        ctx.fillStyle = allOpen ? '#8de0c4' : '#d8a850';
+        ctx.fillRect(x + cw - 7, y + 4, 3, 3);
       }
       if (current) {
         ctx.fillStyle = '#fff';
@@ -1771,6 +2083,12 @@ export class PlayState implements GameState, WorldApi {
     if (this.nearBenchSpot) {
       px = this.nearBenchSpot.x;
       py = this.nearBenchSpot.y - 32;
+    } else if (this.nearShortcutSpot) {
+      px = this.nearShortcutSpot.lever.x;
+      py = this.nearShortcutSpot.lever.y - 22;
+    } else if (this.nearPolaritySpot) {
+      px = this.nearPolaritySpot.x;
+      py = this.nearPolaritySpot.y - 22;
     } else if (this.nearAbilitySpot) {
       px = this.nearAbilitySpot.x;
       py = this.nearAbilitySpot.y - 28;
