@@ -1400,27 +1400,27 @@ export const ABILITY_INFO: Record<Ability, { name: string; desc: string; hint: s
   paper: {
     name: '弦 化',
     desc: '身体展开为二维纸片。地面弦化可穿弦膜,空中弦化会随风飘飞。',
-    hint: '地面或空中按住 Shift 弦化 · 不同状态有独立动作',
+    hint: '按住 Shift 弦化 · 离地后进入飘飞',
   },
   cling: {
     name: '矩阵适配',
     desc: '巴布洛矩阵认可了你。纸片形态可以贴附墙面。',
-    hint: '靠近墙面按 E 吸附 · W/S 上下移动 · 再按 E 脱离',
+    hint: '靠墙按 E 吸附 · W / S 移动 · E 脱离',
   },
   djump: {
     name: '弦 翼',
     desc: '弦能在身后织出微光之翼。',
-    hint: '空中可再次跳跃',
+    hint: '空中再次按 W / 空格 跳跃',
   },
   dash: {
     name: '相位突进',
     desc: '短距弦相位跃迁,身影破空而行。',
-    hint: '按 U 或 ; 冲刺 · 空中限一次',
+    hint: '按 U / ; 冲刺 · 空中限一次',
   },
   kanami: {
     name: '香奈美加入了队伍!',
     desc: '「初次见面,我叫香奈美。准备好跟随我的歌声了吗?」',
-    hint: '按 Q 切换 · 长按 J 蓄力狙击 · 声呐能显形隐藏之物',
+    hint: '按 Q 切换角色 · 长按 J 蓄力射击',
   },
 };
 

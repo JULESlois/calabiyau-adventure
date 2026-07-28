@@ -33,6 +33,7 @@ import {
   ROOMS,
   ROOM_LIST,
   SHOP_ITEMS,
+  START_ROOM,
   totalCrystals,
   ZONES,
   type Ability,
@@ -141,6 +142,15 @@ interface AbilitySpot {
   kind: Ability;
 }
 
+interface FloatingHint {
+  lines: string[];
+  x: number;
+  y: number;
+  delay: number;
+  t: number;
+  maxT: number;
+}
+
 type Overlay = 'none' | 'pause' | 'dead' | 'ability' | 'victory' | 'map' | 'shop' | 'fast_travel';
 
 const TOTAL_CRYSTALS = totalCrystals();
@@ -210,6 +220,7 @@ export class PlayState implements GameState, WorldApi {
   overlayT = 0;
   abilityKind: Ability = 'paper';
   private toasts: { msg: string; t: number }[] = [];
+  private floatingHints: FloatingHint[] = [];
   private meleeHits = new Map<object, number>();
   /** 环境飘浮微粒(余烬/尘埃/落灰),屏幕空间 */
   private embers: { x: number; y: number; vx: number; vy: number; ph: number }[] = [];
@@ -410,6 +421,20 @@ export class PlayState implements GameState, WorldApi {
     this.lastEntryY = this.player.y;
 
     this.introT = zoneChanged ? 2.8 : 0;
+    if (
+      entry.kind === 'start' &&
+      roomId === START_ROOM &&
+      world.abilities.size === 0 &&
+      !world.flags.has('tutorial:start')
+    ) {
+      world.flags.add('tutorial:start');
+      this.showFloatingHint(
+        ['A / D 移动 · W / 空格 跳跃', 'J 射击 · K 近战 · F 交互'],
+        this.player.x,
+        this.player.y - 48,
+        2.8,
+      );
+    }
 
     // 环境微粒
     const zi = ZONE_INDEX[this.room.zone];
@@ -476,6 +501,18 @@ export class PlayState implements GameState, WorldApi {
   toast(msg: string): void {
     this.toasts.push({ msg, t: 2.6 });
     if (this.toasts.length > 3) this.toasts.shift();
+  }
+
+  private showFloatingHint(lines: string[], x: number, y: number, delay = 0, duration = 4.8): void {
+    this.floatingHints.push({ lines, x, y, delay, t: duration, maxT: duration });
+  }
+
+  private updateFloatingHints(dt: number): void {
+    for (const hint of this.floatingHints) {
+      if (hint.delay > 0) hint.delay = Math.max(0, hint.delay - dt);
+      else hint.t -= dt;
+    }
+    this.floatingHints = this.floatingHints.filter((hint) => hint.t > 0);
   }
 
   tileAt(c: number, r: number): number {
@@ -651,6 +688,7 @@ export class PlayState implements GameState, WorldApi {
       if (this.shakeT <= 0) this.shakeMag = 0;
     }
     this.particles.update(dt);
+    this.updateFloatingHints(dt);
     for (const t of this.toasts) t.t -= dt;
     this.toasts = this.toasts.filter((t) => t.t > 0);
 
@@ -994,6 +1032,7 @@ export class PlayState implements GameState, WorldApi {
     this.sfx('checkpoint');
     const color = kind === 'kanami' ? '#ffb0d8' : '#8ee8f4';
     this.particles.burst(x, y - 12, 26, color, 120, 0.9, kind === 'kanami' ? 'note' : 'spark');
+    this.showFloatingHint([ABILITY_INFO[kind].hint], x, y - 40);
     this.shake(2);
   }
 
@@ -1686,6 +1725,7 @@ export class PlayState implements GameState, WorldApi {
 
     // 玩家
     if (playerVisible) this.player.render(ctx, this.time);
+    this.renderFloatingHints(ctx);
 
     // 子弹
     for (const b of this.playerBullets) {
@@ -1726,6 +1766,29 @@ export class PlayState implements GameState, WorldApi {
     ctx.globalAlpha = 1;
 
     if (chrome) this.renderChrome(ctx);
+  }
+
+  private renderFloatingHints(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 9px "SimSun", "Songti SC", monospace';
+    for (const hint of this.floatingHints) {
+      if (hint.delay > 0) continue;
+      const age = hint.maxT - hint.t;
+      const alpha = clamp(Math.min(age / 0.25, hint.t / 0.7), 0, 1);
+      const floatY = hint.y - age * 4 + Math.sin(this.time * 3) * 0.6;
+      for (let i = 0; i < hint.lines.length; i++) {
+        const y = Math.round(floatY + i * 12);
+        ctx.globalAlpha = alpha * 0.75;
+        ctx.fillStyle = '#08060c';
+        ctx.fillText(hint.lines[i], Math.round(hint.x) + 1, y + 1);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(hint.lines[i], Math.round(hint.x), y);
+      }
+    }
+    ctx.restore();
   }
 
   renderTransitionPlayer(ctx: CanvasRenderingContext2D, screenX: number, screenY: number): void {
