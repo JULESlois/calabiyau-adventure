@@ -12,7 +12,12 @@ function makeEngine(): Engine {
   return {
     world: new WorldState(),
     input: { down: () => false, pressed: () => false },
-    audio: { sfx: () => undefined },
+    audio: {
+      sfx: () => undefined,
+      playSong: () => undefined,
+      playStinger: () => undefined,
+      setMusicState: () => undefined,
+    },
     persistWorld: () => undefined,
   } as unknown as Engine;
 }

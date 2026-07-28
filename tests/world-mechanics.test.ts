@@ -3,16 +3,39 @@ import test from 'node:test';
 import type { Engine } from '../src/game/Engine';
 import { T_EMPTY, T_MEMBRANE, T_SOLID } from '../src/game/levels/levels';
 import { PlayState, type EntryInfo } from '../src/game/states/PlayState';
+import type { MusicCue, MusicIntensity } from '../src/game/music';
 import { ABILITY_INFO, type Ability } from '../src/game/world/world';
 import { WorldState } from '../src/game/world/WorldState';
 
-function makePlayState(roomId: string, interact = false, entry: EntryInfo = { kind: 'start' }): PlayState {
+interface AudioSpy {
+  sfx: (name: string) => void;
+  playSong: (cue: MusicCue | -1, fadeTime?: number) => void;
+  playStinger: (kind: string) => void;
+  setMusicState: (mix: { intensity: MusicIntensity; ducked: boolean }) => void;
+}
+
+function silentAudio(): AudioSpy {
+  return {
+    sfx: () => undefined,
+    playSong: () => undefined,
+    playStinger: () => undefined,
+    setMusicState: () => undefined,
+  };
+}
+
+function makePlayState(
+  roomId: string,
+  interact = false,
+  entry: EntryInfo = { kind: 'start' },
+  audio: AudioSpy = silentAudio(),
+): PlayState {
   const engine = {
     world: new WorldState(),
     input: {
       pressed: (action: string) => interact && action === 'interact',
+      down: () => false,
     },
-    audio: { sfx: () => undefined },
+    audio,
     persistWorld: () => undefined,
   } as unknown as Engine;
   return new PlayState(engine, roomId, entry);
@@ -95,4 +118,39 @@ test('every newly granted ability creates a concise in-world key hint', () => {
     assert.ok(hint.lines[0].includes(expectedKey[kind]), `${kind}: ${hint.lines[0]}`);
     assert.equal(state.world.has(kind), true);
   }
+});
+
+test('nearby enemies raise the music layer and ability overlays duck it', () => {
+  const mixes: { intensity: MusicIntensity; ducked: boolean }[] = [];
+  const audio = silentAudio();
+  audio.setMusicState = (mix) => mixes.push(mix);
+  const state = makePlayState('coast_walk', false, { kind: 'start' }, audio);
+  const enemy = state.enemies[0];
+  assert.ok(enemy);
+  enemy.x = state.player.x + 20;
+  enemy.y = state.player.y;
+
+  (state as unknown as { syncMusicState(dt: number): void }).syncMusicState(1 / 60);
+  assert.deepEqual(mixes[mixes.length - 1], { intensity: 1, ducked: false });
+
+  state.overlay = 'ability';
+  (state as unknown as { syncMusicState(dt: number): void }).syncMusicState(1 / 60);
+  assert.deepEqual(mixes[mixes.length - 1], { intensity: 1, ducked: true });
+});
+
+test('the guardian switches from hangar ambience to boss music only when awakened', () => {
+  const songs: (MusicCue | -1)[] = [];
+  const stingers: string[] = [];
+  const audio = silentAudio();
+  audio.playSong = (cue) => songs.push(cue);
+  audio.playStinger = (kind) => stingers.push(kind);
+  const state = makePlayState('hangar_boss', false, { kind: 'start' }, audio);
+  assert.ok(state.boss);
+  state.player.x = state.boss.x - 100;
+
+  state.update(1 / 60);
+
+  assert.equal(state.boss.state, 'intro');
+  assert.deepEqual(songs, ['boss']);
+  assert.deepEqual(stingers, ['bossAwaken']);
 });

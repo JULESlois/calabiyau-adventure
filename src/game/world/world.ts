@@ -17,6 +17,7 @@
 
 import type { LevelTheme } from '../levels/levels';
 import { MAX_HP, MAX_STRING } from '../constants';
+import type { MusicCue } from '../music';
 
 export type Ability = 'paper' | 'cling' | 'djump' | 'dash' | 'kanami';
 export type ZoneId = 'coast' | 'tide' | 'lab' | 'choir' | 'sky' | 'hangar';
@@ -26,7 +27,7 @@ export interface ZoneDef {
   id: ZoneId;
   name: string;
   subtitle: string;
-  song: number;
+  song: MusicCue;
   theme: LevelTheme;
 }
 
@@ -74,14 +75,14 @@ export interface RoomDef {
   };
 }
 
-// ---------------- 场景定义(沿用四关的主题与配乐) ----------------
+// ---------------- 场景定义 ----------------
 
 export const ZONES: Record<ZoneId, ZoneDef> = {
   coast: {
     id: 'coast',
     name: '海滨长廊',
     subtitle: '欧拉海滨市郊,失控的安保机器人开始游荡……',
-    song: 1,
+    song: 'coast',
     theme: {
       skyTop: '#1c0f2e', skyBottom: '#c2541e', far: '#472441', mid: '#2f1a33',
       near: '#1c1024', tileBase: '#3e3448', tileEdge: '#c08a5a', tileDark: '#231c2c',
@@ -93,7 +94,7 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     id: 'tide',
     name: '沉潮地窟',
     subtitle: '被海水遗忘的旧城区,泵轮仍在黑暗中缓慢转动。',
-    song: 2,
+    song: 'tide',
     theme: {
       skyTop: '#07131a', skyBottom: '#16323a', far: '#17323a', mid: '#102a31',
       near: '#091b22', tileBase: '#29454a', tileEdge: '#8db8ad', tileDark: '#14272b',
@@ -105,7 +106,7 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     id: 'lab',
     name: '中央研究区',
     subtitle: '深入米斯忒篷研究设施,弦膜封锁了通路。',
-    song: 2,
+    song: 'lab',
     theme: {
       skyTop: '#060812', skyBottom: '#182448', far: '#1c2444', mid: '#121a34',
       near: '#0a1020', tileBase: '#2a2c44', tileEdge: '#9aa8d8', tileDark: '#161828',
@@ -117,7 +118,7 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     id: 'choir',
     name: '弦声圣堂',
     subtitle: '废弃的共鸣礼堂仍在回应每一发子弹与每一次脚步。',
-    song: 3,
+    song: 'choir',
     theme: {
       skyTop: '#130b20', skyBottom: '#3b244b', far: '#33203f', mid: '#24172f',
       near: '#170e20', tileBase: '#43354f', tileEdge: '#d0a7cc', tileDark: '#251a2c',
@@ -129,7 +130,7 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     id: 'sky',
     name: '天穹回廊',
     subtitle: '通往塔顶的空中走廊,弦化是唯一的通行证。',
-    song: 3,
+    song: 'sky',
     theme: {
       skyTop: '#3a4468', skyBottom: '#a8b0cc', far: '#8890b0', mid: '#666e92',
       near: '#4a5274', tileBase: '#565c78', tileEdge: '#d0d6ec', tileDark: '#383e56',
@@ -141,7 +142,7 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     id: 'hangar',
     name: '塔顶机库',
     subtitle: '「守望者 MK-III」在此沉眠。终结这一切吧!',
-    song: 4,
+    song: 'hangar',
     theme: {
       skyTop: '#12060e', skyBottom: '#3c0d18', far: '#301024', mid: '#200a18',
       near: '#12060e', tileBase: '#342030', tileEdge: '#a85a4a', tileDark: '#1c101c',

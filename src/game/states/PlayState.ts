@@ -225,6 +225,7 @@ export class PlayState implements GameState, WorldApi {
   /** 环境飘浮微粒(余烬/尘埃/落灰),屏幕空间 */
   private embers: { x: number; y: number; vx: number; vy: number; ph: number }[] = [];
   private transitionThemeStep = -1;
+  private musicThreatT = 0;
 
   constructor(
     public engine: Engine,
@@ -580,6 +581,7 @@ export class PlayState implements GameState, WorldApi {
 
   update(dt: number): void {
     const input = this.engine.input;
+    this.syncMusicState(dt);
 
     // 地图屏
     if (input.pressed('map') && (this.overlay === 'none' || this.overlay === 'map')) {
@@ -734,10 +736,15 @@ export class PlayState implements GameState, WorldApi {
     if (this.boss) {
       if (this.boss.state === 'dormant' && Math.abs(this.playerX - this.boss.x) < 200) {
         this.boss.awaken(this);
+        this.engine.audio.playSong('boss', 1.1);
+        this.engine.audio.playStinger('bossAwaken');
       }
       const wasDead = this.boss.state === 'dead';
       this.boss.update(dt, this);
       if (!wasDead && this.boss.state === 'dead' && !this.gate.active) {
+        this.engine.audio.playStinger('bossDefeat');
+        this.engine.audio.playSong('hangar', 1.8);
+        this.engine.audio.setMusicState({ intensity: 0, ducked: false });
         this.world.flags.add('boss:guardian');
         this.world.dust += 120;
         this.toast('获得 120 晶尘');
@@ -801,9 +808,36 @@ export class PlayState implements GameState, WorldApi {
     if (this.player.dead && this.overlay === 'none') {
       this.overlay = 'dead';
       this.overlayT = 1.6;
+      this.engine.audio.setMusicState({ intensity: 0, ducked: true });
       this.sfx('explosion');
       this.particles.burst(this.playerX, this.playerY, 24, this.player.char === 'michele' ? '#8fd7ff' : '#ffb0d8', 150, 0.8);
     }
+  }
+
+  private syncMusicState(dt: number): void {
+    const bossActive = Boolean(
+      this.boss &&
+      this.boss.state !== 'dormant' &&
+      this.boss.state !== 'dead',
+    );
+    const gameplayActive = this.overlay === 'none';
+    const nearbyThreat = gameplayActive && this.enemies.some((enemy) => (
+      !enemy.dead &&
+      Math.abs(enemy.x - this.playerX) < VIEW_W * 0.65 &&
+      Math.abs(enemy.y - this.playerY) < VIEW_H * 0.8
+    ));
+
+    if (nearbyThreat) this.musicThreatT = 2.8;
+    else if (gameplayActive) this.musicThreatT = Math.max(0, this.musicThreatT - dt);
+
+    const ducked = this.overlay === 'pause' ||
+      this.overlay === 'map' ||
+      this.overlay === 'shop' ||
+      this.overlay === 'fast_travel' ||
+      this.overlay === 'ability' ||
+      this.overlay === 'dead';
+    const intensity = bossActive ? 2 : this.musicThreatT > 0 ? 1 : 0;
+    this.engine.audio.setMusicState({ intensity, ducked });
   }
 
   // ---------------- 房间切换 ----------------
@@ -1030,6 +1064,8 @@ export class PlayState implements GameState, WorldApi {
     this.overlayT = 0;
     this.sfx('crystal');
     this.sfx('checkpoint');
+    this.engine.audio.playStinger('ability');
+    this.engine.audio.setMusicState({ intensity: 0, ducked: true });
     const color = kind === 'kanami' ? '#ffb0d8' : '#8ee8f4';
     this.particles.burst(x, y - 12, 26, color, 120, 0.9, kind === 'kanami' ? 'note' : 'spark');
     this.showFloatingHint([ABILITY_INFO[kind].hint], x, y - 40);
@@ -1597,7 +1633,9 @@ export class PlayState implements GameState, WorldApi {
       this.persistRuntime();
       this.overlay = 'victory';
       this.overlayT = 7;
-      this.engine.audio.playSong(-1);
+      this.engine.audio.setMusicState({ intensity: 0, ducked: false });
+      this.engine.audio.playSong('ending', 1.4);
+      this.engine.audio.playStinger('victory');
       this.sfx('checkpoint');
     }
   }

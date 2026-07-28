@@ -57,7 +57,7 @@ export class TitleState implements GameState {
   }
 
   enter(): void {
-    this.engine.audio.playSong(0);
+    this.engine.audio.playSong('title');
     this.menu = 'main';
     this.sel = 0;
     this.hasSave = this.engine.hasSave();

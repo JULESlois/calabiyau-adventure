@@ -128,6 +128,7 @@ export class Engine {
   }
 
   showTitle(): void {
+    this.audio.setMusicState({ intensity: 0, ducked: false });
     this.state = new TitleState(this);
     this.state.enter();
   }
@@ -144,7 +145,11 @@ export class Engine {
     const keepBoundaryMusic = Boolean(
       room.transition && fromRoom && (fromRoom.zone === room.zone || fromRoom.zone === room.transition.to),
     );
-    if (!keepBoundaryMusic) this.audio.playSong(ZONES[room.zone].song);
+    this.audio.setMusicState({ intensity: 0, ducked: false });
+    if (!keepBoundaryMusic) {
+      const fadeTime = entry.kind === 'door' ? 1.15 : 0.8;
+      this.audio.playSong(ZONES[room.zone].song, fadeTime);
+    }
 
     const next = new PlayState(this, roomId, entry);
     next.enter();
