@@ -287,7 +287,7 @@ for (const room of ROOM_LIST) {
           ` (最终 y=${state.player.y.toFixed(2)},形态=${state.player.stringMode})`,
       );
     }
-    if (autoGlided) err(`${room.id} 的地面弦化坠落错误地自动进入了飘飞形态`);
+    if (!autoGlided) err(`${room.id} 的地面弦化坠落没有复用飘飞形态`);
   }
 }
 console.log(`  [通过] ${checkedPaperDrops} 个纸片坠落口均通过真实移动与出口触发验证`);

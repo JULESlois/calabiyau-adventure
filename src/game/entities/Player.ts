@@ -301,7 +301,7 @@ export class Player {
       let desired: StringMode = 'normal';
       if (hasPaper && this.energy > 1) {
         if (this.stringMode === 'ground') {
-          // 地面弦化离开支撑时保持普通重力穿膜，但不自动升级为空中飘飞。
+          // 先保持地面形态完成本帧碰撞,确认失去支撑后再切换飘飞。
           desired = holdPaper ? 'ground' : 'normal';
         } else if (this.onGround) {
           desired = holdPaper ? 'ground' : 'normal';
@@ -418,13 +418,18 @@ export class Player {
         });
       }
     } else if (this.stringMode === 'glide') {
-      this.vy = Math.min(this.vy + GRAVITY * GLIDE_GRAVITY_MULT * dt, GLIDE_FALL_SPEED);
+      // 飘飞只减缓下落。上升阶段仍使用普通重力,避免稍晚一帧按 Shift 放大跳跃高度。
+      const gravityMultiplier = this.vy < 0 ? 1 : GLIDE_GRAVITY_MULT;
+      this.vy = Math.min(this.vy + GRAVITY * gravityMultiplier * dt, GLIDE_FALL_SPEED);
     } else {
       this.vy = Math.min(this.vy + GRAVITY * dt, MAX_FALL);
     }
 
     // ---- 位移与碰撞 ----
     this.moveAndCollide(dt, ps);
+    if (this.stringMode === 'ground' && !this.onGround && this.vy >= 0 && holdPaper && this.energy > 1) {
+      this.setStringMode('glide', ps);
+    }
     if (this.stringMode === 'glide' && this.onGround) {
       this.setStringMode(holdPaper && this.energy > 1 ? 'ground' : 'normal', ps);
     }

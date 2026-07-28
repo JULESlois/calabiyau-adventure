@@ -214,8 +214,10 @@ test('ending an airborne glide beside a wall restores normal width without climb
 
 test('Shift selects ground stringification or airborne glide without attaching to a nearby wall', () => {
   const { input, state } = makeState(['paper', 'cling']);
+  state.tileAt = (col: number, row: number) =>
+    (col === 2 && row < 8) || row === 8 ? T_SOLID : T_EMPTY;
 
-  const grounded = new Player(26.5, 100);
+  const grounded = new Player(26.5, 8 * TILE);
   grounded.onGround = true;
   input.held.add('paper');
   grounded.update(DT, state);
@@ -267,7 +269,25 @@ test('holding ground stringification through a jump does not auto-enter glide or
   assert.equal(player.stringMode, 'glide');
 });
 
-test('ground stringification remains active while falling through a membrane hatch without becoming glide', () => {
+test('ground stringification becomes glide after losing floor support', () => {
+  const { input, state } = makeState(['paper']);
+  let hasFloor = true;
+  state.tileAt = (_col: number, row: number) => (hasFloor && row === 8 ? T_SOLID : T_EMPTY);
+  const player = new Player(120, 8 * TILE);
+  player.onGround = true;
+  input.held.add('paper');
+
+  player.update(DT, state);
+  assert.equal(player.stringMode, 'ground');
+
+  hasFloor = false;
+  player.update(DT, state);
+
+  assert.equal(player.stringMode, 'glide');
+  assert.ok(player.vy >= 0);
+});
+
+test('falling through a membrane hatch reuses glide movement', () => {
   const { input, state } = makeState(['paper']);
   state.tileAt = (_col: number, row: number) =>
     row >= 8 && row <= 10 ? T_MEMBRANE : T_EMPTY;
@@ -276,17 +296,53 @@ test('ground stringification remains active while falling through a membrane hat
   input.held.add('paper');
 
   const modes = new Set<string>();
-  for (let frame = 0; frame < 60; frame++) {
+  for (let frame = 0; frame < 120; frame++) {
     player.update(DT, state);
     modes.add(player.stringMode);
   }
 
   assert.ok(player.y > 11 * TILE, `player did not clear the membrane hatch: y=${player.y}`);
-  assert.deepEqual([...modes], ['ground']);
+  assert.deepEqual([...modes], ['glide']);
 
   input.held.clear();
   player.update(DT, state);
   assert.equal(player.stringMode, 'normal');
+});
+
+test('pressing stringification one frame after jump does not amplify jump height', () => {
+  const simulateApex = (paperFrame: number) => {
+    const { input, state } = makeState(['paper']);
+    state.tileAt = (_col: number, row: number) => (row >= 8 ? T_SOLID : T_EMPTY);
+    const player = new Player(120, 8 * TILE);
+    player.onGround = true;
+    input.held.add('jump');
+    input.justPressed.add('jump');
+
+    let apex = player.y;
+    let enteredGlide = false;
+    for (let frame = 0; frame < 90; frame++) {
+      if (frame === paperFrame) {
+        input.held.add('paper');
+        input.justPressed.add('paper');
+      }
+      player.update(DT, state);
+      enteredGlide ||= player.stringMode === 'glide';
+      apex = Math.min(apex, player.y);
+      input.justPressed.clear();
+      if (frame > 0 && player.vy >= 0) break;
+    }
+    return { apex, enteredGlide, jumpsUsed: player.jumpsUsed };
+  };
+
+  const normal = simulateApex(-1);
+  const staggeredCombo = simulateApex(1);
+
+  assert.equal(staggeredCombo.enteredGlide, true);
+  assert.equal(staggeredCombo.jumpsUsed, 1);
+  assert.ok(
+    Math.abs(staggeredCombo.apex - normal.apex) <= 0.5,
+    `normal apex ${normal.apex}, Shift+jump apex ${staggeredCombo.apex}`,
+  );
 });
 
 test('glide consumes jump input without triggering an extra airborne jump', () => {

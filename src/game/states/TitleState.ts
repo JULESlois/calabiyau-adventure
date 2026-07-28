@@ -20,7 +20,7 @@ interface Spire {
   lit: number[];
 }
 
-type Menu = 'main' | 'help' | 'confirmNew';
+type Menu = 'main' | 'confirmNew';
 
 const F_SERIF = '"SimSun", "Songti SC", serif';
 
@@ -64,7 +64,7 @@ export class TitleState implements GameState {
   }
 
   private mainItems(): string[] {
-    return this.hasSave ? ['继续冒险', '新的冒险', '操作说明'] : ['开始冒险', '操作说明'];
+    return this.hasSave ? ['继续冒险', '新的冒险'] : ['开始冒险'];
   }
 
   update(dt: number): void {
@@ -81,7 +81,7 @@ export class TitleState implements GameState {
     }
 
     const input = this.engine.input;
-    const nOptions = this.menu === 'main' ? this.mainItems().length : this.menu === 'confirmNew' ? 2 : 1;
+    const nOptions = this.menu === 'main' ? this.mainItems().length : 2;
 
     if (input.pressed('up')) {
       this.sel = (this.sel - 1 + nOptions) % nOptions;
@@ -101,19 +101,13 @@ export class TitleState implements GameState {
         else if (it === '新的冒险') {
           this.menu = 'confirmNew';
           this.sel = 1;
-        } else {
-          this.menu = 'help';
-          this.sel = 0;
         }
-      } else if (this.menu === 'confirmNew') {
+      } else {
         if (this.sel === 0) this.engine.newGame();
         else {
           this.menu = 'main';
           this.sel = 0;
         }
-      } else {
-        this.menu = 'main';
-        this.sel = 0;
       }
     }
     if (input.pressed('pause') || input.pressed('skill')) {
@@ -279,12 +273,11 @@ export class TitleState implements GameState {
     drawChar(ctx, 'kanami', VIEW_W / 2 + 66, pedY, -1, { ...idlePose, time: t + 1.3 });
 
     // ---- 菜单 ----
-    const panel =
-      this.menu === 'main'
-        ? { x: VIEW_W / 2 - 66, y: 119, w: 132, h: 62 }
-        : this.menu === 'confirmNew'
-          ? { x: VIEW_W / 2 - 96, y: 112, w: 192, h: 74 }
-          : { x: VIEW_W / 2 - 122, y: 104, w: 244, h: 140 };
+    const mainCount = this.mainItems().length;
+    const mainPanelH = mainCount * 20 + 12;
+    const panel = this.menu === 'main'
+      ? { x: VIEW_W / 2 - 66, y: 150 - mainPanelH / 2, w: 132, h: mainPanelH }
+      : { x: VIEW_W / 2 - 96, y: 112, w: 192, h: 74 };
     ctx.fillStyle = 'rgba(6,4,12,0.62)';
     ctx.fillRect(panel.x, panel.y, panel.w, panel.h);
     ctx.strokeStyle = 'rgba(168,130,60,0.35)';
@@ -295,7 +288,7 @@ export class TitleState implements GameState {
     if (this.menu === 'main') {
       const items = this.mainItems();
       items.forEach((it, i) => {
-        const y = items.length === 3 ? 126 + i * 18 : 134 + i * 20;
+        const y = panel.y + 7 + i * 20;
         const selected = i === this.sel;
         if (selected) {
           ctx.fillStyle = '#f0e0b0';
@@ -315,20 +308,6 @@ export class TitleState implements GameState {
         ctx.fillStyle = selected ? (i === 0 ? '#e88a8a' : '#f0e0b0') : '#6a6080';
         ctx.fillText(selected ? `✦ ${o} ✦` : o, VIEW_W / 2, y);
       });
-    } else {
-      ctx.font = `9px ${F_SERIF}`;
-      const lines = [
-        'A/D 移动 · 空格/W 跳跃 · S+跳 下落',
-        'J 射击 · K 近战 · L 技能 · Q 换人',
-        'Shift 弦化/空中飘飞 · E 贴墙/脱离 · F 交互',
-        'U/; 冲刺 · Tab/I 地图 · Esc 暂停',
-      ];
-      lines.forEach((l, i) => {
-        ctx.fillStyle = i === 2 ? '#8ee8f4' : '#b8accc';
-        ctx.fillText(l, VIEW_W / 2, 112 + i * 13);
-      });
-      ctx.fillStyle = '#6a6080';
-      ctx.fillText('按 确认 返回', VIEW_W / 2, 112 + lines.length * 13 + 4);
     }
 
     // ---- 飘灰 ----

@@ -2300,19 +2300,13 @@ export class PlayState implements GameState, WorldApi {
         const cardY = listStartY + index * 29;
         const isSel = i === this.fastTravelIndex;
 
-        // 背景框
+        // 只保留轻量选中标记,避免每个传送点都被文字框包围。
         if (isSel) {
-          ctx.fillStyle = 'rgba(142, 232, 244, 0.18)';
-          ctx.fillRect(cardX, cardY, cardW, cardH);
-          ctx.strokeStyle = '#8ee8f4';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(cardX, cardY, cardW, cardH);
-        } else {
-          ctx.fillStyle = 'rgba(20, 14, 32, 0.65)';
-          ctx.fillRect(cardX, cardY, cardW, cardH);
-          ctx.strokeStyle = 'rgba(80, 60, 110, 0.4)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(cardX, cardY, cardW, cardH);
+          ctx.fillStyle = '#8ee8f4';
+          ctx.fillRect(cardX - 5, cardY + 10, 3, 3);
+          ctx.globalAlpha = 0.22;
+          ctx.fillRect(cardX + 4, cardY + cardH - 1, cardW - 8, 1);
+          ctx.globalAlpha = 1;
         }
 
         // 左侧文字: 区域与房间名
@@ -2349,13 +2343,13 @@ export class PlayState implements GameState, WorldApi {
         ctx.textAlign = 'center';
         ctx.font = '8px sans-serif';
         ctx.fillStyle = '#8ee8f4';
-        ctx.fillText('▲ 向上滚动', VIEW_W / 2, listStartY - 2);
+        ctx.fillText('▲', frameX + frameW - 22, frameY + 20);
       }
       if (scrollOffset + MAX_VISIBLE < total) {
         ctx.textAlign = 'center';
         ctx.font = '8px sans-serif';
         ctx.fillStyle = '#8ee8f4';
-        ctx.fillText('▼ 向下滚动', VIEW_W / 2, listStartY + MAX_VISIBLE * 29);
+        ctx.fillText('▼', frameX + frameW - 22, listStartY + MAX_VISIBLE * 29);
       }
     }
 
