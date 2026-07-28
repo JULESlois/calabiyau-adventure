@@ -3,6 +3,7 @@ import { DT, VIEW_H, VIEW_W } from './constants';
 import { Input } from './Input';
 import { clearWorldSave, loadWorldSave, storeWorldSave } from './save';
 import { PlayState, type EntryInfo } from './states/PlayState';
+import { RoomTransitionState } from './states/RoomTransitionState';
 import { TitleState } from './states/TitleState';
 import { ROOMS, START_ROOM, ZONES, type Ability } from './world/world';
 import { WorldState } from './world/WorldState';
@@ -82,7 +83,7 @@ export class Engine {
           for (const a of ['paper', 'cling', 'djump', 'dash', 'kanami'] as Ability[]) this.world.grant(a);
         },
         info: () => {
-          const s = this.state;
+          const s = this.state instanceof RoomTransitionState ? this.state.next : this.state;
           if (s instanceof PlayState) {
             return {
               state: 'play',
@@ -137,10 +138,27 @@ export class Engine {
       console.error(`未知房间: ${roomId}`);
       return;
     }
+    const previous = entry.kind === 'door' && this.state instanceof PlayState ? this.state : null;
     this.world.visited.add(roomId);
-    this.audio.playSong(ZONES[room.zone].song);
-    this.state = new PlayState(this, roomId, entry);
-    this.state.enter();
+    const fromRoom = entry.kind === 'door' ? ROOMS[entry.fromRoom] : undefined;
+    const keepBoundaryMusic = Boolean(
+      room.transition && fromRoom && (fromRoom.zone === room.zone || fromRoom.zone === room.transition.to),
+    );
+    if (!keepBoundaryMusic) this.audio.playSong(ZONES[room.zone].song);
+
+    const next = new PlayState(this, roomId, entry);
+    next.enter();
+    if (previous && entry.kind === 'door') {
+      const sameZone = previous.room.zone === room.zone;
+      this.state = new RoomTransitionState(this, previous, next, entry.fromSide, sameZone ? 0.36 : 0.46);
+      this.state.enter();
+    } else {
+      this.state = next;
+    }
+  }
+
+  completeRoomTransition(transition: RoomTransitionState, next: PlayState): void {
+    if (this.state === transition) this.state = next;
   }
 
   persistWorld(): void {

@@ -14,6 +14,7 @@ import {
   T_POLARITY,
   T_SOLID,
   T_SPIKE,
+  type LevelTheme,
   type ParsedRows,
 } from '../levels/levels';
 import { CatTurret, SonarDart } from '../entities/gadgets';
@@ -21,7 +22,7 @@ import { Background } from '../render/background';
 import { drawCandle, drawExitGate, drawPickup } from '../render/sprites';
 import { drawAbilityShrine, drawBench, drawCagedKanami, drawNavigator } from '../render/props';
 import { drawHUD } from '../render/hud';
-import type { WorldApi } from '../types';
+import type { StringMode, WorldApi } from '../types';
 import { clamp, lerp, rectsOverlap, type Rect } from '../utils';
 import type { Engine, GameState } from '../Engine';
 import {
@@ -42,10 +43,28 @@ import {
 } from '../world/world';
 import type { WorldState } from '../world/WorldState';
 
+export interface SceneContinuity {
+  /** 下一画面应延续到的区域背景摄像机坐标。 */
+  backdropX: number;
+  backdropY: number;
+  time: number;
+  vx: number;
+  vy: number;
+  facing: number;
+  stringMode: StringMode;
+}
+
 export type EntryInfo =
   | { kind: 'start' }
   | { kind: 'bench' }
-  | { kind: 'door'; fromRoom: string; ex: number; ey: number; fromSide: 'left' | 'right' | 'down' };
+  | {
+      kind: 'door';
+      fromRoom: string;
+      ex: number;
+      ey: number;
+      fromSide: 'left' | 'right' | 'down';
+      scene?: SceneContinuity;
+    };
 
 interface Mover {
   baseX: number;
@@ -159,6 +178,7 @@ export class PlayState implements GameState, WorldApi {
   private nearPolaritySpot: { x: number; y: number } | null = null;
   particles = new ParticleSystem();
   bg: Background;
+  theme: LevelTheme;
 
   gate = { x: 0, y: 0, active: false };
   lastEntryX = 0;
@@ -166,6 +186,8 @@ export class PlayState implements GameState, WorldApi {
 
   camX = 0;
   camY = 0;
+  backdropOffsetX = 0;
+  backdropOffsetY = 0;
   shakeT = 0;
   shakeMag = 0;
   time = 0;
@@ -177,6 +199,7 @@ export class PlayState implements GameState, WorldApi {
   private meleeHits = new Map<object, number>();
   /** 环境飘浮微粒(余烬/尘埃/落灰),屏幕空间 */
   private embers: { x: number; y: number; vx: number; vy: number; ph: number }[] = [];
+  private transitionThemeStep = -1;
 
   constructor(
     public engine: Engine,
@@ -186,8 +209,9 @@ export class PlayState implements GameState, WorldApi {
     this.roomId = roomId;
     this.room = ROOMS[roomId];
     this.zone = ZONES[this.room.zone];
+    this.theme = this.zone.theme;
     this.level = parseRows(this.room.rows);
-    this.bg = new Background(this.zone.theme, ZONE_INDEX[this.room.zone], this.mapW);
+    this.bg = new Background(this.theme, ZONE_INDEX[this.room.zone]);
 
     const world = this.world;
     this.shortcuts = (this.room.shortcuts ?? []).map((def) => ({
@@ -345,14 +369,21 @@ export class PlayState implements GameState, WorldApi {
       px = entry.ex * TILE + TILE / 2;
       py = (entry.ey + 1) * TILE;
       facing = entry.fromSide === 'left' ? -1 : 1;
-      const fromZone = ROOMS[entry.fromRoom]?.zone;
-      zoneChanged = fromZone !== this.room.zone;
+      const fromRoom = ROOMS[entry.fromRoom];
+      zoneChanged = this.room.transition ? false : Boolean(fromRoom?.transition) || fromRoom?.zone !== this.room.zone;
     }
     this.player = new Player(px, py);
     this.player.facing = facing;
     this.player.char = world.has('kanami') ? world.char : 'michele';
     this.player.hp = world.hp;
     this.player.energy = world.energy;
+    if (entry.kind === 'door' && entry.scene) {
+      this.player.vx = entry.scene.vx;
+      this.player.vy = entry.scene.vy;
+      this.player.facing = entry.scene.facing < 0 ? -1 : 1;
+      this.player.stringMode = entry.scene.stringMode === 'wall' ? 'normal' : entry.scene.stringMode;
+      this.time = entry.scene.time;
+    }
     this.lastEntryX = px;
     this.lastEntryY = py;
 
@@ -373,6 +404,10 @@ export class PlayState implements GameState, WorldApi {
     }
     this.camX = clamp(px - VIEW_W / 2, 0, Math.max(0, this.mapW - VIEW_W));
     this.camY = clamp(py - VIEW_H / 2, 0, Math.max(0, this.mapH - VIEW_H));
+    if (entry.kind === 'door' && entry.scene && ROOMS[entry.fromRoom]?.zone === this.room.zone) {
+      this.backdropOffsetX = entry.scene.backdropX - this.camX;
+      this.backdropOffsetY = entry.scene.backdropY - this.camY;
+    }
   }
 
   // ---------------- WorldApi ----------------
@@ -714,12 +749,23 @@ export class PlayState implements GameState, WorldApi {
 
   private goThrough(exit: ExitDef): void {
     this.persistRuntime();
+    const shiftX = exit.side === 'right' ? VIEW_W : exit.side === 'left' ? -VIEW_W : 0;
+    const shiftY = exit.side === 'down' ? VIEW_H : 0;
     this.engine.startRoom(exit.target, {
       kind: 'door',
       fromRoom: this.roomId,
       ex: exit.ex,
       ey: exit.ey,
       fromSide: exit.side,
+      scene: {
+        backdropX: this.camX + this.backdropOffsetX + shiftX,
+        backdropY: this.camY + this.backdropOffsetY + shiftY,
+        time: this.time,
+        vx: this.player.vx,
+        vy: this.player.vy,
+        facing: this.player.facing,
+        stringMode: this.player.stringMode,
+      },
     });
   }
 
@@ -1470,6 +1516,22 @@ export class PlayState implements GameState, WorldApi {
     }
   }
 
+  private updateVisualTheme(): void {
+    const transition = this.room.transition;
+    if (!transition) {
+      this.theme = this.zone.theme;
+      this.bg.setTheme(this.theme);
+      return;
+    }
+    const mix = roomTransitionMix(this.room, this.playerX, this.playerY, this.mapW, this.mapH);
+    const step = Math.round(mix * 48);
+    if (step !== this.transitionThemeStep) {
+      this.transitionThemeStep = step;
+      this.theme = blendLevelThemes(this.zone.theme, ZONES[transition.to].theme, step / 48);
+      this.bg.setTheme(this.theme);
+    }
+  }
+
   private updateCamera(dt: number): void {
     const targetX = clamp(
       this.playerX + this.player.facing * 24 - VIEW_W / 2,
@@ -1483,13 +1545,16 @@ export class PlayState implements GameState, WorldApi {
   }
 
   // ---------------- 渲染 ----------------
-  render(ctx: CanvasRenderingContext2D): void {
+  render(ctx: CanvasRenderingContext2D, chrome = true, playerVisible = true): void {
+    this.updateVisualTheme();
     const shakeX = this.shakeT > 0 ? (Math.random() - 0.5) * this.shakeMag : 0;
     const shakeY = this.shakeT > 0 ? (Math.random() - 0.5) * this.shakeMag : 0;
     const cx = Math.round(this.camX + shakeX);
     const cy = Math.round(this.camY + shakeY);
 
-    this.bg.render(ctx, this.camX, this.camY, this.time);
+    const backdropX = this.camX + this.backdropOffsetX;
+    const backdropY = this.camY + this.backdropOffsetY;
+    this.bg.render(ctx, backdropX, backdropY, this.time);
 
     ctx.save();
     ctx.translate(-cx, -cy);
@@ -1501,10 +1566,10 @@ export class PlayState implements GameState, WorldApi {
     for (const u of this.updrafts) {
       ctx.save();
       ctx.globalAlpha = 0.07;
-      ctx.fillStyle = this.zone.theme.accent;
+      ctx.fillStyle = this.theme.accent;
       ctx.fillRect(u.x, u.y, u.w, u.h);
       ctx.globalAlpha = 0.4;
-      ctx.strokeStyle = this.zone.theme.accent;
+      ctx.strokeStyle = this.theme.accent;
       ctx.lineWidth = 1;
       for (let i = 0; i < 9; i++) {
         const xx = u.x + 7 + ((i * 29 + this.time * 24) % Math.max(1, u.w - 14));
@@ -1518,7 +1583,7 @@ export class PlayState implements GameState, WorldApi {
     }
 
     // 移动平台
-    const theme = this.zone.theme;
+    const theme = this.theme;
     for (const m of this.movers) {
       const x = Math.round(m.x - m.w / 2);
       const y = Math.round(m.y);
@@ -1560,7 +1625,7 @@ export class PlayState implements GameState, WorldApi {
     if (this.boss) this.boss.render(ctx, this.time);
 
     // 玩家
-    this.player.render(ctx, this.time);
+    if (playerVisible) this.player.render(ctx, this.time);
 
     // 子弹
     for (const b of this.playerBullets) {
@@ -1589,7 +1654,7 @@ export class PlayState implements GameState, WorldApi {
     ctx.restore();
 
     // 前景遮挡层(视差 1.3)
-    this.bg.renderFront(ctx, this.camX, this.camY, this.time);
+    this.bg.renderFront(ctx, backdropX, backdropY, this.time);
 
     // 环境微粒(屏幕空间)
     ctx.fillStyle = theme.ember;
@@ -1600,7 +1665,18 @@ export class PlayState implements GameState, WorldApi {
     }
     ctx.globalAlpha = 1;
 
-    // HUD
+    if (chrome) this.renderChrome(ctx);
+  }
+
+  renderTransitionPlayer(ctx: CanvasRenderingContext2D, screenX: number, screenY: number): void {
+    ctx.save();
+    ctx.translate(Math.round(screenX - this.player.x), Math.round(screenY - this.player.y));
+    this.player.render(ctx, this.time);
+    ctx.restore();
+  }
+
+  /** 固定在屏幕上的界面层;房间滑动时只绘制新房间的一份。 */
+  renderChrome(ctx: CanvasRenderingContext2D, transient = true): void {
     drawHUD(ctx, this.player, this.world, TOTAL_CRYSTALS, this.boss, this.engine.audio.muted);
 
     // 受击红闪 / 低血量脉冲
@@ -1622,7 +1698,7 @@ export class PlayState implements GameState, WorldApi {
     }
 
     // 场景开场横幅(哥特卷轴风)
-    if (this.introT > 0) {
+    if (transient && this.introT > 0) {
       const a = clamp(this.introT > 2.2 ? (2.8 - this.introT) / 0.6 : this.introT / 0.8, 0, 1);
       const cyy = VIEW_H / 2;
       ctx.globalAlpha = a * 0.85;
@@ -1645,11 +1721,11 @@ export class PlayState implements GameState, WorldApi {
       ctx.globalAlpha = 1;
     }
 
-    this.renderToasts(ctx);
+    if (transient) this.renderToasts(ctx);
   }
 
   private renderWorldMechanics(ctx: CanvasRenderingContext2D): void {
-    const theme = this.zone.theme;
+    const theme = this.theme;
 
     for (const jet of this.pressureJets) {
       const active = this.pressureJetActive(jet);
@@ -1735,7 +1811,7 @@ export class PlayState implements GameState, WorldApi {
   }
 
   private renderTiles(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
-    const theme = this.zone.theme;
+    const theme = this.theme;
     const c0 = Math.max(0, Math.floor(cx / TILE));
     const c1 = Math.min(this.level.w - 1, Math.floor((cx + VIEW_W) / TILE));
     const r0 = Math.max(0, Math.floor(cy / TILE));
@@ -1976,6 +2052,12 @@ export class PlayState implements GameState, WorldApi {
       ctx.globalAlpha = current ? 0.55 : 0.28;
       ctx.fillStyle = zoneColor[r.zone];
       ctx.fillRect(x + 2, y + 2, cw - 4, h - 4);
+      if (r.transition) {
+        ctx.fillStyle = zoneColor[r.transition.to];
+        if (r.transition.toSide === 'left') ctx.fillRect(x + 2, y + 2, (cw - 4) / 2, h - 4);
+        else if (r.transition.toSide === 'down') ctx.fillRect(x + 2, y + h / 2, cw - 4, h / 2 - 2);
+        else ctx.fillRect(x + cw / 2, y + 2, cw / 2 - 2, h - 4);
+      }
       ctx.globalAlpha = 1;
       ctx.strokeStyle = current && Math.floor(this.time * 10) % 2 === 0 ? '#f0e0b0' : zoneColor[r.zone];
       ctx.lineWidth = 1;
@@ -2296,4 +2378,63 @@ export class PlayState implements GameState, WorldApi {
     }
     ctx.textAlign = 'left';
   }
+}
+
+/** 过渡房两端各保留少量纯区域色,中段使用平滑插值。 */
+export function roomTransitionMix(
+  room: RoomDef,
+  playerX: number,
+  playerY: number,
+  mapW: number,
+  mapH: number,
+): number {
+  if (!room.transition || mapW <= 0 || mapH <= 0) return 0;
+  const horizontal = clamp((playerX / mapW - 0.08) / 0.84, 0, 1);
+  const vertical = clamp((playerY / mapH - 0.08) / 0.84, 0, 1);
+  const towardTarget = room.transition.toSide === 'down'
+    ? vertical
+    : room.transition.toSide === 'right'
+      ? horizontal
+      : 1 - horizontal;
+  return towardTarget * towardTarget * (3 - 2 * towardTarget);
+}
+
+interface Rgba {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+function parseThemeColor(value: string): Rgba {
+  if (/^#[0-9a-f]{6}$/i.test(value)) {
+    return {
+      r: Number.parseInt(value.slice(1, 3), 16),
+      g: Number.parseInt(value.slice(3, 5), 16),
+      b: Number.parseInt(value.slice(5, 7), 16),
+      a: 1,
+    };
+  }
+  const match = value.match(/^rgba?\(([^)]+)\)$/i);
+  if (match) {
+    const parts = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
+    return { r: parts[0] ?? 0, g: parts[1] ?? 0, b: parts[2] ?? 0, a: parts[3] ?? 1 };
+  }
+  return { r: 0, g: 0, b: 0, a: 1 };
+}
+
+function blendThemeColor(from: string, to: string, mix: number): string {
+  const a = parseThemeColor(from);
+  const b = parseThemeColor(to);
+  const channel = (x: number, y: number) => Math.round(lerp(x, y, mix));
+  const alpha = Math.round(lerp(a.a, b.a, mix) * 1000) / 1000;
+  return `rgba(${channel(a.r, b.r)},${channel(a.g, b.g)},${channel(a.b, b.b)},${alpha})`;
+}
+
+export function blendLevelThemes(from: LevelTheme, to: LevelTheme, mix: number): LevelTheme {
+  const result = {} as LevelTheme;
+  for (const key of Object.keys(from) as (keyof LevelTheme)[]) {
+    result[key] = blendThemeColor(from[key], to[key], clamp(mix, 0, 1));
+  }
+  return result;
 }

@@ -66,6 +66,12 @@ export interface RoomDef {
   mapH?: number;
   /** 从远端开启、跨房间持久化的真正捷径。 */
   shortcuts?: ShortcutDef[];
+  /** 跨区缓冲空间:房间内视觉由当前区域逐渐混合到目标区域。 */
+  transition?: {
+    to: ZoneId;
+    /** 目标区域所在的房间边缘,决定色彩渐变方向。 */
+    toSide: 'left' | 'right' | 'down';
+  };
 }
 
 // ---------------- 场景定义(沿用四关的主题与配乐) ----------------
@@ -190,7 +196,7 @@ const R: RoomDef[] = [];
     id: 'coast_start', zone: 'coast', name: '海滨 · 灯塔下', rows: rows(g),
     mapX: 2, mapY: 2,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'lab_lift', ex: 24, ey: 13, needs: ['paper'] },
+      { side: 'left', from: 11, to: 13, target: 'pass_coast_lab_upper', ex: 46, ey: 13, needs: ['paper'] },
       { side: 'right', from: 11, to: 13, target: 'coast_walk', ex: 3, ey: 13 },
     ],
   });
@@ -215,7 +221,7 @@ const R: RoomDef[] = [];
     exits: [
       { side: 'left', from: 11, to: 13, target: 'coast_start', ex: 46, ey: 13 },
       { side: 'right', from: 11, to: 13, target: 'coast_cliff', ex: 3, ey: 13 },
-      { side: 'down', from: 30, to: 32, target: 'tide_cistern', ex: 4, ey: 4, needs: ['paper'] },
+      { side: 'down', from: 30, to: 32, target: 'pass_coast_tide_drop', ex: 4, ey: 4, needs: ['paper'] },
     ],
   });
 }
@@ -315,7 +321,7 @@ const R: RoomDef[] = [];
     mapX: 8, mapY: 3, mapH: 2,
     exits: [
       { side: 'left', from: 8, to: 10, target: 'coast_underpier', ex: 54, ey: 13 },
-      { side: 'right', from: 28, to: 30, target: 'tide_entry', ex: 3, ey: 13 },
+      { side: 'right', from: 28, to: 30, target: 'pass_coast_tide', ex: 3, ey: 13 },
     ],
   });
 }
@@ -394,7 +400,7 @@ const R: RoomDef[] = [];
     }],
     exits: [
       { side: 'left', from: 28, to: 30, target: 'coast_stormwall', ex: 56, ey: 13 },
-      { side: 'right', from: 8, to: 10, target: 'lab_lift', ex: 3, ey: 20 },
+      { side: 'right', from: 8, to: 10, target: 'pass_coast_lab_lower', ex: 3, ey: 13 },
     ],
   });
 }
@@ -417,7 +423,7 @@ const R: RoomDef[] = [];
     id: 'tide_entry', zone: 'tide', name: '沉潮 · 褪色门楼', rows: rows(g),
     mapX: 7, mapY: 7,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'coast_tideworks', ex: 32, ey: 29 },
+      { side: 'left', from: 11, to: 13, target: 'pass_coast_tide', ex: 46, ey: 13 },
       { side: 'right', from: 11, to: 13, target: 'tide_cistern', ex: 3, ey: 8 },
     ],
   });
@@ -494,7 +500,7 @@ const R: RoomDef[] = [];
     exits: [
       { side: 'left', from: 28, to: 30, target: 'tide_cistern', ex: 32, ey: 30 },
       { side: 'left', from: 19, to: 21, target: 'tide_reliquary', ex: 44, ey: 13 },
-      { side: 'right', from: 8, to: 10, target: 'lab_gate', ex: 3, ey: 10 },
+      { side: 'right', from: 8, to: 10, target: 'pass_tide_lab', ex: 3, ey: 13 },
     ],
   });
 }
@@ -517,8 +523,8 @@ const R: RoomDef[] = [];
     id: 'lab_lift', zone: 'lab', name: '研究区 · 升降井', rows: rows(g),
     mapX: 1, mapY: 2, mapH: 2,
     exits: [
-      { side: 'left', from: 19, to: 21, target: 'coast_beacon', ex: 32, ey: 10 },
-      { side: 'right', from: 11, to: 13, target: 'coast_start', ex: 3, ey: 13, needs: ['cling'] },
+      { side: 'left', from: 19, to: 21, target: 'pass_coast_lab_lower', ex: 46, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'pass_coast_lab_upper', ex: 3, ey: 13, needs: ['cling'] },
       { side: 'right', from: 28, to: 30, target: 'lab_gate', ex: 3, ey: 30 },
     ],
   });
@@ -560,9 +566,9 @@ const R: RoomDef[] = [];
       },
     ],
     exits: [
-      { side: 'left', from: 8, to: 10, target: 'tide_pumps', ex: 52, ey: 10 },
+      { side: 'left', from: 8, to: 10, target: 'pass_tide_lab', ex: 46, ey: 13 },
       { side: 'left', from: 28, to: 30, target: 'lab_lift', ex: 24, ey: 30 },
-      { side: 'right', from: 8, to: 10, target: 'choir_nave', ex: 3, ey: 13 },
+      { side: 'right', from: 8, to: 10, target: 'pass_lab_choir', ex: 3, ey: 13 },
       { side: 'right', from: 19, to: 21, target: 'lab_service', ex: 3, ey: 13, needs: ['dash'] },
       { side: 'right', from: 28, to: 30, target: 'lab_observation', ex: 3, ey: 13 },
     ],
@@ -740,7 +746,7 @@ const R: RoomDef[] = [];
     exits: [
       { side: 'left', from: 8, to: 10, target: 'lab_quarantine', ex: 58, ey: 13 },
       { side: 'left', from: 28, to: 30, target: 'lab_service', ex: 56, ey: 13, needs: ['dash'] },
-      { side: 'right', from: 8, to: 10, target: 'sky_gate', ex: 4, ey: 46 },
+      { side: 'right', from: 8, to: 10, target: 'pass_lab_sky', ex: 3, ey: 13 },
     ],
   });
 }
@@ -790,7 +796,7 @@ const R: RoomDef[] = [];
     id: 'choir_nave', zone: 'choir', name: '圣堂 · 失声中殿', rows: rows(g),
     mapX: 3, mapY: 0,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'lab_gate', ex: 40, ey: 10 },
+      { side: 'left', from: 11, to: 13, target: 'pass_lab_choir', ex: 46, ey: 13 },
       { side: 'right', from: 11, to: 13, target: 'choir_crypt', ex: 3, ey: 13 },
     ],
   });
@@ -873,7 +879,7 @@ const R: RoomDef[] = [];
     exits: [
       { side: 'left', from: 44, to: 46, target: 'choir_crypt', ex: 56, ey: 13 },
       { side: 'left', from: 27, to: 29, target: 'choir_reliquary', ex: 44, ey: 13 },
-      { side: 'right', from: 7, to: 9, target: 'sky_gate', ex: 4, ey: 25, needs: ['cling'] },
+      { side: 'right', from: 7, to: 9, target: 'pass_choir_sky', ex: 3, ey: 13, needs: ['cling'] },
     ],
   });
 }
@@ -904,8 +910,8 @@ const R: RoomDef[] = [];
     id: 'sky_gate', zone: 'sky', name: '天穹 · 竖廊', rows: rows(g),
     mapX: 7, mapY: 1, mapH: 3,
     exits: [
-      { side: 'left', from: 44, to: 46, target: 'lab_matrix', ex: 37, ey: 10, needs: ['cling'] },
-      { side: 'left', from: 23, to: 25, target: 'choir_belfry', ex: 32, ey: 9, needs: ['cling'] },
+      { side: 'left', from: 44, to: 46, target: 'pass_lab_sky', ex: 46, ey: 13, needs: ['cling'] },
+      { side: 'left', from: 23, to: 25, target: 'pass_choir_sky', ex: 46, ey: 13, needs: ['cling'] },
       { side: 'right', from: 8, to: 10, target: 'sky_corridor', ex: 3, ey: 13, needs: ['cling'] },
     ],
   });
@@ -1077,7 +1083,7 @@ const R: RoomDef[] = [];
     exits: [
       { side: 'left', from: 28, to: 30, target: 'sky_orrery', ex: 60, ey: 13 },
       { side: 'left', from: 7, to: 9, target: 'sky_belltower', ex: 32, ey: 9 },
-      { side: 'right', from: 7, to: 9, target: 'hangar_assembly', ex: 3, ey: 13 },
+      { side: 'right', from: 7, to: 9, target: 'pass_sky_hangar', ex: 3, ey: 13 },
     ],
   });
 }
@@ -1106,7 +1112,7 @@ const R: RoomDef[] = [];
     id: 'hangar_assembly', zone: 'hangar', name: '机库 · 悬吊装配线', rows: rows(g),
     mapX: 13, mapY: 0,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'sky_peak', ex: 52, ey: 9 },
+      { side: 'left', from: 11, to: 13, target: 'pass_sky_hangar', ex: 46, ey: 13 },
       { side: 'right', from: 11, to: 13, target: 'hangar_gate', ex: 3, ey: 30 },
       { side: 'down', from: 30, to: 32, target: 'hangar_reactor', ex: 4, ey: 13, needs: ['paper'] },
     ],
@@ -1181,6 +1187,201 @@ const R: RoomDef[] = [];
     id: 'hangar_boss', zone: 'hangar', name: '塔顶机库', rows: rows(g),
     mapX: 15, mapY: 1,
     exits: [{ side: 'left', from: 11, to: 13, target: 'hangar_gate', ex: 36, ey: 30 }],
+  });
+}
+
+// ======== 跨区域过渡房 ========
+// 过渡房保留独立加载,但在房间内部逐步混合两侧区域的色彩与标志性机关。
+
+{
+  // 海滨旧检修管:海风从右侧灌入,越过弦膜后逐渐显露研究设施的冷光。
+  const g = grid(50, 17);
+  rect(g, 14, 16, 0, 49, '#');
+  rect(g, 8, 13, 24, 24, '%');
+  rect(g, 10, 10, 15, 20, '=');
+  rect(g, 8, 8, 28, 34, '=');
+  set(g, 7, 31, '*');
+  set(g, 13, 39, '2');
+  R.push({
+    id: 'pass_coast_lab_upper', zone: 'coast', name: '边界 · 旧检修管', rows: rows(g),
+    mapX: 0, mapY: 2,
+    transition: { to: 'lab', toSide: 'left' },
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'lab_lift', ex: 24, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'coast_start', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 灯芯输能廊:暖色供能管逐段变成研究区极性导轨。
+  const g = grid(50, 17);
+  rect(g, 14, 16, 0, 49, '#');
+  rect(g, 9, 13, 35, 35, '&');
+  rect(g, 10, 10, 11, 17, '=');
+  rect(g, 8, 8, 25, 31, '=');
+  set(g, 13, 29, 'I');
+  set(g, 13, 18, '1');
+  set(g, 7, 28, '*');
+  R.push({
+    id: 'pass_coast_lab_lower', zone: 'coast', name: '边界 · 灯芯输能廊', rows: rows(g),
+    mapX: 1, mapY: 4,
+    transition: { to: 'lab', toSide: 'right' },
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'coast_beacon', ex: 32, ey: 10 },
+      { side: 'right', from: 11, to: 13, target: 'lab_lift', ex: 3, ey: 20 },
+    ],
+  });
+}
+
+{
+  // 海堤排水闸:海滨石堤下沉为蓄水渠道,第一股压力流预告沉潮地窟。
+  const g = grid(50, 17);
+  rect(g, 14, 16, 0, 49, '#');
+  rect(g, 12, 13, 11, 16, '#');
+  rect(g, 10, 13, 17, 22, '#');
+  rect(g, 12, 12, 28, 34, '=');
+  set(g, 13, 26, '>');
+  set(g, 13, 39, '5');
+  set(g, 9, 20, '*');
+  R.push({
+    id: 'pass_coast_tide', zone: 'coast', name: '边界 · 海堤排水闸', rows: rows(g),
+    mapX: 8, mapY: 6,
+    transition: { to: 'tide', toSide: 'right' },
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'coast_tideworks', ex: 32, ey: 29 },
+      { side: 'right', from: 11, to: 13, target: 'tide_entry', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 淹没检疫渠:潮压和极性膜在同一条短路线中交接,作为研究区机关的安全预演。
+  const g = grid(50, 17);
+  rect(g, 14, 16, 0, 49, '#');
+  rect(g, 8, 13, 36, 36, '&');
+  rect(g, 10, 10, 14, 20, '=');
+  rect(g, 9, 9, 28, 33, '=');
+  set(g, 13, 12, '>');
+  set(g, 13, 31, 'I');
+  set(g, 8, 30, '*');
+  R.push({
+    id: 'pass_tide_lab', zone: 'tide', name: '边界 · 淹没检疫渠', rows: rows(g),
+    mapX: 6, mapY: 5,
+    transition: { to: 'lab', toSide: 'right' },
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'tide_pumps', ex: 52, ey: 10 },
+      { side: 'right', from: 11, to: 13, target: 'lab_gate', ex: 3, ey: 10 },
+    ],
+  });
+}
+
+{
+  // 暗潮泄水井:隐藏舱口下的单向坠井,光色随下降逐步被深水吞没。
+  const g = grid(24, 34);
+  rect(g, 31, 33, 0, 23, '#');
+  rect(g, 31, 33, 10, 12, '.');
+  rect(g, 9, 9, 3, 8, '=');
+  rect(g, 15, 15, 13, 19, '=');
+  rect(g, 21, 21, 4, 10, '=');
+  rect(g, 26, 26, 14, 20, '=');
+  rect(g, 12, 24, 11, 11, '%');
+  set(g, 19, 7, '*');
+  set(g, 25, 17, '2');
+  set(g, 30, 7, '>');
+  R.push({
+    id: 'pass_coast_tide_drop', zone: 'coast', name: '边界 · 暗潮泄水井', rows: rows(g),
+    mapX: 3, mapY: 6, mapH: 2,
+    transition: { to: 'tide', toSide: 'down' },
+    exits: [
+      { side: 'down', from: 10, to: 12, target: 'tide_cistern', ex: 4, ey: 4 },
+    ],
+  });
+}
+
+{
+  // 隔离礼拜堂:实验隔舱改建的祈祷室,极性灯逐渐让位于周期共鸣。
+  const g = grid(50, 17);
+  rect(g, 14, 16, 0, 49, '#');
+  rect(g, 8, 13, 18, 18, '&');
+  rect(g, 10, 10, 25, 31, 'H');
+  rect(g, 8, 8, 35, 41, 'H');
+  set(g, 13, 13, 'I');
+  set(g, 13, 34, 'O');
+  set(g, 7, 38, '*');
+  R.push({
+    id: 'pass_lab_choir', zone: 'lab', name: '边界 · 隔离礼拜堂', rows: rows(g),
+    mapX: 3, mapY: 1,
+    transition: { to: 'choir', toSide: 'right' },
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'lab_gate', ex: 40, ey: 10 },
+      { side: 'right', from: 11, to: 13, target: 'choir_nave', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 外部观测梯:封闭实验走廊破开穹顶,极性膜后的气流托起纸片。
+  const g = grid(50, 17);
+  rect(g, 14, 16, 0, 49, '#');
+  rect(g, 8, 13, 23, 23, '&');
+  rect(g, 8, 8, 29, 35, '=');
+  rect(g, 6, 6, 39, 45, '=');
+  set(g, 13, 17, 'I');
+  set(g, 13, 33, 'U');
+  set(g, 5, 42, '*');
+  R.push({
+    id: 'pass_lab_sky', zone: 'lab', name: '边界 · 外部观测梯', rows: rows(g),
+    mapX: 7, mapY: 0,
+    transition: { to: 'sky', toSide: 'right' },
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'lab_matrix', ex: 37, ey: 10 },
+      { side: 'right', from: 11, to: 13, target: 'sky_gate', ex: 4, ey: 46 },
+    ],
+  });
+}
+
+{
+  // 破顶钟廊:共鸣台阶一路显形到露天缺口,高处气流接管移动节奏。
+  const g = grid(50, 17);
+  rect(g, 14, 16, 0, 49, '#');
+  rect(g, 11, 11, 12, 18, 'H');
+  rect(g, 8, 8, 24, 30, 'H');
+  rect(g, 6, 6, 37, 43, '=');
+  set(g, 13, 20, 'O');
+  set(g, 13, 34, 'U');
+  set(g, 5, 40, '*');
+  R.push({
+    id: 'pass_choir_sky', zone: 'choir', name: '边界 · 破顶钟廊', rows: rows(g),
+    mapX: 5, mapY: 1,
+    transition: { to: 'sky', toSide: 'right' },
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'choir_belfry', ex: 32, ey: 9 },
+      { side: 'right', from: 11, to: 13, target: 'sky_gate', ex: 4, ey: 25 },
+    ],
+  });
+}
+
+{
+  // 发射塔外缘:开放风道逐渐收束成机库输送线,最后一段让气流和传送带叠加。
+  const g = grid(50, 17);
+  rect(g, 14, 16, 0, 49, '#');
+  rect(g, 10, 10, 10, 16, '=');
+  rect(g, 8, 8, 22, 28, '=');
+  rect(g, 10, 10, 35, 41, '=');
+  set(g, 13, 14, 'U');
+  set(g, 13, 31, 'K');
+  set(g, 13, 41, 'k');
+  set(g, 7, 25, '*');
+  set(g, 13, 44, '4');
+  R.push({
+    id: 'pass_sky_hangar', zone: 'sky', name: '边界 · 发射塔外缘', rows: rows(g),
+    mapX: 12, mapY: 2,
+    transition: { to: 'hangar', toSide: 'right' },
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'sky_peak', ex: 52, ey: 9 },
+      { side: 'right', from: 11, to: 13, target: 'hangar_assembly', ex: 3, ey: 13 },
+    ],
   });
 }
 

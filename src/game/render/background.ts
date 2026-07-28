@@ -29,6 +29,17 @@ interface FrontDeco {
 const FRONT_PARALLAX = 1.3;
 /** 内墙装饰层视差(<1,贴在场景后) */
 const WALL_PARALLAX = 0.85;
+/** 区域背景以固定周期重复,允许跨房间延续视差坐标而不会耗尽装饰。 */
+const BACKGROUND_PERIOD = 4096;
+
+function wrappedScreenX(worldX: number, cameraX: number, margin: number): number {
+  const raw = worldX - cameraX + margin;
+  return ((raw % BACKGROUND_PERIOD) + BACKGROUND_PERIOD) % BACKGROUND_PERIOD - margin;
+}
+
+function celestialShift(cameraX: number, amount: number): number {
+  return Math.sin((cameraX / BACKGROUND_PERIOD) * Math.PI * 2) * amount;
+}
 
 /**
  * 程序化视差背景(恶魔城风):
@@ -41,15 +52,14 @@ export class Background {
   constructor(
     private theme: LevelTheme,
     private levelId: number,
-    private mapW: number,
   ) {
     const rng = makeRng(levelId * 7919 + 23);
-    const span = mapW + VIEW_W * 2;
+    const span = BACKGROUND_PERIOD;
     this.buildFront(rng);
 
     if (levelId === 1) {
       // 远景:城堡尖塔群 + 城墙
-      for (let x = -VIEW_W; x < span; x += 30 + rng() * 55) {
+      for (let x = 0; x < span; x += 30 + rng() * 55) {
         const layer = rng() < 0.5 ? 0 : rng() < 0.8 ? 1 : 2;
         const h = 60 + rng() * (layer === 0 ? 130 : 90);
         const lit: number[] = [];
@@ -57,41 +67,45 @@ export class Background {
         for (let i = 0; i < n; i++) lit.push(rng());
         this.decos.push({ x, y: 0, w: 12 + rng() * 22, h, layer, kind: 'spire', seed: rng(), lit });
       }
-      for (let x = -VIEW_W; x < span; x += 18 + rng() * 26) {
+      for (let x = 0; x < span; x += 18 + rng() * 26) {
         this.decos.push({ x, y: 206 + rng() * 40, w: 8 + rng() * 18, h: 1, layer: 2, kind: 'wave', seed: rng(), lit: [] });
       }
     } else if (levelId === 2) {
       // 大厅:中层哥特拱窗 + 近层石柱
-      for (let x = -VIEW_W; x < span; x += 90 + rng() * 60) {
+      for (let x = 0; x < span; x += 90 + rng() * 60) {
         this.decos.push({ x, y: 46 + rng() * 26, w: 26, h: 62, layer: 1, kind: 'window', seed: rng(), lit: [] });
       }
-      for (let x = -VIEW_W; x < span; x += 120 + rng() * 80) {
+      for (let x = 0; x < span; x += 120 + rng() * 80) {
         this.decos.push({ x, y: 0, w: 16 + rng() * 6, h: VIEW_H, layer: 2, kind: 'pillar', seed: rng(), lit: [] });
       }
-      for (let x = -VIEW_W + 40; x < span; x += 70 + rng() * 90) {
+      for (let x = 40; x < span; x += 70 + rng() * 90) {
         this.decos.push({ x, y: 0, w: 2, h: 60 + rng() * 80, layer: 1, kind: 'chain', seed: rng(), lit: [] });
       }
     } else if (levelId === 3) {
       // 云海 + 塔尖从云中探出
-      for (let x = -VIEW_W; x < span; x += 36 + rng() * 70) {
+      for (let x = 0; x < span; x += 36 + rng() * 70) {
         const layer = rng() < 0.5 ? 0 : 1;
         this.decos.push({ x, y: 60 + rng() * 170, w: 34 + rng() * 66, h: 9 + rng() * 12, layer, kind: 'cloud', seed: rng(), lit: [] });
       }
-      for (let x = -VIEW_W; x < span; x += 90 + rng() * 120) {
+      for (let x = 0; x < span; x += 90 + rng() * 120) {
         this.decos.push({ x, y: 0, w: 14 + rng() * 16, h: 40 + rng() * 60, layer: 0, kind: 'spire', seed: rng(), lit: [rng()] });
       }
     } else {
       // 王座厅:石柱 + 垂旗 + 锁链
-      for (let x = -VIEW_W; x < span; x += 100 + rng() * 70) {
+      for (let x = 0; x < span; x += 100 + rng() * 70) {
         this.decos.push({ x, y: 0, w: 18 + rng() * 8, h: VIEW_H, layer: rng() < 0.5 ? 1 : 2, kind: 'pillar', seed: rng(), lit: [] });
       }
-      for (let x = -VIEW_W + 50; x < span; x += 110 + rng() * 90) {
+      for (let x = 50; x < span; x += 110 + rng() * 90) {
         this.decos.push({ x, y: 0, w: 22, h: 66 + rng() * 30, layer: 1, kind: 'banner', seed: rng(), lit: [] });
       }
-      for (let x = -VIEW_W + 30; x < span; x += 60 + rng() * 70) {
+      for (let x = 30; x < span; x += 60 + rng() * 70) {
         this.decos.push({ x, y: 0, w: 2, h: 50 + rng() * 100, layer: 2, kind: 'chain', seed: rng(), lit: [] });
       }
     }
+  }
+
+  setTheme(theme: LevelTheme): void {
+    this.theme = theme;
   }
 
   render(ctx: CanvasRenderingContext2D, camX: number, camY: number, time: number): void {
@@ -115,7 +129,7 @@ export class Background {
       const py = camY * (parallax[layer] * 0.4);
       for (const d of this.decos) {
         if (d.layer !== layer) continue;
-        const sx = Math.round(d.x - px);
+        const sx = Math.round(wrappedScreenX(d.x, px, 140));
         if (sx + d.w < -30 || sx > VIEW_W + 30) continue;
         this.renderDeco(ctx, d, sx, py, layerColor[layer], time);
       }
@@ -157,7 +171,7 @@ export class Background {
       ctx.fillStyle = seaGrad;
       ctx.fillRect(0, seaY, VIEW_W, VIEW_H - seaY);
       // 落日光路
-      const sunX = Math.round(VIEW_W * 0.68 - camX * 0.05);
+      const sunX = Math.round(VIEW_W * 0.68 - celestialShift(camX, 24));
       ctx.globalCompositeOperation = 'lighter';
       for (let yy = seaY + 3; yy < VIEW_H; yy += 4) {
         const w = 10 + (yy - seaY) * 0.8 + Math.sin(time * 2 + yy) * 4;
@@ -175,31 +189,31 @@ export class Background {
   }
 
   private buildFront(rng: () => number): void {
-    const span = this.mapW * FRONT_PARALLAX + VIEW_W * 2;
+    const span = BACKGROUND_PERIOD;
     if (this.levelId === 1) {
       // 残破城齿沿底部 + 偶发断柱
-      for (let x = -VIEW_W; x < span; x += 300 + rng() * 260) {
+      for (let x = 0; x < span; x += 300 + rng() * 260) {
         this.fronts.push({ x, w: 22 + rng() * 10, h: 90 + rng() * 70, kind: 'fgPillar', seed: rng() });
       }
-      for (let x = -VIEW_W; x < span; x += 130 + rng() * 120) {
+      for (let x = 0; x < span; x += 130 + rng() * 120) {
         this.fronts.push({ x, w: 60 + rng() * 50, h: 14, kind: 'fgMerlon', seed: rng() });
       }
     } else if (this.levelId === 2) {
-      for (let x = -VIEW_W; x < span; x += 340 + rng() * 240) {
+      for (let x = 0; x < span; x += 340 + rng() * 240) {
         this.fronts.push({ x, w: 24 + rng() * 8, h: VIEW_H, kind: 'fgPillar', seed: rng() });
       }
-      for (let x = -VIEW_W + 120; x < span; x += 260 + rng() * 220) {
+      for (let x = 120; x < span; x += 260 + rng() * 220) {
         this.fronts.push({ x, w: 3, h: 46 + rng() * 50, kind: 'fgChain', seed: rng() });
       }
     } else if (this.levelId === 3) {
-      for (let x = -VIEW_W; x < span; x += 260 + rng() * 200) {
+      for (let x = 0; x < span; x += 260 + rng() * 200) {
         this.fronts.push({ x, w: 120 + rng() * 130, h: 22 + rng() * 16, kind: 'fgFog', seed: rng() });
       }
     } else {
-      for (let x = -VIEW_W; x < span; x += 320 + rng() * 220) {
+      for (let x = 0; x < span; x += 320 + rng() * 220) {
         this.fronts.push({ x, w: 26 + rng() * 8, h: 74 + rng() * 50, kind: 'fgBanner', seed: rng() });
       }
-      for (let x = -VIEW_W + 140; x < span; x += 240 + rng() * 200) {
+      for (let x = 140; x < span; x += 240 + rng() * 200) {
         this.fronts.push({ x, w: 3, h: 60 + rng() * 70, kind: 'fgChain', seed: rng() });
       }
     }
@@ -268,7 +282,7 @@ export class Background {
     const px = camX * FRONT_PARALLAX;
     const py = camY * 0.12;
     for (const f of this.fronts) {
-      const sx = Math.round(f.x - px);
+      const sx = Math.round(wrappedScreenX(f.x, px, 280));
       if (sx + f.w + 40 < 0 || sx > VIEW_W + 40) continue;
       switch (f.kind) {
         case 'fgPillar': {
@@ -359,7 +373,7 @@ export class Background {
   private renderCelestial(ctx: CanvasRenderingContext2D, camX: number, time: number): void {
     if (this.levelId === 1) {
       // 血色落日(巨大,低垂)
-      const x = Math.round(VIEW_W * 0.68 - camX * 0.05);
+      const x = Math.round(VIEW_W * 0.68 - celestialShift(camX, 24));
       const y = 168;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -392,7 +406,7 @@ export class Background {
     } else if (this.levelId === 2 || this.levelId === 3) {
       // 恶魔城式巨月
       const big = this.levelId === 3;
-      const x = Math.round(VIEW_W * (big ? 0.3 : 0.24) - camX * 0.04);
+      const x = Math.round(VIEW_W * (big ? 0.3 : 0.24) - celestialShift(camX, big ? 22 : 16));
       const y = big ? 70 : 62;
       const r = big ? 44 : 30;
       ctx.save();

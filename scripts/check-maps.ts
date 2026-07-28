@@ -169,8 +169,34 @@ console.log(
     `${globalCount('I')} 极性终端 / ${globalCount('O')} 共鸣器 / ${globalCount('K') + globalCount('k')} 传送带`,
 );
 
+const transitionRooms = ROOM_LIST.filter((room) => room.transition);
+if (transitionRooms.length < 9) err(`跨区过渡房仅 ${transitionRooms.length} 个,现有跨区边界至少需要 9 个`);
+for (const room of transitionRooms) {
+  const transition = room.transition!;
+  if (transition.to === room.zone) err(`${room.id} 的过渡目标与自身区域相同`);
+  const originExit = room.exits.some((exit) => ROOMS[exit.target]?.zone === room.zone)
+    || ROOM_LIST.some((candidate) => candidate.zone === room.zone && candidate.exits.some((exit) => exit.target === room.id));
+  const targetExit = room.exits.some(
+    (exit) => exit.side === transition.toSide && ROOMS[exit.target]?.zone === transition.to,
+  );
+  if (!originExit) err(`${room.id} 没有连接回起始区域 ${room.zone}`);
+  if (!targetExit) err(`${room.id} 的 ${transition.toSide} 侧没有连接目标区域 ${transition.to}`);
+}
+for (const room of ROOM_LIST) {
+  for (const exit of room.exits) {
+    const target = ROOMS[exit.target];
+    if (!target || room.zone === target.zone) continue;
+    const bridge = room.transition ? room : target.transition ? target : null;
+    const zones = bridge?.transition ? new Set([bridge.zone, bridge.transition.to]) : null;
+    if (!zones?.has(room.zone) || !zones.has(target.zone)) {
+      err(`跨区连接 ${room.id} → ${target.id} 未经过匹配的过渡房`);
+    }
+  }
+}
+console.log(`  [通过] ${transitionRooms.length} 个跨区过渡房覆盖全部区域边界`);
+
 // ---------------- 世界规模与拓扑预算 ----------------
-if (ROOM_LIST.length < 38) err(`房间总数 ${ROOM_LIST.length},扩展世界至少需要 38 间`);
+if (ROOM_LIST.length < 48) err(`房间总数 ${ROOM_LIST.length},扩展世界至少需要 48 间`);
 if (Object.keys(ZONES).length < 6) err(`场景总数 ${Object.keys(ZONES).length},至少需要 6 个主题区域`);
 if (globalCount('*') < 40) err(`弦晶总数 ${globalCount('*')},探索奖励密度不足`);
 
