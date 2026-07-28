@@ -164,7 +164,7 @@ for (const ch of ['a', 'b', 'c', 'd']) {
 if (globalCount('S') !== 1) err(`商人 S 数量 = ${globalCount('S')},应为 1`);
 for (const z of Object.values(ZONES)) {
   const benches = ROOM_LIST.filter((r) => r.zone === z.id && r.rows.some((row) => row.includes('T')));
-  if (benches.length === 0) err(`场景 ${z.name} 没有调弦台`);
+  if (benches.length === 0) err(`场景 ${z.name} 没有信标`);
 }
 
 const shortcutIds = new Set<string>();

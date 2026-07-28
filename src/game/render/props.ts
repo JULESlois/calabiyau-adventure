@@ -1,7 +1,7 @@
-// 世界道具的程序化绘制:调弦台、能力祭坛、牢房中的香奈美。
+// 世界道具的程序化绘制:信标、能力祭坛、牢房中的香奈美。
 import type { Ability } from '../world/world';
 
-/** 调弦台:竖琴般的弦柱,休息与存档点(x 为中心,y 为地面) */
+/** 信标:小型定位终端,兼作休息、存档与传送点(x 为中心,y 为地面) */
 export function drawBench(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -11,35 +11,45 @@ export function drawBench(
 ): void {
   const bx = Math.round(x);
   const by = Math.round(y);
-  // 石基
-  ctx.fillStyle = '#241a32';
-  ctx.fillRect(bx - 10, by - 3, 20, 3);
-  ctx.fillStyle = '#3a2c4a';
-  ctx.fillRect(bx - 12, by - 4, 24, 2);
-  // 双弦柱
-  ctx.fillStyle = '#4a3c5c';
-  ctx.fillRect(bx - 8, by - 22, 3, 19);
-  ctx.fillRect(bx + 5, by - 26, 3, 23);
-  ctx.fillStyle = '#6a5880';
-  ctx.fillRect(bx - 8, by - 22, 3, 1);
-  ctx.fillRect(bx + 5, by - 26, 3, 1);
-  // 弦线(激活时发光震颤)
-  const glow = active ? 0.75 + Math.sin(time * 5) * 0.25 : 0.25;
+  // 金属底座与中央定位桅杆。
+  ctx.fillStyle = '#1c2030';
+  ctx.fillRect(bx - 11, by - 4, 22, 4);
+  ctx.fillStyle = '#46506a';
+  ctx.fillRect(bx - 13, by - 5, 26, 2);
+  ctx.fillStyle = '#30394e';
+  ctx.fillRect(bx - 5, by - 10, 10, 6);
+  ctx.fillStyle = '#596780';
+  ctx.fillRect(bx - 2, by - 24, 4, 14);
+  ctx.fillRect(bx - 7, by - 20, 14, 2);
+  ctx.fillStyle = '#8793aa';
+  ctx.fillRect(bx - 1, by - 24, 1, 14);
+
+  // 菱形定位核心；激活后发出克制的扫描脉冲。
+  const glow = active ? 0.72 + Math.sin(time * 4) * 0.18 : 0.24;
+  ctx.save();
+  ctx.translate(bx, by - 27);
+  ctx.rotate(Math.PI / 4);
   ctx.globalAlpha = glow;
-  ctx.fillStyle = active ? '#8ee8f4' : '#5a6a88';
-  for (let i = 0; i < 3; i++) {
-    const sx = bx - 4 + i * 3;
-    const wob = active ? Math.round(Math.sin(time * 9 + i * 2.1) * 1) : 0;
-    ctx.fillRect(sx + wob, by - 20 + i, 1, 16 - i);
-  }
-  ctx.globalAlpha = 1;
-  // 激活辉光粒子由 PlayState 侧生成;此处画顶部音符点
+  ctx.fillStyle = active ? '#8ee8f4' : '#53627a';
+  ctx.fillRect(-4, -4, 8, 8);
+  ctx.fillStyle = active ? '#d8f8ff' : '#78849a';
+  ctx.fillRect(-2, -2, 4, 4);
+  ctx.restore();
+
   if (active) {
-    const ny = by - 30 - Math.abs(Math.sin(time * 2.2)) * 3;
+    const scan = 8 + ((time * 9) % 10);
+    ctx.save();
+    ctx.globalAlpha = 0.34 * (1 - (scan - 8) / 10);
+    ctx.strokeStyle = '#8ee8f4';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(bx, by - 27, scan, Math.max(2, scan * 0.28), 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.12;
     ctx.fillStyle = '#8ee8f4';
-    ctx.globalAlpha = 0.8;
-    ctx.fillRect(bx - 1, Math.round(ny), 2, 2);
-    ctx.globalAlpha = 1;
+    ctx.fillRect(bx - 8, by - 35, 16, 16);
+    ctx.restore();
   }
 }
 

@@ -2,7 +2,17 @@ import { VIEW_W, VIEW_H } from '../constants';
 import type { LevelTheme } from '../levels/levels';
 import { makeRng } from '../utils';
 
-type DecoKind = 'spire' | 'cloud' | 'pillar' | 'window' | 'banner' | 'wave' | 'chain';
+type DecoKind =
+  | 'spire'
+  | 'cloud'
+  | 'pillar'
+  | 'window'
+  | 'banner'
+  | 'wave'
+  | 'chain'
+  | 'tank'
+  | 'conduit'
+  | 'gantry';
 
 interface Deco {
   x: number;
@@ -70,7 +80,7 @@ export class Background {
       for (let x = 0; x < span; x += 18 + rng() * 26) {
         this.decos.push({ x, y: 206 + rng() * 40, w: 8 + rng() * 18, h: 1, layer: 2, kind: 'wave', seed: rng(), lit: [] });
       }
-    } else if (levelId === 2) {
+    } else if (levelId === 2 || levelId === 5) {
       // 大厅:中层哥特拱窗 + 近层石柱
       for (let x = 0; x < span; x += 90 + rng() * 60) {
         this.decos.push({ x, y: 46 + rng() * 26, w: 26, h: 62, layer: 1, kind: 'window', seed: rng(), lit: [] });
@@ -80,6 +90,15 @@ export class Background {
       }
       for (let x = 40; x < span; x += 70 + rng() * 90) {
         this.decos.push({ x, y: 0, w: 2, h: 60 + rng() * 80, layer: 1, kind: 'chain', seed: rng(), lit: [] });
+      }
+      if (levelId === 5) {
+        // 研究区沿用原本建筑骨架,只叠加少量培养仓与输能管线。
+        for (let x = 55; x < span; x += 190 + rng() * 130) {
+          this.decos.push({ x, y: 72 + rng() * 22, w: 22 + rng() * 8, h: 44 + rng() * 16, layer: 1, kind: 'tank', seed: rng(), lit: [] });
+        }
+        for (let x = 20; x < span; x += 150 + rng() * 120) {
+          this.decos.push({ x, y: 24 + rng() * 62, w: 70 + rng() * 50, h: 3, layer: 2, kind: 'conduit', seed: rng(), lit: [] });
+        }
       }
     } else if (levelId === 3) {
       // 云海 + 塔尖从云中探出
@@ -95,8 +114,18 @@ export class Background {
       for (let x = 0; x < span; x += 100 + rng() * 70) {
         this.decos.push({ x, y: 0, w: 18 + rng() * 8, h: VIEW_H, layer: rng() < 0.5 ? 1 : 2, kind: 'pillar', seed: rng(), lit: [] });
       }
-      for (let x = 50; x < span; x += 110 + rng() * 90) {
-        this.decos.push({ x, y: 0, w: 22, h: 66 + rng() * 30, layer: 1, kind: 'banner', seed: rng(), lit: [] });
+      if (levelId === 6) {
+        // 机库保留高大立柱,以吊轨和粗管线替换部分礼堂装饰。
+        for (let x = 30; x < span; x += 170 + rng() * 120) {
+          this.decos.push({ x, y: 24 + rng() * 28, w: 90 + rng() * 60, h: 26 + rng() * 18, layer: 1, kind: 'gantry', seed: rng(), lit: [] });
+        }
+        for (let x = 10; x < span; x += 130 + rng() * 100) {
+          this.decos.push({ x, y: 88 + rng() * 80, w: 80 + rng() * 70, h: 4, layer: 2, kind: 'conduit', seed: rng(), lit: [] });
+        }
+      } else {
+        for (let x = 50; x < span; x += 110 + rng() * 90) {
+          this.decos.push({ x, y: 0, w: 22, h: 66 + rng() * 30, layer: 1, kind: 'banner', seed: rng(), lit: [] });
+        }
       }
       for (let x = 30; x < span; x += 60 + rng() * 70) {
         this.decos.push({ x, y: 0, w: 2, h: 50 + rng() * 100, layer: 2, kind: 'chain', seed: rng(), lit: [] });
@@ -198,7 +227,7 @@ export class Background {
       for (let x = 0; x < span; x += 130 + rng() * 120) {
         this.fronts.push({ x, w: 60 + rng() * 50, h: 14, kind: 'fgMerlon', seed: rng() });
       }
-    } else if (this.levelId === 2) {
+    } else if (this.levelId === 2 || this.levelId === 5) {
       for (let x = 0; x < span; x += 340 + rng() * 240) {
         this.fronts.push({ x, w: 24 + rng() * 8, h: VIEW_H, kind: 'fgPillar', seed: rng() });
       }
@@ -208,6 +237,10 @@ export class Background {
     } else if (this.levelId === 3) {
       for (let x = 0; x < span; x += 260 + rng() * 200) {
         this.fronts.push({ x, w: 120 + rng() * 130, h: 22 + rng() * 16, kind: 'fgFog', seed: rng() });
+      }
+    } else if (this.levelId === 6) {
+      for (let x = 80; x < span; x += 270 + rng() * 220) {
+        this.fronts.push({ x, w: 3, h: 70 + rng() * 90, kind: 'fgChain', seed: rng() });
       }
     } else {
       for (let x = 0; x < span; x += 320 + rng() * 220) {
@@ -219,12 +252,14 @@ export class Background {
     }
   }
 
-  /** 内墙装饰层:壁柱与线脚,只用于室内关(L2/L4) */
+  /** 内墙装饰层:壁柱与线脚,用于室内关及其轻量科技变体。 */
   private renderWall(ctx: CanvasRenderingContext2D, camX: number, camY: number, time: number): void {
-    if (this.levelId !== 2 && this.levelId !== 4) return;
+    if (![2, 4, 5, 6].includes(this.levelId)) return;
     const px = camX * WALL_PARALLAX;
     const py = camY * WALL_PARALLAX * 0.3;
-    const isThrone = this.levelId === 4;
+    const isLab = this.levelId === 5;
+    const isHangar = this.levelId === 6;
+    const isThrone = this.levelId === 4 || isHangar;
     const wallTop = 128 - py;
 
     // 横向线脚
@@ -270,6 +305,30 @@ export class Background {
         ctx.fill();
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1;
+      }
+    }
+
+    // 科技区域只增加克制的功能设备,避免覆盖原有建筑美术。
+    const deviceStep = isLab ? 112 : 136;
+    if (isLab || isHangar) {
+      for (let wx = -(((px % deviceStep) + deviceStep) % deviceStep); wx < VIEW_W + deviceStep; wx += deviceStep) {
+        const x = Math.round(wx + (isLab ? 34 : 22));
+        if (isLab) {
+          ctx.fillStyle = 'rgba(8,18,32,0.78)';
+          ctx.fillRect(x, wallTop + 13, 20, 12);
+          ctx.fillStyle = 'rgba(126,240,255,0.40)';
+          ctx.fillRect(x + 3, wallTop + 16, 12, 4);
+          ctx.fillStyle = Math.sin(time * 2.2 + x) > 0 ? '#8ef6ff' : '#4b7e92';
+          ctx.fillRect(x + 16, wallTop + 16, 1, 1);
+          ctx.fillRect(x + 16, wallTop + 20, 1, 1);
+        } else {
+          ctx.fillStyle = 'rgba(26,10,14,0.82)';
+          ctx.fillRect(x, wallTop + 10, 28, 8);
+          ctx.fillStyle = 'rgba(255,106,92,0.48)';
+          for (let i = 0; i < 4; i++) ctx.fillRect(x + 3 + i * 6, wallTop + 12, 3, 2);
+          ctx.fillStyle = 'rgba(190,110,60,0.35)';
+          ctx.fillRect(x + 4, wallTop + 22, 20, 2);
+        }
       }
     }
   }
@@ -573,6 +632,45 @@ export class Background {
         ctx.globalAlpha = 0.3 + 0.25 * Math.sin(time * 2 + d.x * 0.1);
         ctx.fillStyle = '#e89a5c';
         ctx.fillRect(sx, Math.round(d.y - py), d.w, 1);
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'tank': {
+        const ty = d.y - py * 0.45;
+        ctx.fillStyle = 'rgba(8,18,32,0.86)';
+        ctx.fillRect(sx - 3, ty - 4, d.w + 6, d.h + 8);
+        ctx.fillStyle = 'rgba(62,142,160,0.25)';
+        ctx.fillRect(sx, ty, d.w, d.h);
+        ctx.fillStyle = 'rgba(126,240,255,0.18)';
+        ctx.fillRect(sx + 2, ty + 3, 2, d.h - 6);
+        ctx.fillStyle = 'rgba(126,240,255,0.55)';
+        ctx.fillRect(sx + d.w / 2 - 1, ty + d.h * 0.35, 2, 7);
+        ctx.fillStyle = '#1a3042';
+        ctx.fillRect(sx - 5, ty + d.h + 4, d.w + 10, 3);
+        break;
+      }
+      case 'conduit': {
+        const cy = d.y - py * 0.35;
+        const hot = this.levelId === 6;
+        ctx.fillStyle = hot ? 'rgba(96,42,36,0.72)' : 'rgba(52,78,104,0.72)';
+        ctx.fillRect(sx, cy, d.w, d.h);
+        ctx.fillStyle = hot ? 'rgba(255,116,78,0.34)' : 'rgba(126,240,255,0.26)';
+        ctx.fillRect(sx, cy, d.w, 1);
+        for (let xx = 12; xx < d.w; xx += 22) ctx.fillRect(sx + xx, cy - 2, 2, d.h + 4);
+        break;
+      }
+      case 'gantry': {
+        const gy = d.y - py * 0.35;
+        ctx.fillStyle = 'rgba(18,8,14,0.88)';
+        ctx.fillRect(sx, gy, d.w, 5);
+        ctx.fillRect(sx + 4, gy, 4, d.h);
+        ctx.fillRect(sx + d.w - 8, gy, 4, d.h);
+        ctx.fillStyle = 'rgba(168,82,58,0.48)';
+        for (let xx = 10; xx < d.w - 8; xx += 14) ctx.fillRect(sx + xx, gy + 2, 7, 1);
+        const pulse = 0.45 + Math.abs(Math.sin(time * 2.4 + d.seed * 7)) * 0.45;
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = '#ff6a5c';
+        ctx.fillRect(sx + d.w / 2 - 1, gy + 8, 2, 2);
         ctx.globalAlpha = 1;
         break;
       }

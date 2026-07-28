@@ -157,10 +157,10 @@ const TOTAL_CRYSTALS = totalCrystals();
 const ZONE_INDEX: Record<string, number> = {
   coast: 1,
   tide: 2,
-  lab: 2,
+  lab: 5,
   choir: 4,
   sky: 3,
-  hangar: 4,
+  hangar: 6,
 };
 
 export class PlayState implements GameState, WorldApi {
@@ -729,7 +729,7 @@ export class PlayState implements GameState, WorldApi {
     // 房间出口(可能切换状态,之后立即返回)
     if (this.checkExits()) return;
 
-    // 调弦台 / 能力 / 香奈美 / 商人 手动交互
+    // 信标 / 能力 / 香奈美 / 商人 手动交互
     this.updateInteractables();
 
     // Boss 触发与更新
@@ -917,7 +917,7 @@ export class PlayState implements GameState, WorldApi {
     return false;
   }
 
-  // ---------------- 调弦台与能力 (手动交互) ----------------
+  // ---------------- 信标与能力 (手动交互) ----------------
 
   private getVisitedBenches(): { id: string; name: string; zoneName: string; isCurrent: boolean }[] {
     const list: { id: string; name: string; zoneName: string; isCurrent: boolean }[] = [];
@@ -977,7 +977,7 @@ export class PlayState implements GameState, WorldApi {
       break;
     }
 
-    // 1. 调弦台 (Bench)
+    // 1. 信标 (Bench)
     this.nearBenchSpot = null;
     for (const b of this.benches) {
       const zone: Rect = { x: b.x - 14, y: b.y - 30, w: 28, h: 30 };
@@ -994,7 +994,7 @@ export class PlayState implements GameState, WorldApi {
           w.char = p.char;
           this.engine.persistWorld();
           this.sfx('checkpoint');
-          this.toast('弦已调谐 · 进度已保存');
+          this.toast('信标已激活 · 进度已保存');
           this.particles.burst(b.x, b.y - 14, 16, '#8ee8f4', 70, 0.7, 'spark');
 
           // 开启快速传送 overlay
@@ -1737,7 +1737,7 @@ export class PlayState implements GameState, WorldApi {
       ctx.globalAlpha = 1;
     }
 
-    // 调弦台 / 能力祭坛 / 香奈美 / 传送门
+    // 信标 / 能力祭坛 / 香奈美 / 传送门
     for (const b of this.benches) drawBench(ctx, b.x, b.y, b.resting || this.world.benchRoom === this.roomId, this.time);
     for (const a of this.abilitySpots) drawAbilityShrine(ctx, a.x, a.y, a.kind, this.time);
     if (this.kanamiSpot) drawCagedKanami(ctx, this.kanamiSpot.x, this.kanamiSpot.y, this.time);
@@ -2223,7 +2223,7 @@ export class PlayState implements GameState, WorldApi {
       ctx.strokeStyle = current && Math.floor(this.time * 10) % 2 === 0 ? '#f0e0b0' : zoneColor[r.zone];
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 2.5, y + 2.5, cw - 5, h - 5);
-      // 调弦台标记
+      // 信标标记
       if (r.rows.some((row) => row.includes('T'))) {
         ctx.fillStyle = '#8ee8f4';
         ctx.fillRect(x + cw / 2 - 1, y + h / 2 - 1, 3, 3);
@@ -2242,7 +2242,7 @@ export class PlayState implements GameState, WorldApi {
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px "SimSun", "Songti SC", serif';
     ctx.fillStyle = '#e8d8a8';
-    ctx.fillText('欧拉 · 弦络图', VIEW_W / 2, 22);
+    ctx.fillText('欧拉 · 区域图', VIEW_W / 2, 22);
     ctx.font = '8px "SimSun", "Songti SC", serif';
     ctx.fillStyle = '#8a7a98';
     ctx.fillText(`${this.room.name}    ◆ ${this.world.crystals.size}/${TOTAL_CRYSTALS}`, VIEW_W / 2, VIEW_H - 24);
@@ -2374,7 +2374,7 @@ export class PlayState implements GameState, WorldApi {
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px sans-serif';
     ctx.fillStyle = '#8ee8f4';
-    ctx.fillText('调 弦 台 关 卡 传 送', VIEW_W / 2, frameY + 20);
+    ctx.fillText('信 标 传 送', VIEW_W / 2, frameY + 20);
 
     ctx.fillStyle = '#4a3c5c';
     ctx.fillRect(frameX + 20, frameY + 26, frameW - 40, 1);
@@ -2383,7 +2383,7 @@ export class PlayState implements GameState, WorldApi {
     if (benches.length === 0) {
       ctx.font = '10px sans-serif';
       ctx.fillStyle = '#8a7a98';
-      ctx.fillText('尚未激活其他调弦台……', VIEW_W / 2, frameY + 110);
+      ctx.fillText('尚未激活其他信标……', VIEW_W / 2, frameY + 110);
     } else {
       const MAX_VISIBLE = 5;
       const total = benches.length;
@@ -2429,7 +2429,7 @@ export class PlayState implements GameState, WorldApi {
         ctx.font = '9px sans-serif';
         if (b.isCurrent) {
           ctx.fillStyle = '#ffd75e';
-          ctx.fillText('(当前调弦台)', cardX + cardW - 8, cardY + 16);
+          ctx.fillText('(当前信标)', cardX + cardW - 8, cardY + 16);
         } else if (isSel) {
           ctx.fillStyle = '#8ee8f4';
           ctx.fillText('按 F 传送 ▶', cardX + cardW - 8, cardY + 16);
@@ -2489,14 +2489,14 @@ export class PlayState implements GameState, WorldApi {
       ctx.fillText('暂 停', VIEW_W / 2, 104);
       ctx.font = F_SMALL;
       ctx.fillStyle = '#8a7a98';
-      ctx.fillText('Esc 继续 · J 回到调弦台 · L 返回标题', VIEW_W / 2, 136);
+      ctx.fillText('Esc 继续 · J 回到信标 · L 返回标题', VIEW_W / 2, 136);
     } else if (this.overlay === 'dead') {
       ctx.font = F_BIG;
       ctx.fillStyle = '#c86a9a';
-      ctx.fillText('弦 线 断 裂 ……', VIEW_W / 2, 112);
+      ctx.fillText('信 号 中 断 ……', VIEW_W / 2, 112);
       ctx.font = F_SMALL;
       ctx.fillStyle = '#8a7a98';
-      ctx.fillText('正在回到最后的调弦台', VIEW_W / 2, 138);
+      ctx.fillText('正在回到最后的信标', VIEW_W / 2, 138);
     } else if (this.overlay === 'ability') {
       const info = ABILITY_INFO[this.abilityKind];
       const a = clamp(this.overlayT / 0.4, 0, 1);

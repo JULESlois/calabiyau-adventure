@@ -47,8 +47,9 @@ interface MusicVoice {
 
 const LOOK_AHEAD_SECONDS = 0.12;
 const SCHEDULER_INTERVAL_MS = 25;
-const TARGET_MUSIC_VOL = 0.35;
-const DUCKED_MUSIC_VOL = 0.14;
+// 保持音效清晰的同时让旋律在普通战斗中仍能被听见。
+const TARGET_MUSIC_VOL = 0.5;
+const DUCKED_MUSIC_VOL = 0.2;
 
 export class AudioSys {
   private ctx: AudioContext | null = null;

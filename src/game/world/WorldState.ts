@@ -39,7 +39,7 @@ export class WorldState {
   crystals = new Set<string>();
   /** 已到访房间(地图屏) */
   visited = new Set<string>();
-  /** 重生锚点(调弦台所在房间) */
+  /** 重生锚点(信标所在房间) */
   benchRoom: string = START_ROOM;
   /** 是否已通关 */
   cleared = false;
@@ -54,7 +54,7 @@ export class WorldState {
   /** 弦能上限(弦晶共鸣可提升) */
   energyMax = MAX_STRING;
 
-  // ---- 房间之间携带的运行时状态(存档时按调弦台满状态处理) ----
+  // ---- 房间之间携带的运行时状态(存档时按信标满状态处理) ----
   char: CharId = 'michele';
   hp = MAX_HP;
   energy = MAX_STRING;
