@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DASH_CD, DT, GLIDE_FALL_SPEED, WALL_JUMP_VY } from '../src/game/constants';
+import { DASH_CD, DT, GLIDE_FALL_SPEED, TILE, WALL_JUMP_VY } from '../src/game/constants';
 import { Player } from '../src/game/entities/Player';
 import type { Action } from '../src/game/Input';
-import { T_EMPTY, T_SOLID } from '../src/game/levels/levels';
+import { T_EMPTY, T_MEMBRANE, T_SOLID } from '../src/game/levels/levels';
 import { resolveGlideTilt } from '../src/game/render/sprites';
 import { PlayState } from '../src/game/states/PlayState';
 import type { Ability } from '../src/game/world/world';
@@ -265,6 +265,28 @@ test('holding ground stringification through a jump does not auto-enter glide or
   input.justPressed.add('paper');
   player.update(DT, state);
   assert.equal(player.stringMode, 'glide');
+});
+
+test('ground stringification remains active while falling through a membrane hatch without becoming glide', () => {
+  const { input, state } = makeState(['paper']);
+  state.tileAt = (_col: number, row: number) =>
+    row >= 8 && row <= 10 ? T_MEMBRANE : T_EMPTY;
+  const player = new Player(120, 8 * TILE);
+  player.onGround = true;
+  input.held.add('paper');
+
+  const modes = new Set<string>();
+  for (let frame = 0; frame < 60; frame++) {
+    player.update(DT, state);
+    modes.add(player.stringMode);
+  }
+
+  assert.ok(player.y > 11 * TILE, `player did not clear the membrane hatch: y=${player.y}`);
+  assert.deepEqual([...modes], ['ground']);
+
+  input.held.clear();
+  player.update(DT, state);
+  assert.equal(player.stringMode, 'normal');
 });
 
 test('glide consumes jump input without triggering an extra airborne jump', () => {

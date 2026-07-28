@@ -300,7 +300,10 @@ export class Player {
     if (this.stringMode !== 'wall') {
       let desired: StringMode = 'normal';
       if (hasPaper && this.energy > 1) {
-        if (this.onGround) {
+        if (this.stringMode === 'ground') {
+          // 地面弦化离开支撑时保持普通重力穿膜，但不自动升级为空中飘飞。
+          desired = holdPaper ? 'ground' : 'normal';
+        } else if (this.onGround) {
           desired = holdPaper ? 'ground' : 'normal';
         } else if (this.stringMode === 'glide') {
           desired = holdPaper ? 'glide' : 'normal';

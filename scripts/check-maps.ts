@@ -1,7 +1,11 @@
 // 世界数据静态校验:房间尺寸、生成点支撑、出口配对、能力推进可达性。
 // 运行: npm run check:maps
+import { DT, TILE } from '../src/game/constants';
 import { parseRows, T_EMPTY, T_MEMBRANE, T_ONEWAY, T_SOLID } from '../src/game/levels/levels';
+import { PlayState } from '../src/game/states/PlayState';
+import type { Engine } from '../src/game/Engine';
 import { ROOMS, ROOM_LIST, START_ROOM, ZONES, type Ability } from '../src/game/world/world';
+import { WorldState } from '../src/game/world/WorldState';
 
 declare const process: { exit(code: number): void };
 
@@ -195,6 +199,84 @@ for (const room of ROOM_LIST) {
 }
 console.log(`  [通过] ${transitionRooms.length} 个跨区过渡房覆盖全部区域边界`);
 
+// ---------------- 关键动作的运行时可达性 ----------------
+// needs 只是设计意图，不能作为路径成立的证明。对纸片坠落口运行真实 Player 状态机，
+// 确认玩家能从舱口表面持续按 Shift 穿过弦膜并实际触发目标出口。
+class TraversalInput {
+  held = new Set<string>();
+
+  down(action: string): boolean {
+    return this.held.has(action);
+  }
+
+  pressed(): boolean {
+    return false;
+  }
+}
+
+let checkedPaperDrops = 0;
+for (const room of ROOM_LIST) {
+  const lvl = parsed.get(room.id)!;
+  for (const exit of room.exits) {
+    if (exit.side !== 'down' || !(exit.needs ?? []).includes('paper')) continue;
+    checkedPaperDrops++;
+
+    let hatchTop = -1;
+    for (let row = 0; row < lvl.h && hatchTop < 0; row++) {
+      for (let col = exit.from; col <= exit.to; col++) {
+        if (lvl.tiles[row * lvl.w + col] === T_MEMBRANE) {
+          hatchTop = row;
+          break;
+        }
+      }
+    }
+    if (hatchTop < 0) {
+      err(`${room.id} 的纸片坠落口 cols ${exit.from}-${exit.to} 没有弦膜舱口`);
+      continue;
+    }
+
+    const input = new TraversalInput();
+    input.held.add('paper');
+    const world = new WorldState();
+    world.grant('paper');
+    for (const ability of exit.needs ?? []) world.grant(ability);
+    let transitionedTo = '';
+    const engine = {
+      input,
+      world,
+      audio: { sfx: () => undefined },
+      persistWorld: () => undefined,
+      startRoom: (target: string) => {
+        transitionedTo = target;
+      },
+    } as unknown as Engine;
+    const state = new PlayState(engine, room.id, { kind: 'start' });
+    state.enemies.length = 0;
+    state.boss = null;
+    state.player.x = ((exit.from + exit.to + 1) / 2) * TILE;
+    state.player.y = hatchTop * TILE;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.energy = world.energyMax;
+
+    let autoGlided = false;
+    for (let frame = 0; frame < 180 && !transitionedTo; frame++) {
+      state.player.update(DT, state);
+      autoGlided ||= state.player.stringMode === 'glide';
+      (state as unknown as { checkExits(): boolean }).checkExits();
+    }
+    if (transitionedTo !== exit.target) {
+      err(
+        `${room.id} 的纸片坠落口无法按设计触发 ${exit.target}` +
+          ` (最终 y=${state.player.y.toFixed(2)},形态=${state.player.stringMode})`,
+      );
+    }
+    if (autoGlided) err(`${room.id} 的地面弦化坠落错误地自动进入了飘飞形态`);
+  }
+}
+console.log(`  [通过] ${checkedPaperDrops} 个纸片坠落口均通过真实移动与出口触发验证`);
+
 // ---------------- 世界规模与拓扑预算 ----------------
 if (ROOM_LIST.length < 48) err(`房间总数 ${ROOM_LIST.length},扩展世界至少需要 48 间`);
 if (Object.keys(ZONES).length < 6) err(`场景总数 ${Object.keys(ZONES).length},至少需要 6 个主题区域`);
@@ -231,7 +313,7 @@ console.log(
   `  [通过] 世界规模 ${ROOM_LIST.length} 房间 / ${Object.keys(ZONES).length} 区域 / ${edges.size} 连接 / ${cycleRank} 环路 / ${junctions} 枢纽`,
 );
 
-// ---------------- 能力推进可达性(BFS 到不动点) ----------------
+// ---------------- 能力推进拓扑可达性(BFS 到不动点) ----------------
 const abilityOf: Record<string, Ability> = { F: 'paper', W: 'cling', J: 'djump', D: 'dash', G: 'kanami' };
 const owned = new Set<Ability>();
 let reachable = new Set<string>([START_ROOM]);
@@ -264,7 +346,10 @@ const unreachable = ROOM_LIST.filter((r) => !reachable.has(r.id));
 if (unreachable.length > 0) {
   err(`按能力推进不可达的房间: ${unreachable.map((r) => r.id).join(', ')}`);
 } else {
-  console.log(`  [通过] 全部 ${ROOM_LIST.length} 个房间按能力推进可达;能力获取齐全 [${[...owned].join(', ')}]`);
+  console.log(
+    `  [通过] 拓扑层面连接全部 ${ROOM_LIST.length} 个房间;能力标记齐全 [${[...owned].join(', ')}]` +
+      '；关键动作由运行时场景另行验证',
+  );
 }
 
 if (errors > 0) {
