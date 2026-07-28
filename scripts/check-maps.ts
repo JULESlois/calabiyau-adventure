@@ -15,6 +15,7 @@ const err = (msg: string) => {
   errors++;
   console.error(`  [错误] ${msg}`);
 };
+const supportsFloor = (tile: number) => tile === T_SOLID || tile === T_ONEWAY || tile === T_MEMBRANE;
 
 const parsed = new Map<string, ReturnType<typeof parseRows>>();
 for (const room of ROOM_LIST) {
@@ -68,6 +69,12 @@ for (const room of ROOM_LIST) {
       if (e.ey >= 1 && tl.tiles[(e.ey - 1) * tl.w + e.ex] === T_SOLID) {
         err(`→ ${e.target} 落点 (${e.ex},${e.ey}) 头顶是实体砖`);
       }
+      if (e.side !== 'down') {
+        const floorRow = e.ey + 1;
+        if (floorRow >= tl.h || !supportsFloor(tl.tiles[floorRow * tl.w + e.ex])) {
+          err(`→ ${e.target} 侧门落点 (${e.ex},${e.ey}) 脚下没有紧邻地板`);
+        }
+      }
     }
     // 触发范围不被实体封死(弦膜允许:即"能力门")
     if (e.side === 'left' || e.side === 'right') {
@@ -78,6 +85,10 @@ for (const room of ROOM_LIST) {
       }
       if (!open) err(`${e.side} 出口 rows ${e.from}-${e.to} 被实体砖封死`);
       if (e.from < 0 || e.to >= lvl.h) err(`${e.side} 出口行范围越界`);
+      const floorRow = e.to + 1;
+      if (floorRow >= lvl.h || !supportsFloor(tileAt(c, floorRow))) {
+        err(`${e.side} 出口 rows ${e.from}-${e.to} 门槛没有紧邻地板`);
+      }
     } else {
       let open = false;
       for (let c = e.from; c <= e.to; c++) {
@@ -90,8 +101,12 @@ for (const room of ROOM_LIST) {
     // 左右通道必须能从目标房间返回；向下坠落口允许单向。
     if (e.side === 'left' || e.side === 'right') {
       const reverse = e.side === 'left' ? 'right' : 'left';
-      const paired = target.exits.some((candidate) => candidate.side === reverse && candidate.target === room.id);
-      if (!paired) err(`${e.side} 出口 → ${e.target} 缺少 ${reverse} 返回出口`);
+      const paired = target.exits.find((candidate) => candidate.side === reverse && candidate.target === room.id);
+      if (!paired) {
+        err(`${e.side} 出口 → ${e.target} 缺少 ${reverse} 返回出口`);
+      } else if (e.ey !== paired.to) {
+        err(`${e.side} 出口 → ${e.target} 落点楼层 ${e.ey} 与目标门槛楼层 ${paired.to} 不一致`);
+      }
     }
   }
 

@@ -366,7 +366,7 @@ const R: RoomDef[] = [];
     mapX: 3, mapY: 5,
     exits: [
       { side: 'left', from: 11, to: 13, target: 'coast_smuggler', ex: 48, ey: 13 },
-      { side: 'right', from: 11, to: 13, target: 'coast_beacon', ex: 3, ey: 29 },
+      { side: 'right', from: 11, to: 13, target: 'coast_beacon', ex: 3, ey: 30 },
     ],
   });
 }
@@ -512,6 +512,7 @@ const R: RoomDef[] = [];
   const g = grid(28, 34);
   rect(g, 31, 33, 0, 27, '#'); // 底部地面
   rect(g, 14, 16, 17, 27, '#'); // 顶部平台(通往海滨)
+  rect(g, 22, 22, 0, 4, '#'); // 中层入口门槛,右侧留出下井缺口
   // 竖井双壁(蹬墙跳,间距 3)
   rect(g, 10, 27, 8, 9, '#');
   rect(g, 13, 30, 13, 14, '#');
@@ -720,7 +721,7 @@ const R: RoomDef[] = [];
     id: 'lab_quarantine', zone: 'lab', name: '研究区 · 失控隔离场', rows: rows(g),
     mapX: 8, mapY: 5,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'lab_coolant', ex: 36, ey: 29 },
+      { side: 'left', from: 11, to: 13, target: 'lab_coolant', ex: 36, ey: 30 },
       { side: 'right', from: 11, to: 13, target: 'lab_matrix', ex: 3, ey: 10 },
     ],
   });
@@ -772,7 +773,7 @@ const R: RoomDef[] = [];
     mapX: 4, mapY: 5,
     exits: [
       { side: 'left', from: 11, to: 13, target: 'lab_gate', ex: 40, ey: 21 },
-      { side: 'right', from: 11, to: 13, target: 'lab_matrix', ex: 3, ey: 29, needs: ['dash'] },
+      { side: 'right', from: 11, to: 13, target: 'lab_matrix', ex: 3, ey: 30, needs: ['dash'] },
     ],
   });
 }
@@ -852,6 +853,7 @@ const R: RoomDef[] = [];
   const g = grid(36, 51);
   rect(g, 5, 5, 20, 35, '#'); // 高层回程闸封顶
   rect(g, 48, 50, 0, 35, '#');
+  rect(g, 47, 47, 0, 8, '#'); // 墓廊入口门槛与相邻房地板齐平
   rect(g, 30, 32, 0, 8, '#');
   rect(g, 10, 12, 27, 35, '#');
   rect(g, 35, 47, 12, 13, '#');
@@ -890,6 +892,7 @@ const R: RoomDef[] = [];
   // 天穹竖廊:三屏高的攀爬井。
   const g = grid(30, 51);
   rect(g, 47, 49, 0, 29, '#'); // 底部
+  rect(g, 26, 26, 0, 5, '#'); // 圣堂侧入口门槛,进入后可向下落入竖井
   // 三段成对攀爬井(井宽 2~3,蹬墙跳交替上行)+ 单向平台歇脚
   rect(g, 36, 46, 12, 13, '#'); // A 井左壁
   rect(g, 34, 46, 17, 18, '#'); // A 井右壁
@@ -980,6 +983,7 @@ const R: RoomDef[] = [];
   set(g, 13, 43, 'J');
   rect(g, 10, 10, 8, 11, '='); // 二段跳可及的高台
   set(g, 9, 9, '*');
+  rect(g, 10, 10, 40, 43, '#'); // 上层入口落脚台
   rect(g, 10, 12, 44, 47, '#'); // 取得二段跳后从上层出口离开
   R.push({
     id: 'sky_wing', zone: 'sky', name: '天穹 · 弦翼圣所', rows: rows(g),
@@ -1010,7 +1014,7 @@ const R: RoomDef[] = [];
     id: 'sky_orrery', zone: 'sky', name: '天穹 · 失衡轨道仪', rows: rows(g),
     mapX: 11, mapY: 1,
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'sky_wing', ex: 40, ey: 13 },
+      { side: 'left', from: 11, to: 13, target: 'sky_wing', ex: 40, ey: 9 },
       { side: 'right', from: 11, to: 13, target: 'sky_peak', ex: 3, ey: 30, needs: ['djump'] },
     ],
   });
@@ -1032,7 +1036,7 @@ const R: RoomDef[] = [];
   R.push({
     id: 'sky_archive', zone: 'sky', name: '天穹 · 云背档案馆', rows: rows(g),
     mapX: 9, mapY: 3,
-    exits: [{ side: 'right', from: 11, to: 13, target: 'sky_belltower', ex: 3, ey: 29, needs: ['kanami'] }],
+    exits: [{ side: 'right', from: 11, to: 13, target: 'sky_belltower', ex: 3, ey: 30, needs: ['kanami'] }],
   });
 }
 
@@ -1229,7 +1233,7 @@ const R: RoomDef[] = [];
     transition: { to: 'lab', toSide: 'right' },
     exits: [
       { side: 'left', from: 11, to: 13, target: 'coast_beacon', ex: 32, ey: 10 },
-      { side: 'right', from: 11, to: 13, target: 'lab_lift', ex: 3, ey: 20 },
+      { side: 'right', from: 11, to: 13, target: 'lab_lift', ex: 3, ey: 21 },
     ],
   });
 }
@@ -1249,7 +1253,7 @@ const R: RoomDef[] = [];
     mapX: 8, mapY: 6,
     transition: { to: 'tide', toSide: 'right' },
     exits: [
-      { side: 'left', from: 11, to: 13, target: 'coast_tideworks', ex: 32, ey: 29 },
+      { side: 'left', from: 11, to: 13, target: 'coast_tideworks', ex: 32, ey: 30 },
       { side: 'right', from: 11, to: 13, target: 'tide_entry', ex: 3, ey: 13 },
     ],
   });

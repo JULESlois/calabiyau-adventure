@@ -47,11 +47,23 @@ export interface SceneContinuity {
   /** 下一画面应延续到的区域背景摄像机坐标。 */
   backdropX: number;
   backdropY: number;
+  /** 出口门槛在旧画面中的位置,用于把新房间的对应门槛对齐。 */
+  portalScreenX: number;
+  portalScreenY: number;
+  /** 角色相对旧门槛的偏移,保留跳跃或下坠中的横纵位置。 */
+  playerPortalOffsetX: number;
+  playerPortalOffsetY: number;
   time: number;
   vx: number;
   vy: number;
   facing: number;
   stringMode: StringMode;
+  onGround: boolean;
+  jumpsUsed: number;
+  coyote: number;
+  airDashed: boolean;
+  dashT: number;
+  dashCdT: number;
 }
 
 export type EntryInfo =
@@ -188,6 +200,8 @@ export class PlayState implements GameState, WorldApi {
   camY = 0;
   backdropOffsetX = 0;
   backdropOffsetY = 0;
+  private entryCameraSettleAxis: 'x' | 'y' | null = null;
+  private entryCameraSettleT = 0;
   shakeT = 0;
   shakeMag = 0;
   time = 0;
@@ -378,17 +392,24 @@ export class PlayState implements GameState, WorldApi {
     this.player.hp = world.hp;
     this.player.energy = world.energy;
     if (entry.kind === 'door' && entry.scene) {
+      if (entry.fromSide === 'down') this.player.x += entry.scene.playerPortalOffsetX;
+      else this.player.y += entry.scene.playerPortalOffsetY;
       this.player.vx = entry.scene.vx;
       this.player.vy = entry.scene.vy;
       this.player.facing = entry.scene.facing < 0 ? -1 : 1;
       this.player.stringMode = entry.scene.stringMode === 'wall' ? 'normal' : entry.scene.stringMode;
+      this.player.onGround = entry.scene.onGround;
+      this.player.jumpsUsed = entry.scene.jumpsUsed;
+      this.player.coyote = entry.scene.coyote;
+      this.player.airDashed = entry.scene.airDashed;
+      this.player.dashT = entry.scene.dashT;
+      this.player.dashCdT = entry.scene.dashCdT;
       this.time = entry.scene.time;
     }
-    this.lastEntryX = px;
-    this.lastEntryY = py;
+    this.lastEntryX = this.player.x;
+    this.lastEntryY = this.player.y;
 
     this.introT = zoneChanged ? 2.8 : 0;
-    if (!zoneChanged) this.toast(this.room.name);
 
     // 环境微粒
     const zi = ZONE_INDEX[this.room.zone];
@@ -402,8 +423,18 @@ export class PlayState implements GameState, WorldApi {
         ph: Math.random() * Math.PI * 2,
       });
     }
-    this.camX = clamp(px - VIEW_W / 2, 0, Math.max(0, this.mapW - VIEW_W));
-    this.camY = clamp(py - VIEW_H / 2, 0, Math.max(0, this.mapH - VIEW_H));
+    this.camX = clamp(this.player.x - VIEW_W / 2, 0, Math.max(0, this.mapW - VIEW_W));
+    this.camY = clamp(this.player.y - VIEW_H / 2, 0, Math.max(0, this.mapH - VIEW_H));
+    if (entry.kind === 'door' && entry.scene) {
+      if (entry.fromSide === 'down') {
+        this.camX = px - entry.scene.portalScreenX;
+        this.entryCameraSettleAxis = 'x';
+      } else {
+        this.camY = py - entry.scene.portalScreenY;
+        this.entryCameraSettleAxis = 'y';
+      }
+      this.entryCameraSettleT = 1.25;
+    }
     if (entry.kind === 'door' && entry.scene && ROOMS[entry.fromRoom]?.zone === this.room.zone) {
       this.backdropOffsetX = entry.scene.backdropX - this.camX;
       this.backdropOffsetY = entry.scene.backdropY - this.camY;
@@ -751,6 +782,12 @@ export class PlayState implements GameState, WorldApi {
     this.persistRuntime();
     const shiftX = exit.side === 'right' ? VIEW_W : exit.side === 'left' ? -VIEW_W : 0;
     const shiftY = exit.side === 'down' ? VIEW_H : 0;
+    const portalX = exit.side === 'down'
+      ? ((exit.from + exit.to + 1) / 2) * TILE
+      : exit.side === 'left'
+        ? 0
+        : this.mapW;
+    const portalY = exit.side === 'down' ? this.mapH : (exit.to + 1) * TILE;
     this.engine.startRoom(exit.target, {
       kind: 'door',
       fromRoom: this.roomId,
@@ -760,11 +797,21 @@ export class PlayState implements GameState, WorldApi {
       scene: {
         backdropX: this.camX + this.backdropOffsetX + shiftX,
         backdropY: this.camY + this.backdropOffsetY + shiftY,
+        portalScreenX: portalX - this.camX,
+        portalScreenY: portalY - this.camY,
+        playerPortalOffsetX: this.player.x - portalX,
+        playerPortalOffsetY: this.player.y - portalY,
         time: this.time,
         vx: this.player.vx,
         vy: this.player.vy,
         facing: this.player.facing,
         stringMode: this.player.stringMode,
+        onGround: this.player.onGround,
+        jumpsUsed: this.player.jumpsUsed,
+        coyote: this.player.coyote,
+        airDashed: this.player.airDashed,
+        dashT: this.player.dashT,
+        dashCdT: this.player.dashCdT,
       },
     });
   }
@@ -1540,8 +1587,21 @@ export class PlayState implements GameState, WorldApi {
     );
     const targetY = clamp(this.playerY - VIEW_H / 2 - 8, 0, Math.max(0, this.mapH - VIEW_H));
     const k = 1 - Math.exp(-6 * dt);
-    this.camX = lerp(this.camX, targetX, k);
-    this.camY = lerp(this.camY, targetY, k);
+    const settleStep = 180 * dt;
+    if (this.entryCameraSettleAxis === 'x' && this.entryCameraSettleT > 0) {
+      this.camX += clamp(targetX - this.camX, -settleStep, settleStep);
+    } else {
+      this.camX = lerp(this.camX, targetX, k);
+    }
+    if (this.entryCameraSettleAxis === 'y' && this.entryCameraSettleT > 0) {
+      this.camY += clamp(targetY - this.camY, -settleStep, settleStep);
+    } else {
+      this.camY = lerp(this.camY, targetY, k);
+    }
+    if (this.entryCameraSettleT > 0) {
+      this.entryCameraSettleT = Math.max(0, this.entryCameraSettleT - dt);
+      if (this.entryCameraSettleT === 0) this.entryCameraSettleAxis = null;
+    }
   }
 
   // ---------------- 渲染 ----------------
