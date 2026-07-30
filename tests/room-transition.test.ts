@@ -3,7 +3,13 @@ import test from 'node:test';
 import { DT, TILE, VIEW_H, VIEW_W } from '../src/game/constants';
 import type { Engine } from '../src/game/Engine';
 import { parseRows, T_MEMBRANE, T_ONEWAY, T_SOLID } from '../src/game/levels/levels';
-import { PlayState, roomTransitionMix, type SceneContinuity } from '../src/game/states/PlayState';
+import {
+  moverDisplacement,
+  PlayState,
+  roomBackdropAnchor,
+  roomTransitionMix,
+  type SceneContinuity,
+} from '../src/game/states/PlayState';
 import { transitionOffsets } from '../src/game/states/RoomTransitionState';
 import { ROOMS, ROOM_LIST } from '../src/game/world/world';
 import { WorldState } from '../src/game/world/WorldState';
@@ -70,7 +76,7 @@ test('transition room colour mix reaches the correct region at either orientatio
   assert.equal(roomTransitionMix(drop, width / 2, dropHeight, width, dropHeight), 1);
 });
 
-test('same-zone door entry preserves motion, animation time and backdrop coordinates', () => {
+test('same-zone door entry preserves motion and uses a stable room backdrop anchor', () => {
   const state = new PlayState(makeEngine(), 'coast_walk', {
     kind: 'door',
     fromRoom: 'coast_start',
@@ -78,8 +84,6 @@ test('same-zone door entry preserves motion, animation time and backdrop coordin
     ey: 13,
     fromSide: 'right',
     scene: {
-      backdropX: 912,
-      backdropY: 64,
       portalScreenX: VIEW_W,
       portalScreenY: 14 * TILE,
       playerPortalOffsetX: 0,
@@ -98,8 +102,10 @@ test('same-zone door entry preserves motion, animation time and backdrop coordin
     },
   });
 
-  assert.equal(state.camX + state.backdropOffsetX, 912);
-  assert.equal(state.camY + state.backdropOffsetY, 64);
+  assert.deepEqual(
+    { x: state.backdropOffsetX, y: state.backdropOffsetY },
+    roomBackdropAnchor(ROOMS.coast_walk),
+  );
   assert.equal(state.time, 18.5);
   assert.equal(state.player.vx, 73);
   assert.equal(state.player.vy, -41);
@@ -108,8 +114,6 @@ test('same-zone door entry preserves motion, animation time and backdrop coordin
 
 test('horizontal door entry keeps the portal floor and grounded player at the same screen height', () => {
   const scene = {
-    backdropX: 912,
-    backdropY: 64,
     time: 18.5,
     vx: 73,
     vy: 0,
@@ -135,20 +139,15 @@ test('horizontal door entry keeps the portal floor and grounded player at the sa
     scene,
   });
 
-  assert.equal(state.player.y - state.camY, scene.portalScreenY);
+  assert.equal(state.player.y - state.camY + state.transitionWorldOffsetY, scene.portalScreenY);
   assert.equal(state.player.onGround, true);
   assert.equal(state.player.dashCdT, 0.2);
-
-  const beforeSettle = state.player.y - state.camY;
   state.update(DT);
-  const afterSettle = state.player.y - state.camY;
-  assert.ok(Math.abs(afterSettle - beforeSettle) <= 3.01, `${beforeSettle} -> ${afterSettle}`);
+  assert.ok(state.camY >= 0 && state.camY <= Math.max(0, state.mapH - VIEW_H));
 });
 
 test('down door entry preserves the player horizontal offset inside the chute', () => {
   const scene = {
-    backdropX: 240,
-    backdropY: 270,
     time: 4,
     vx: 0,
     vy: 240,
@@ -174,9 +173,107 @@ test('down door entry preserves the player horizontal offset inside the chute', 
     scene,
   });
 
-  assert.equal(state.player.x - state.camX, scene.portalScreenX + scene.playerPortalOffsetX);
+  assert.equal(
+    state.player.x - state.camX + state.transitionWorldOffsetX,
+    scene.portalScreenX + scene.playerPortalOffsetX,
+  );
   assert.equal(state.player.jumpsUsed, 1);
   assert.equal(state.player.airDashed, true);
+});
+
+test('every door target starts with a camera inside its room bounds', () => {
+  for (const room of ROOM_LIST) {
+    for (const exit of room.exits) {
+      const state = new PlayState(makeEngine(), exit.target, {
+        kind: 'door',
+        fromRoom: room.id,
+        ex: exit.ex,
+        ey: exit.ey,
+        fromSide: exit.side,
+        scene: {
+          portalScreenX: exit.side === 'down' ? VIEW_W / 2 : exit.side === 'left' ? 0 : VIEW_W,
+          portalScreenY: exit.side === 'down' ? VIEW_H : (exit.to + 1) * TILE,
+          playerPortalOffsetX: 0,
+          playerPortalOffsetY: 0,
+          time: 11.25,
+          vx: 0,
+          vy: 0,
+          facing: 1,
+          stringMode: 'normal',
+          onGround: true,
+          jumpsUsed: 0,
+          coyote: 0,
+          airDashed: false,
+          dashT: 0,
+          dashCdT: 0,
+        },
+      });
+      assert.ok(state.camX >= 0 && state.camX <= Math.max(0, state.mapW - VIEW_W), `${room.id} -> ${exit.target} camX`);
+      assert.ok(state.camY >= 0 && state.camY <= Math.max(0, state.mapH - VIEW_H), `${room.id} -> ${exit.target} camY`);
+    }
+  }
+});
+
+test('room background anchors are stable regardless of the route used to enter', () => {
+  const makeEntry = (fromRoom: string): ConstructorParameters<typeof PlayState>[2] => ({
+    kind: 'door',
+    fromRoom,
+    ex: 3,
+    ey: 13,
+    fromSide: 'right',
+  });
+  const fromEntry = new PlayState(makeEngine(), 'tide_cistern', makeEntry('tide_entry'));
+  const fromPumps = new PlayState(makeEngine(), 'tide_cistern', makeEntry('tide_pumps'));
+  const anchor = roomBackdropAnchor(ROOMS.tide_cistern);
+
+  assert.deepEqual(
+    { x: fromEntry.backdropOffsetX, y: fromEntry.backdropOffsetY },
+    anchor,
+  );
+  assert.deepEqual(
+    { x: fromPumps.backdropOffsetX, y: fromPumps.backdropOffsetY },
+    anchor,
+  );
+});
+
+test('moving platforms are initialized at the restored scene time before first render', () => {
+  const sceneTime = 18.5;
+  const dynamicRooms = ROOM_LIST.filter((room) => room.rows.some((row) => row.includes('M') || row.includes('N')));
+  assert.ok(dynamicRooms.length > 0);
+
+  for (const room of dynamicRooms) {
+    const state = new PlayState(makeEngine(), room.id, {
+      kind: 'door',
+      fromRoom: 'coast_start',
+      ex: 3,
+      ey: 13,
+      fromSide: 'right',
+      scene: {
+        portalScreenX: VIEW_W,
+        portalScreenY: 14 * TILE,
+        playerPortalOffsetX: 0,
+        playerPortalOffsetY: 0,
+        time: sceneTime,
+        vx: 0,
+        vy: 0,
+        facing: 1,
+        stringMode: 'normal',
+        onGround: true,
+        jumpsUsed: 0,
+        coyote: 0,
+        airDashed: false,
+        dashT: 0,
+        dashCdT: 0,
+      },
+    });
+    for (const mover of state.movers) {
+      const expected = moverDisplacement(sceneTime, mover.speed, mover.phase, mover.range);
+      if (mover.axis === 'h') assert.ok(Math.abs(mover.x - (mover.baseX + expected)) < 1e-9, room.id);
+      else assert.ok(Math.abs(mover.y - (mover.baseY + expected)) < 1e-9, room.id);
+      assert.equal(mover.prevX, mover.x, room.id);
+      assert.equal(mover.prevY, mover.y, room.id);
+    }
+  }
 });
 
 test('paired horizontal doors have an immediate shared floor and supported target landing', () => {

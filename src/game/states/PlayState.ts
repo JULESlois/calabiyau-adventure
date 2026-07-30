@@ -41,13 +41,11 @@ import {
   type RoomDef,
   type ShortcutDef,
   type ZoneDef,
+  type ZoneId,
 } from '../world/world';
 import type { WorldState } from '../world/WorldState';
 
 export interface SceneContinuity {
-  /** 下一画面应延续到的区域背景摄像机坐标。 */
-  backdropX: number;
-  backdropY: number;
   /** 出口门槛在旧画面中的位置,用于把新房间的对应门槛对齐。 */
   portalScreenX: number;
   portalScreenY: number;
@@ -69,7 +67,7 @@ export interface SceneContinuity {
 
 export type EntryInfo =
   | { kind: 'start' }
-  | { kind: 'bench' }
+  | { kind: 'bench'; fromZone?: ZoneId }
   | {
       kind: 'door';
       fromRoom: string;
@@ -163,6 +161,35 @@ const ZONE_INDEX: Record<string, number> = {
   hangar: 6,
 };
 
+const ZONE_MAP_ORIGIN = ROOM_LIST.reduce(
+  (origins, room) => {
+    const current = origins[room.zone];
+    if (!current) origins[room.zone] = { x: room.mapX, y: room.mapY };
+    else {
+      current.x = Math.min(current.x, room.mapX);
+      current.y = Math.min(current.y, room.mapY);
+    }
+    return origins;
+  },
+  {} as Partial<Record<ZoneId, { x: number; y: number }>>,
+);
+
+/**
+ * 背景相位必须只由房间决定，不能随玩家走过的路径累加。
+ * 地图纵坐标不是严格的世界高度，因此只取四分之一屏作为纵向视差步长。
+ */
+export function roomBackdropAnchor(room: RoomDef): { x: number; y: number } {
+  const origin = ZONE_MAP_ORIGIN[room.zone] ?? { x: 0, y: 0 };
+  return {
+    x: (room.mapX - origin.x) * VIEW_W,
+    y: (room.mapY - origin.y) * (VIEW_H / 4),
+  };
+}
+
+export function moverDisplacement(time: number, speed: number, phase: number, range: number): number {
+  return Math.sin(time * speed + phase) * range;
+}
+
 export class PlayState implements GameState, WorldApi {
   roomId: string;
   room: RoomDef;
@@ -210,8 +237,9 @@ export class PlayState implements GameState, WorldApi {
   camY = 0;
   backdropOffsetX = 0;
   backdropOffsetY = 0;
-  private entryCameraSettleAxis: 'x' | 'y' | null = null;
-  private entryCameraSettleT = 0;
+  /** 仅用于房间滑动过场；不会改变逻辑镜头坐标。 */
+  transitionWorldOffsetX = 0;
+  transitionWorldOffsetY = 0;
   shakeT = 0;
   shakeMag = 0;
   time = 0;
@@ -391,6 +419,7 @@ export class PlayState implements GameState, WorldApi {
     if (entry.kind === 'bench' && this.benches.length > 0) {
       px = this.benches[0].x;
       py = this.benches[0].y;
+      if (entry.fromZone !== undefined) zoneChanged = entry.fromZone !== this.room.zone;
     } else if (entry.kind === 'door') {
       px = entry.ex * TILE + TILE / 2;
       py = (entry.ey + 1) * TILE;
@@ -418,6 +447,7 @@ export class PlayState implements GameState, WorldApi {
       this.player.dashCdT = entry.scene.dashCdT;
       this.time = entry.scene.time;
     }
+    this.syncMoversToTime(true);
     this.lastEntryX = this.player.x;
     this.lastEntryY = this.player.y;
 
@@ -453,18 +483,16 @@ export class PlayState implements GameState, WorldApi {
     this.camY = clamp(this.player.y - VIEW_H / 2, 0, Math.max(0, this.mapH - VIEW_H));
     if (entry.kind === 'door' && entry.scene) {
       if (entry.fromSide === 'down') {
-        this.camX = px - entry.scene.portalScreenX;
-        this.entryCameraSettleAxis = 'x';
+        this.transitionWorldOffsetX =
+          entry.scene.portalScreenX + entry.scene.playerPortalOffsetX - (this.player.x - this.camX);
       } else {
-        this.camY = py - entry.scene.portalScreenY;
-        this.entryCameraSettleAxis = 'y';
+        this.transitionWorldOffsetY =
+          entry.scene.portalScreenY + entry.scene.playerPortalOffsetY - (this.player.y - this.camY);
       }
-      this.entryCameraSettleT = 1.25;
     }
-    if (entry.kind === 'door' && entry.scene && ROOMS[entry.fromRoom]?.zone === this.room.zone) {
-      this.backdropOffsetX = entry.scene.backdropX - this.camX;
-      this.backdropOffsetY = entry.scene.backdropY - this.camY;
-    }
+    const backdrop = roomBackdropAnchor(this.room);
+    this.backdropOffsetX = backdrop.x;
+    this.backdropOffsetY = backdrop.y;
   }
 
   // ---------------- WorldApi ----------------
@@ -713,7 +741,7 @@ export class PlayState implements GameState, WorldApi {
     for (const m of this.movers) {
       m.prevX = m.x;
       m.prevY = m.y;
-      const s = Math.sin(this.time * m.speed + m.phase) * m.range;
+      const s = moverDisplacement(this.time, m.speed, m.phase, m.range);
       if (m.axis === 'h') m.x = m.baseX + s;
       else m.y = m.baseY + s;
     }
@@ -852,8 +880,6 @@ export class PlayState implements GameState, WorldApi {
 
   private goThrough(exit: ExitDef): void {
     this.persistRuntime();
-    const shiftX = exit.side === 'right' ? VIEW_W : exit.side === 'left' ? -VIEW_W : 0;
-    const shiftY = exit.side === 'down' ? VIEW_H : 0;
     const portalX = exit.side === 'down'
       ? ((exit.from + exit.to + 1) / 2) * TILE
       : exit.side === 'left'
@@ -867,8 +893,6 @@ export class PlayState implements GameState, WorldApi {
       ey: exit.ey,
       fromSide: exit.side,
       scene: {
-        backdropX: this.camX + this.backdropOffsetX + shiftX,
-        backdropY: this.camY + this.backdropOffsetY + shiftY,
         portalScreenX: portalX - this.camX,
         portalScreenY: portalY - this.camY,
         playerPortalOffsetX: this.player.x - portalX,
@@ -1656,6 +1680,18 @@ export class PlayState implements GameState, WorldApi {
     }
   }
 
+  private syncMoversToTime(resetPrevious: boolean): void {
+    for (const mover of this.movers) {
+      const displacement = moverDisplacement(this.time, mover.speed, mover.phase, mover.range);
+      if (mover.axis === 'h') mover.x = mover.baseX + displacement;
+      else mover.y = mover.baseY + displacement;
+      if (resetPrevious) {
+        mover.prevX = mover.x;
+        mover.prevY = mover.y;
+      }
+    }
+  }
+
   private updateCamera(dt: number): void {
     const targetX = clamp(
       this.playerX + this.player.facing * 24 - VIEW_W / 2,
@@ -1664,25 +1700,18 @@ export class PlayState implements GameState, WorldApi {
     );
     const targetY = clamp(this.playerY - VIEW_H / 2 - 8, 0, Math.max(0, this.mapH - VIEW_H));
     const k = 1 - Math.exp(-6 * dt);
-    const settleStep = 180 * dt;
-    if (this.entryCameraSettleAxis === 'x' && this.entryCameraSettleT > 0) {
-      this.camX += clamp(targetX - this.camX, -settleStep, settleStep);
-    } else {
-      this.camX = lerp(this.camX, targetX, k);
-    }
-    if (this.entryCameraSettleAxis === 'y' && this.entryCameraSettleT > 0) {
-      this.camY += clamp(targetY - this.camY, -settleStep, settleStep);
-    } else {
-      this.camY = lerp(this.camY, targetY, k);
-    }
-    if (this.entryCameraSettleT > 0) {
-      this.entryCameraSettleT = Math.max(0, this.entryCameraSettleT - dt);
-      if (this.entryCameraSettleT === 0) this.entryCameraSettleAxis = null;
-    }
+    this.camX = lerp(this.camX, targetX, k);
+    this.camY = lerp(this.camY, targetY, k);
   }
 
   // ---------------- 渲染 ----------------
-  render(ctx: CanvasRenderingContext2D, chrome = true, playerVisible = true): void {
+  render(
+    ctx: CanvasRenderingContext2D,
+    chrome = true,
+    playerVisible = true,
+    transitionWorldOffsetX = 0,
+    transitionWorldOffsetY = 0,
+  ): void {
     this.updateVisualTheme();
     const shakeX = this.shakeT > 0 ? (Math.random() - 0.5) * this.shakeMag : 0;
     const shakeY = this.shakeT > 0 ? (Math.random() - 0.5) * this.shakeMag : 0;
@@ -1694,7 +1723,7 @@ export class PlayState implements GameState, WorldApi {
     this.bg.render(ctx, backdropX, backdropY, this.time);
 
     ctx.save();
-    ctx.translate(-cx, -cy);
+    ctx.translate(-cx + transitionWorldOffsetX, -cy + transitionWorldOffsetY);
 
     this.renderTiles(ctx, cx, cy);
     this.renderWorldMechanics(ctx);

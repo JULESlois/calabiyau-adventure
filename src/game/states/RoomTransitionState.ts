@@ -50,15 +50,18 @@ export class RoomTransitionState implements GameState {
     const linear = Math.max(0, Math.min(1, this.elapsed / this.duration));
     const eased = linear * linear * (3 - 2 * linear);
     const offsets = transitionOffsets(this.side, eased);
+    const alignment = 1 - eased;
+    const nextWorldX = this.next.transitionWorldOffsetX * alignment;
+    const nextWorldY = this.next.transitionWorldOffsetY * alignment;
 
     ctx.fillStyle = '#05040a';
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    this.renderScene(ctx, this.previous, offsets.oldX, offsets.oldY);
-    this.renderScene(ctx, this.next, offsets.nextX, offsets.nextY);
+    this.renderScene(ctx, this.previous, offsets.oldX, offsets.oldY, 0, 0);
+    this.renderScene(ctx, this.next, offsets.nextX, offsets.nextY, nextWorldX, nextWorldY);
     const oldPlayerX = this.previous.player.x - Math.round(this.previous.camX) + offsets.oldX;
     const oldPlayerY = this.previous.player.y - Math.round(this.previous.camY) + offsets.oldY;
-    const nextPlayerX = this.next.player.x - Math.round(this.next.camX) + offsets.nextX;
-    const nextPlayerY = this.next.player.y - Math.round(this.next.camY) + offsets.nextY;
+    const nextPlayerX = this.next.player.x - Math.round(this.next.camX) + offsets.nextX + nextWorldX;
+    const nextPlayerY = this.next.player.y - Math.round(this.next.camY) + offsets.nextY + nextWorldY;
     const playerX = oldPlayerX + (nextPlayerX - oldPlayerX) * eased;
     const playerY = oldPlayerY + (nextPlayerY - oldPlayerY) * eased;
     ctx.save();
@@ -70,13 +73,20 @@ export class RoomTransitionState implements GameState {
     this.next.renderChrome(ctx, false);
   }
 
-  private renderScene(ctx: CanvasRenderingContext2D, state: PlayState, x: number, y: number): void {
+  private renderScene(
+    ctx: CanvasRenderingContext2D,
+    state: PlayState,
+    x: number,
+    y: number,
+    worldX: number,
+    worldY: number,
+  ): void {
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, VIEW_W, VIEW_H);
     ctx.clip();
     ctx.translate(Math.round(x), Math.round(y));
-    state.render(ctx, false, false);
+    state.render(ctx, false, false, worldX, worldY);
     ctx.restore();
   }
 }
