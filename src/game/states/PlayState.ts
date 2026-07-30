@@ -227,6 +227,8 @@ export class PlayState implements GameState, WorldApi {
   private nearPolaritySpot: { x: number; y: number } | null = null;
   particles = new ParticleSystem();
   bg: Background;
+  private transitionBg: Background | null = null;
+  private transitionSurface: HTMLCanvasElement | null = null;
   theme: LevelTheme;
 
   gate = { x: 0, y: 0, active: false };
@@ -266,6 +268,10 @@ export class PlayState implements GameState, WorldApi {
     this.theme = this.zone.theme;
     this.level = parseRows(this.room.rows);
     this.bg = new Background(this.theme, ZONE_INDEX[this.room.zone]);
+    if (this.room.transition) {
+      const targetZone = ZONES[this.room.transition.to];
+      this.transitionBg = new Background(targetZone.theme, ZONE_INDEX[targetZone.id]);
+    }
 
     const world = this.world;
     this.shortcuts = (this.room.shortcuts ?? []).map((def) => ({
@@ -1675,8 +1681,86 @@ export class PlayState implements GameState, WorldApi {
     if (step !== this.transitionThemeStep) {
       this.transitionThemeStep = step;
       this.theme = blendLevelThemes(this.zone.theme, ZONES[transition.to].theme, step / 48);
-      this.bg.setTheme(this.theme);
     }
+  }
+
+  private transitionBackgroundMix(): number {
+    if (!this.room.transition || !this.transitionBg) return 0;
+    return roomTransitionMix(this.room, this.playerX, this.playerY, this.mapW, this.mapH);
+  }
+
+  private getTransitionSurface(): HTMLCanvasElement | null {
+    if (this.transitionSurface) return this.transitionSurface;
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = VIEW_W;
+    canvas.height = VIEW_H;
+    const surface = canvas.getContext('2d');
+    if (!surface) return null;
+    surface.imageSmoothingEnabled = false;
+    this.transitionSurface = canvas;
+    return canvas;
+  }
+
+  private drawBackgroundLayer(
+    ctx: CanvasRenderingContext2D,
+    background: Background,
+    backdropX: number,
+    backdropY: number,
+    alpha: number,
+    front: boolean,
+  ): boolean {
+    const canvas = this.getTransitionSurface();
+    const surface = canvas?.getContext('2d');
+    if (!canvas || !surface) return false;
+    surface.setTransform(1, 0, 0, 1, 0, 0);
+    surface.globalAlpha = 1;
+    surface.globalCompositeOperation = 'source-over';
+    surface.clearRect(0, 0, VIEW_W, VIEW_H);
+    if (front) background.renderFront(surface, backdropX, backdropY, this.time);
+    else background.render(surface, backdropX, backdropY, this.time);
+    ctx.save();
+    ctx.globalAlpha = clamp(alpha, 0, 1);
+    ctx.drawImage(canvas, 0, 0);
+    ctx.restore();
+    return true;
+  }
+
+  private renderBackground(
+    ctx: CanvasRenderingContext2D,
+    backdropX: number,
+    backdropY: number,
+    mix: number,
+  ): void {
+    if (!this.transitionBg || mix <= 0) {
+      this.bg.render(ctx, backdropX, backdropY, this.time);
+      return;
+    }
+    if (mix >= 1) {
+      this.transitionBg.render(ctx, backdropX, backdropY, this.time);
+      return;
+    }
+    this.bg.render(ctx, backdropX, backdropY, this.time);
+    this.drawBackgroundLayer(ctx, this.transitionBg, backdropX, backdropY, mix, false);
+  }
+
+  private renderBackgroundFront(
+    ctx: CanvasRenderingContext2D,
+    backdropX: number,
+    backdropY: number,
+    mix: number,
+  ): void {
+    if (!this.transitionBg || mix <= 0) {
+      this.bg.renderFront(ctx, backdropX, backdropY, this.time);
+      return;
+    }
+    if (mix >= 1) {
+      this.transitionBg.renderFront(ctx, backdropX, backdropY, this.time);
+      return;
+    }
+    const renderedSource = this.drawBackgroundLayer(ctx, this.bg, backdropX, backdropY, 1 - mix, true);
+    const renderedTarget = this.drawBackgroundLayer(ctx, this.transitionBg, backdropX, backdropY, mix, true);
+    if (!renderedSource && !renderedTarget) this.bg.renderFront(ctx, backdropX, backdropY, this.time);
   }
 
   private syncMoversToTime(resetPrevious: boolean): void {
@@ -1719,7 +1803,8 @@ export class PlayState implements GameState, WorldApi {
 
     const backdropX = this.camX + this.backdropOffsetX;
     const backdropY = this.camY + this.backdropOffsetY;
-    this.bg.render(ctx, backdropX, backdropY, this.time);
+    const backgroundMix = this.transitionBackgroundMix();
+    this.renderBackground(ctx, backdropX, backdropY, backgroundMix);
 
     ctx.save();
     ctx.translate(-cx + transitionWorldOffsetX, -cy + transitionWorldOffsetY);
@@ -1820,7 +1905,7 @@ export class PlayState implements GameState, WorldApi {
     ctx.restore();
 
     // 前景遮挡层(视差 1.3)
-    this.bg.renderFront(ctx, backdropX, backdropY, this.time);
+    this.renderBackgroundFront(ctx, backdropX, backdropY, backgroundMix);
 
     // 环境微粒(屏幕空间)
     ctx.fillStyle = theme.ember;

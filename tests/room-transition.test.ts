@@ -103,6 +103,14 @@ test('transition room colour mix reaches the correct region at either orientatio
   assert.equal(roomTransitionMix(drop, width / 2, dropHeight, width, dropHeight), 1);
 });
 
+test('every cross-zone transition room prepares the target region silhouette', () => {
+  for (const room of ROOM_LIST.filter((candidate) => candidate.transition)) {
+    const state = new PlayState(makeEngine(), room.id, { kind: 'start' });
+    const targetBackground = (state as unknown as { transitionBg: unknown }).transitionBg;
+    assert.ok(targetBackground, room.id);
+  }
+});
+
 test('same-zone door entry preserves motion and uses a stable room backdrop anchor', () => {
   const state = new PlayState(makeEngine(), 'coast_walk', {
     kind: 'door',
