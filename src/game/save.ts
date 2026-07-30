@@ -6,6 +6,7 @@ import {
   ROOMS,
   SHOP_ITEMS,
   SHORTCUT_IDS,
+  START_ROOM,
   type Ability,
 } from './world/world';
 import type { WorldSave } from './world/WorldState';
@@ -15,6 +16,10 @@ const ABILITIES = new Set<Ability>(['paper', 'cling', 'djump', 'dash', 'kanami']
 const CHIPS = new Set([...SHOP_ITEMS, ...HIDDEN_CHIPS].map((item) => item.id));
 const MAX_LIST_LENGTH = 4096;
 const MAX_VALUE_LENGTH = 256;
+
+function isBeaconRoom(roomId: string): boolean {
+  return Boolean(ROOMS[roomId]?.rows.some((row) => row.includes('T')));
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -36,7 +41,7 @@ export function parseWorldSave(value: unknown): WorldSave | null {
   const visited = readStringList(value.visited);
   if (!abilities || !flags || !crystals || !visited) return null;
   if (abilities.some((ability) => !ABILITIES.has(ability as Ability))) return null;
-  if (typeof value.benchRoom !== 'string' || !ROOMS[value.benchRoom]) return null;
+  if (typeof value.benchRoom !== 'string' || !isBeaconRoom(value.benchRoom)) return null;
   if (value.char !== 'michele' && value.char !== 'kanami') return null;
   if (typeof value.cleared !== 'boolean') return null;
 
@@ -47,6 +52,9 @@ export function parseWorldSave(value: unknown): WorldSave | null {
   if (!chips || chips.some((chip) => !CHIPS.has(chip))) return null;
   const shortcuts = value.shortcuts === undefined ? [] : readStringList(value.shortcuts);
   if (!shortcuts || shortcuts.some((shortcut) => !SHORTCUT_IDS.has(shortcut))) return null;
+  const savedBeacons = value.activatedBeacons === undefined ? [] : readStringList(value.activatedBeacons);
+  if (!savedBeacons || savedBeacons.some((roomId) => !isBeaconRoom(roomId))) return null;
+  const activatedBeacons = [...new Set([START_ROOM, value.benchRoom, ...savedBeacons])];
 
   if (
     value.hpMax !== undefined &&
@@ -63,6 +71,7 @@ export function parseWorldSave(value: unknown): WorldSave | null {
     crystals,
     visited,
     benchRoom: value.benchRoom,
+    activatedBeacons,
     char: value.char,
     cleared: value.cleared,
     dust,

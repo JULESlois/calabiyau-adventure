@@ -415,11 +415,12 @@ export class PlayState implements GameState, WorldApi {
     let px = startX;
     let py = startY;
     let facing = 1;
-    let zoneChanged = true;
+    let zoneChanged = entry.kind === 'bench' && entry.fromZone !== undefined
+      ? entry.fromZone !== this.room.zone
+      : true;
     if (entry.kind === 'bench' && this.benches.length > 0) {
       px = this.benches[0].x;
       py = this.benches[0].y;
-      if (entry.fromZone !== undefined) zoneChanged = entry.fromZone !== this.room.zone;
     } else if (entry.kind === 'door') {
       px = entry.ex * TILE + TILE / 2;
       py = (entry.ey + 1) * TILE;
@@ -686,10 +687,7 @@ export class PlayState implements GameState, WorldApi {
           this.overlay = 'none';
           this.sfx('ui');
           if (dest.id !== this.roomId) {
-            this.engine.startRoom(dest.id, { kind: 'bench' });
-            if (this.engine.state instanceof PlayState) {
-              this.engine.state.toast(`已传送至 ${dest.name}`);
-            }
+            this.engine.startBeaconTransfer(dest.id);
           }
         }
       }
@@ -947,7 +945,7 @@ export class PlayState implements GameState, WorldApi {
     const list: { id: string; name: string; zoneName: string; isCurrent: boolean }[] = [];
     for (const rid of Object.keys(ROOMS)) {
       const rm = ROOMS[rid];
-      if (rm.rows.some((r) => r.includes('T')) && this.world.visited.has(rid)) {
+      if (rm.rows.some((r) => r.includes('T')) && this.world.activatedBeacons.has(rid)) {
         const zn = ZONES[rm.zone]?.name ?? '';
         list.push({
           id: rid,
@@ -1013,6 +1011,7 @@ export class PlayState implements GameState, WorldApi {
           p.hp = w.hpMax;
           p.energy = w.energyMax;
           w.benchRoom = this.roomId;
+          w.activatedBeacons.add(this.roomId);
           w.hp = w.hpMax;
           w.energy = w.energyMax;
           w.char = p.char;

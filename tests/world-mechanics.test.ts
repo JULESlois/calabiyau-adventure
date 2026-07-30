@@ -70,6 +70,31 @@ test('F at the far-side lever opens and persists a shortcut', () => {
   assert.equal(state.tileAt(27, 7), T_EMPTY);
 });
 
+test('fast travel lists only beacons activated by interaction', () => {
+  const state = makePlayState('coast_start');
+  state.world.visited.add('coast_shrine');
+  const getBeacons = () =>
+    (state as unknown as { getVisitedBenches(): { id: string }[] }).getVisitedBenches();
+
+  assert.deepEqual(getBeacons().map((beacon) => beacon.id), ['coast_start']);
+  state.world.activatedBeacons.add('coast_shrine');
+  assert.deepEqual(getBeacons().map((beacon) => beacon.id), ['coast_start', 'coast_shrine']);
+});
+
+test('interacting with a beacon records it as activated before opening fast travel', () => {
+  const state = makePlayState('coast_shrine', true);
+  const beacon = state.benches[0];
+  assert.ok(beacon);
+  state.player.x = beacon.x;
+  state.player.y = beacon.y;
+
+  (state as unknown as { updateInteractables(): void }).updateInteractables();
+
+  assert.equal(state.world.benchRoom, 'coast_shrine');
+  assert.equal(state.world.activatedBeacons.has('coast_shrine'), true);
+  assert.equal(state.overlay, 'fast_travel');
+});
+
 test('lab polarity terminals control only the dedicated polarity membrane', () => {
   const state = makePlayState('lab_observation');
   assert.equal(state.tileAt(39, 8), T_MEMBRANE);

@@ -3,6 +3,7 @@ import { DT, VIEW_H, VIEW_W } from './constants';
 import { Input } from './Input';
 import { clearWorldSave, loadWorldSave, storeWorldSave } from './save';
 import { PlayState, type EntryInfo } from './states/PlayState';
+import { BeaconTransferState } from './states/BeaconTransferState';
 import { RoomTransitionState } from './states/RoomTransitionState';
 import { TitleState } from './states/TitleState';
 import { ROOMS, START_ROOM, ZONES, type Ability } from './world/world';
@@ -83,7 +84,9 @@ export class Engine {
           for (const a of ['paper', 'cling', 'djump', 'dash', 'kanami'] as Ability[]) this.world.grant(a);
         },
         info: () => {
-          const s = this.state instanceof RoomTransitionState ? this.state.next : this.state;
+          const s = this.state instanceof RoomTransitionState || this.state instanceof BeaconTransferState
+            ? this.state.next
+            : this.state;
           if (s instanceof PlayState) {
             return {
               state: 'play',
@@ -164,6 +167,25 @@ export class Engine {
 
   completeRoomTransition(transition: RoomTransitionState, next: PlayState): void {
     if (this.state === transition) this.state = next;
+  }
+
+  startBeaconTransfer(roomId: string): void {
+    if (!(this.state instanceof PlayState)) return;
+    const room = ROOMS[roomId];
+    if (!room || !this.world.activatedBeacons.has(roomId)) return;
+
+    const previous = this.state;
+    this.world.visited.add(roomId);
+    this.audio.setMusicState({ intensity: 0, ducked: false });
+    this.audio.playSong(ZONES[room.zone].song, 0.8);
+    const next = new PlayState(this, roomId, { kind: 'bench', fromZone: previous.room.zone });
+    next.enter();
+    this.state = new BeaconTransferState(this, previous, next);
+    this.state.enter();
+  }
+
+  completeBeaconTransfer(transfer: BeaconTransferState, next: PlayState): void {
+    if (this.state === transfer) this.state = next;
   }
 
   persistWorld(): void {

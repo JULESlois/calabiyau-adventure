@@ -10,6 +10,7 @@ const validSave: WorldSave = {
   crystals: ['coast_start:31:9'],
   visited: ['coast_start'],
   benchRoom: 'coast_start',
+  activatedBeacons: ['coast_start'],
   char: 'kanami',
   cleared: false,
   dust: 80,
@@ -22,18 +23,36 @@ test('valid saves are normalized before deserialization', () => {
     ...validSave,
     abilities: ['paper', 'paper', 'kanami'],
     visited: ['coast_start', 'coast_start'],
+    activatedBeacons: ['coast_start', 'coast_start'],
     hpMax: 9999,
   });
 
   assert.ok(parsed);
   assert.deepEqual(parsed.abilities, ['paper', 'kanami']);
   assert.deepEqual(parsed.visited, ['coast_start']);
+  assert.deepEqual(parsed.activatedBeacons, ['coast_start']);
   assert.equal(parsed.hpMax, 125);
 
   const world = WorldState.deserialize(parsed);
   assert.equal(world.char, 'kanami');
   assert.equal(world.hpMax, 125);
   assert.equal(world.dust, 80);
+  assert.deepEqual([...world.activatedBeacons], ['coast_start']);
+});
+
+test('legacy v2 saves migrate only the known respawn beacon into fast travel', () => {
+  const { activatedBeacons: _omitted, ...legacySave } = validSave;
+  const parsed = parseWorldSave({
+    ...legacySave,
+    visited: ['coast_start', 'coast_shrine', 'lab_gate'],
+    benchRoom: 'coast_shrine',
+  });
+
+  assert.ok(parsed);
+  assert.deepEqual(parsed.activatedBeacons, ['coast_start', 'coast_shrine']);
+  const world = WorldState.deserialize(parsed);
+  assert.equal(world.activatedBeacons.has('coast_shrine'), true);
+  assert.equal(world.activatedBeacons.has('lab_gate'), false);
 });
 
 test('hidden relic chips persist and contribute their permanent stat bonus', () => {
@@ -77,6 +96,9 @@ test('invalid or partial v2 saves are rejected without throwing', () => {
     { ...validSave, abilities: ['unknown'] },
     { ...validSave, flags: [42] },
     { ...validSave, benchRoom: 'missing_room' },
+    { ...validSave, benchRoom: 'coast_walk' },
+    { ...validSave, activatedBeacons: ['coast_walk'] },
+    { ...validSave, activatedBeacons: [42] },
     { ...validSave, char: 'unknown' },
     { ...validSave, cleared: 'false' },
     { ...validSave, dust: -1 },

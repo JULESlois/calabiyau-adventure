@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DT, TILE, VIEW_H, VIEW_W } from '../src/game/constants';
-import type { Engine } from '../src/game/Engine';
+import { Engine } from '../src/game/Engine';
 import { parseRows, T_MEMBRANE, T_ONEWAY, T_SOLID } from '../src/game/levels/levels';
 import {
   moverDisplacement,
@@ -11,6 +11,7 @@ import {
   type SceneContinuity,
 } from '../src/game/states/PlayState';
 import { transitionOffsets } from '../src/game/states/RoomTransitionState';
+import { beaconTransferFrame, BeaconTransferState } from '../src/game/states/BeaconTransferState';
 import { ROOMS, ROOM_LIST } from '../src/game/world/world';
 import { WorldState } from '../src/game/world/WorldState';
 
@@ -42,6 +43,32 @@ test('camera slide offsets tile old and new rooms without a gap', () => {
     nextX: 0,
     nextY: VIEW_H * 0.75,
   });
+});
+
+test('beacon transfer swaps rooms only under a full blackout', () => {
+  assert.deepEqual(beaconTransferFrame(0), { showNext: false, blackout: 0 });
+  assert.deepEqual(beaconTransferFrame(0.5), { showNext: true, blackout: 1 });
+  assert.deepEqual(beaconTransferFrame(1), { showNext: true, blackout: 0 });
+  assert.equal(beaconTransferFrame(0.25).showNext, false);
+  assert.equal(beaconTransferFrame(0.75).showNext, true);
+  assert.equal(beaconTransferFrame(0.25).blackout, beaconTransferFrame(0.75).blackout);
+});
+
+test('engine rejects inactive beacon destinations and fades activated transfers', () => {
+  const engine = makeEngine();
+  const source = new PlayState(engine, 'coast_start', { kind: 'start' });
+  engine.state = source;
+
+  Engine.prototype.startBeaconTransfer.call(engine, 'coast_shrine');
+  assert.equal(engine.state, source);
+
+  engine.world.activatedBeacons.add('coast_shrine');
+  Engine.prototype.startBeaconTransfer.call(engine, 'coast_shrine');
+  const transfer = engine.state as unknown;
+  assert.ok(transfer instanceof BeaconTransferState);
+  if (!(transfer instanceof BeaconTransferState)) return;
+  assert.equal(transfer.next.roomId, 'coast_shrine');
+  assert.equal(transfer.next.introT, 0);
 });
 
 test('all nine cross-zone borders are routed through transition rooms', () => {

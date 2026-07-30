@@ -23,6 +23,7 @@ export interface WorldSave {
   crystals: string[];
   visited: string[];
   benchRoom: string;
+  activatedBeacons?: string[];
   char: CharId;
   cleared: boolean;
   dust?: number;
@@ -41,6 +42,8 @@ export class WorldState {
   visited = new Set<string>();
   /** 重生锚点(信标所在房间) */
   benchRoom: string = START_ROOM;
+  /** 已由玩家实际互动激活的信标；仅这些地点可快速传送。 */
+  activatedBeacons = new Set<string>([START_ROOM]);
   /** 是否已通关 */
   cleared = false;
   /** 晶尘(货币) */
@@ -88,6 +91,7 @@ export class WorldState {
       crystals: [...this.crystals],
       visited: [...this.visited],
       benchRoom: this.benchRoom,
+      activatedBeacons: [...this.activatedBeacons],
       char: this.char,
       cleared: this.cleared,
       dust: this.dust,
@@ -104,6 +108,12 @@ export class WorldState {
     for (const c of d.crystals) if (typeof c === 'string') w.crystals.add(c);
     for (const v of d.visited) if (typeof v === 'string' && ROOMS[v]) w.visited.add(v);
     w.benchRoom = ROOMS[d.benchRoom] ? d.benchRoom : START_ROOM;
+    w.activatedBeacons.clear();
+    w.activatedBeacons.add(START_ROOM);
+    w.activatedBeacons.add(w.benchRoom);
+    for (const roomId of d.activatedBeacons ?? []) {
+      if (ROOMS[roomId]?.rows.some((row) => row.includes('T'))) w.activatedBeacons.add(roomId);
+    }
     w.char = d.char === 'kanami' && w.abilities.has('kanami') ? 'kanami' : 'michele';
     w.cleared = !!d.cleared;
     w.dust = typeof d.dust === 'number' && Number.isSafeInteger(d.dust) ? Math.max(0, d.dust) : 0;
