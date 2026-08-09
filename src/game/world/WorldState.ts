@@ -3,19 +3,9 @@
 
 import type { CharId } from '../types';
 import { MAX_HP, MAX_STRING } from '../constants';
-import {
-  HIDDEN_CHIPS,
-  progressionStats,
-  ROOMS,
-  SHOP_ITEMS,
-  SHORTCUT_IDS,
-  START_ROOM,
-  type Ability,
-} from './world';
+import { progressionStats, START_ROOM, type Ability } from './world';
 
-const KNOWN_ABILITIES = new Set<Ability>(['paper', 'cling', 'djump', 'dash', 'kanami']);
-const KNOWN_CHIPS = new Set([...SHOP_ITEMS, ...HIDDEN_CHIPS].map((item) => item.id));
-
+/** 存档的可序列化形状;来自 localStorage 时字段可能被手改过,尚不可信。 */
 export interface WorldSave {
   version: 2;
   abilities: Ability[];
@@ -31,6 +21,18 @@ export interface WorldSave {
   shortcuts?: string[];
   hpMax?: number;
 }
+
+declare const validated: unique symbol;
+
+/**
+ * 经 save.ts 的 parseWorldSave() 校验、规范化并补全默认值后的存档。
+ * 品牌符号不导出,所以只有校验器能造出这个类型 —— deserialize() 借此在类型层面
+ * 拒收任何未过校验的 localStorage 数据,校验逻辑因此只需存在于一处。
+ * 派生字段 hpMax 被刻意剔除:它由弦晶与芯片重算,存档里的数值一律不采信。
+ */
+export type ValidWorldSave = Required<Omit<WorldSave, 'hpMax'>> & {
+  readonly [validated]: true;
+};
 
 export class WorldState {
   abilities = new Set<Ability>();
@@ -101,24 +103,21 @@ export class WorldState {
     };
   }
 
-  static deserialize(d: WorldSave): WorldState {
+  /** 入参已由 parseWorldSave() 校验,这里不再重复校验,只还原状态并推导派生值。 */
+  static deserialize(d: ValidWorldSave): WorldState {
     const w = new WorldState();
-    for (const a of d.abilities) if (KNOWN_ABILITIES.has(a)) w.abilities.add(a);
-    for (const f of d.flags) if (typeof f === 'string') w.flags.add(f);
-    for (const c of d.crystals) if (typeof c === 'string') w.crystals.add(c);
-    for (const v of d.visited) if (typeof v === 'string' && ROOMS[v]) w.visited.add(v);
-    w.benchRoom = ROOMS[d.benchRoom] ? d.benchRoom : START_ROOM;
-    w.activatedBeacons.clear();
-    w.activatedBeacons.add(START_ROOM);
-    w.activatedBeacons.add(w.benchRoom);
-    for (const roomId of d.activatedBeacons ?? []) {
-      if (ROOMS[roomId]?.rows.some((row) => row.includes('T'))) w.activatedBeacons.add(roomId);
-    }
-    w.char = d.char === 'kanami' && w.abilities.has('kanami') ? 'kanami' : 'michele';
-    w.cleared = !!d.cleared;
-    w.dust = typeof d.dust === 'number' && Number.isSafeInteger(d.dust) ? Math.max(0, d.dust) : 0;
-    for (const c of d.chips ?? []) if (KNOWN_CHIPS.has(c)) w.chips.add(c);
-    for (const s of d.shortcuts ?? []) if (SHORTCUT_IDS.has(s)) w.shortcuts.add(s);
+    w.abilities = new Set(d.abilities);
+    w.flags = new Set(d.flags);
+    w.crystals = new Set(d.crystals);
+    w.visited = new Set(d.visited);
+    w.benchRoom = d.benchRoom;
+    w.activatedBeacons = new Set(d.activatedBeacons);
+    w.char = d.char;
+    w.cleared = d.cleared;
+    w.dust = d.dust;
+    w.chips = new Set(d.chips);
+    w.shortcuts = new Set(d.shortcuts);
+    // hpMax/energyMax 只认弦晶与芯片推导出的结果,与运行时成长走同一条路径
     w.recalculateStats();
     return w;
   }

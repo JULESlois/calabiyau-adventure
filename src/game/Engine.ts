@@ -143,6 +143,8 @@ export class Engine {
       return;
     }
     const previous = entry.kind === 'door' && this.state instanceof PlayState ? this.state : null;
+    // 先取再加:进入后才知道这是不是第一次到访,用来决定要不要报房间名。
+    const firstVisit = !this.world.visited.has(roomId);
     this.world.visited.add(roomId);
     const fromRoom = entry.kind === 'door' ? ROOMS[entry.fromRoom] : undefined;
     const keepBoundaryMusic = Boolean(
@@ -155,6 +157,7 @@ export class Engine {
     }
 
     const next = new PlayState(this, roomId, entry);
+    next.announceRoomName = firstVisit;
     next.enter();
     if (previous && entry.kind === 'door') {
       const sameZone = previous.room.zone === room.zone;

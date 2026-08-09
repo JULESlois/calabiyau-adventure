@@ -2,14 +2,13 @@
 import { MAX_HP } from './constants';
 import {
   HIDDEN_CHIPS,
-  progressionStats,
   ROOMS,
   SHOP_ITEMS,
   SHORTCUT_IDS,
   START_ROOM,
   type Ability,
 } from './world/world';
-import type { WorldSave } from './world/WorldState';
+import type { ValidWorldSave, WorldSave } from './world/WorldState';
 
 const KEY = 'calabiyau_stringbound_save_v2';
 const ABILITIES = new Set<Ability>(['paper', 'cling', 'djump', 'dash', 'kanami']);
@@ -31,8 +30,12 @@ function readStringList(value: unknown): string[] | null {
   return [...new Set(value as string[])];
 }
 
-/** 校验并规范化 localStorage 中不可信的存档数据。 */
-export function parseWorldSave(value: unknown): WorldSave | null {
+/**
+ * 校验并规范化 localStorage 中不可信的存档数据。
+ * 这是存档的唯一信任边界:WorldState.deserialize() 只接受这里产出的 ValidWorldSave,
+ * 不再做第二遍校验,所以任何新增字段的白名单/范围检查都必须落在这个函数里。
+ */
+export function parseWorldSave(value: unknown): ValidWorldSave | null {
   if (!isRecord(value) || value.version !== 2) return null;
 
   const abilities = readStringList(value.abilities);
@@ -56,32 +59,33 @@ export function parseWorldSave(value: unknown): WorldSave | null {
   if (!savedBeacons || savedBeacons.some((roomId) => !isBeaconRoom(roomId))) return null;
   const activatedBeacons = [...new Set([START_ROOM, value.benchRoom, ...savedBeacons])];
 
+  // hpMax 是派生值:只拦明显被改写的形状,数值本身不带出去,由 recalculateStats() 重算
   if (
     value.hpMax !== undefined &&
     (typeof value.hpMax !== 'number' || !Number.isFinite(value.hpMax) || value.hpMax < MAX_HP)
   ) {
     return null;
   }
-  const hpMax = progressionStats(crystals.length, new Set(chips)).hpMax;
 
   return {
     version: 2,
     abilities: abilities as Ability[],
     flags,
     crystals,
-    visited,
+    // 地图屏直接按 id 查房间表,丢掉已不存在的房间而不是让整档作废
+    visited: visited.filter((roomId) => ROOMS[roomId]),
     benchRoom: value.benchRoom,
     activatedBeacons,
-    char: value.char,
+    // 改档可能把 char 指向还没救出的 kanami:回退到 michele,避免无能力的角色上场
+    char: value.char === 'kanami' && abilities.includes('kanami') ? 'kanami' : 'michele',
     cleared: value.cleared,
     dust,
     chips,
     shortcuts,
-    hpMax,
-  };
+  } as ValidWorldSave;
 }
 
-export function loadWorldSave(): WorldSave | null {
+export function loadWorldSave(): ValidWorldSave | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;

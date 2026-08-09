@@ -10,6 +10,8 @@
     "test": "tsx --test tests/input.test.ts tests/player-string.test.ts tests/player-animation.test.ts tests/save.test.ts tests/display.test.ts tests/audio.test.ts tests/world-mechanics.test.ts tests/room-transition.test.ts",
     "check:maps": "tsx scripts/check-maps.ts",
     "check:dist": "tsx scripts/check-dist.ts",
+    "stats": "tsx scripts/world-stats.ts",
+    "slots": "tsx scripts/find-slots.ts",
     "build": "npm run typecheck && vite build",
     "check": "npm run typecheck && npm test && npm run check:maps && vite build && npm run check:dist",
     "preview": "vite preview"

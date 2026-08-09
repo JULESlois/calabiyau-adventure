@@ -18,6 +18,10 @@ type BossState =
   | 'dead';
 
 export class Boss {
+  readonly kind = 'guardian' as const;
+  readonly displayName = '守望者 MK-III';
+  readonly phases = 3;
+  readonly contactDmg = 18;
   x: number;
   y: number; // 脚底中心
   w = 44;

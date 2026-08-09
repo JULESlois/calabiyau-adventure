@@ -1,0 +1,36 @@
+name: check
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # 与本地 `npm run check` 同一道门:类型、单元测试、世界数据、生产构建、调试入口泄漏。
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: unit tests
+        run: npm test
+
+      - name: world data
+        run: npm run check:maps
+
+      - name: build
+        run: npx vite build
+
+      - name: dist debug-hook scan
+        run: npm run check:dist

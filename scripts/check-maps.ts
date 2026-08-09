@@ -1,5 +1,6 @@
 // 世界数据静态校验:房间尺寸、生成点支撑、出口配对、能力推进可达性。
 // 运行: npm run check:maps
+import { readFileSync } from 'node:fs';
 import { DT, TILE } from '../src/game/constants';
 import { parseRows, T_EMPTY, T_MEMBRANE, T_ONEWAY, T_SOLID } from '../src/game/levels/levels';
 import { PlayState } from '../src/game/states/PlayState';
@@ -10,7 +11,7 @@ import { WorldState } from '../src/game/world/WorldState';
 declare const process: { exit(code: number): void };
 
 let errors = 0;
-const knownSpawns = new Set('PTFWJGDS*heabcd123456MNUB><IOKk'.split(''));
+const knownSpawns = new Set('PTFWJGDS*heabcd123456789MNUBZ><IOKk'.split(''));
 const err = (msg: string) => {
   errors++;
   console.error(`  [错误] ${msg}`);
@@ -36,7 +37,7 @@ for (const room of ROOM_LIST) {
 
   // 地面实体下方必须有支撑('2' 浮游炮除外)
   for (const s of lvl.spawns) {
-    if (!'PTFWJGDSabcd13456BIOKk><'.includes(s.char)) continue;
+    if (!'PTFWJGDSabcd1345689BZIOKk><'.includes(s.char)) continue;
     let supported = false;
     for (let r = s.row + 1; r < lvl.h; r++) {
       const t = tileAt(s.col, r);
@@ -48,6 +49,21 @@ for (const room of ROOM_LIST) {
     }
     if (!supported) err(`${s.char} @ (col ${s.col}, row ${s.row}) 下方没有可站立地面`);
     if (tileAt(s.col, s.row) === T_SOLID) err(`${s.char} @ (col ${s.col}, row ${s.row}) 嵌在实体砖里`);
+  }
+
+  // 弦蛭(7)吸附天花板:正上方必须有实体砖,否则伏击设计不成立
+  for (const s2 of lvl.spawns) {
+    if (s2.char !== '7') continue;
+    let ceiling = false;
+    for (let r = s2.row - 1; r >= 0; r--) {
+      const t = tileAt(s2.col, r);
+      if (t === T_SOLID) {
+        ceiling = true;
+        break;
+      }
+      if (t !== 0) break; // 单向平台/弦膜不能吸附
+    }
+    if (!ceiling) err(`弦蛭 7 @ (col ${s2.col}, row ${s2.row}) 上方没有可吸附的天花板`);
   }
 
   // 出口检查
@@ -142,9 +158,30 @@ for (const room of ROOM_LIST) {
       }
     }
   }
+  const bossGate = room.bossGate;
+  if (bossGate) {
+    const g = bossGate.gate;
+    if (g.w < 1 || g.h < 1) err(`守卫屏障 ${bossGate.flag} 尺寸无效`);
+    if (g.col < 0 || g.row < 0 || g.col + g.w > lvl.w || g.row + g.h > lvl.h) {
+      err(`守卫屏障 ${bossGate.flag} 越界`);
+    } else {
+      for (let r = g.row; r < g.row + g.h; r++) {
+        for (let c = g.col; c < g.col + g.w; c++) {
+          if (lvl.tiles[r * lvl.w + c] !== T_EMPTY) err(`守卫屏障 ${bossGate.flag} 覆盖了静态地形 (${c},${r})`);
+          if (lvl.spawns.some((spawn) => spawn.col === c && spawn.row === r)) {
+            err(`守卫屏障 ${bossGate.flag} 覆盖了生成点 (${c},${r})`);
+          }
+        }
+      }
+    }
+    if (!lvl.spawns.some((spawn) => spawn.char === 'B' || spawn.char === 'Z')) {
+      err(`${room.id} 有守卫屏障但房间里没有 Boss,屏障将永远无法解封`);
+    }
+  }
   console.log(
     `  [通过] 尺寸 ${lvl.w}×${lvl.h},出口 ${room.exits.length},弦晶 ${count('*')},敌人 ${
-      count('1') + count('2') + count('3') + count('4') + count('5') + count('6')
+      count('1') + count('2') + count('3') + count('4') + count('5') + count('6') +
+      count('7') + count('8') + count('9')
     }`,
   );
 }
@@ -155,6 +192,7 @@ const allSpawns = ROOM_LIST.flatMap((r) => parsed.get(r.id)!.spawns.map((s) => (
 const globalCount = (c: string) => allSpawns.filter((s) => s.char === c).length;
 if (globalCount('P') !== 1) err(`P 出生点数量 = ${globalCount('P')},应为 1`);
 if (globalCount('B') !== 1) err(`Boss B 数量 = ${globalCount('B')},应为 1`);
+if (globalCount('Z') !== 1) err(`中 Boss Z 数量 = ${globalCount('Z')},应为 1`);
 for (const ch of ['F', 'W', 'J', 'G', 'D']) {
   if (globalCount(ch) !== 1) err(`能力 ${ch} 数量 = ${globalCount(ch)},应为 1`);
 }
@@ -327,6 +365,41 @@ for (const room of ROOM_LIST) {
 console.log(
   `  [通过] 世界规模 ${ROOM_LIST.length} 房间 / ${Object.keys(ZONES).length} 区域 / ${edges.size} 连接 / ${cycleRank} 环路 / ${junctions} 枢纽`,
 );
+
+// ---------------- README 拓扑数字防漂移 ----------------
+// 上面的预算只是下限,世界扩张时 README 里写死的规模数字会静默过期。
+// 这里把 README 的说法与实际计算值对账,让文档跟着数据一起失败。
+const README_CLAIMS: { label: string; pattern: RegExp; actual: number }[] = [
+  { label: '区域数', pattern: /(\d+)\s*个区域/, actual: Object.keys(ZONES).length },
+  { label: '房间数', pattern: /(\d+)\s*个互联房间/, actual: ROOM_LIST.length },
+  { label: '连接数', pattern: /(\d+)\s*条连接/, actual: edges.size },
+  { label: '独立回环数', pattern: /(\d+)\s*个独立回环/, actual: cycleRank },
+  { label: '三向以上枢纽数', pattern: /(\d+)\s*个三向以上枢纽/, actual: junctions },
+  { label: '永久捷径数', pattern: /(\d+)\s*道升降闸/, actual: shortcutIds.size },
+];
+let readme = '';
+try {
+  readme = readFileSync('README.md', 'utf8');
+} catch {
+  err('无法读取 README.md,拓扑数字无法对账');
+}
+if (readme) {
+  let drifted = 0;
+  for (const claim of README_CLAIMS) {
+    const match = readme.match(claim.pattern);
+    if (!match) {
+      err(`README 中找不到${claim.label}的说明(应为「${claim.actual}」),模式 ${claim.pattern}`);
+      drifted++;
+      continue;
+    }
+    const claimed = Number(match[1]);
+    if (claimed !== claim.actual) {
+      err(`README ${claim.label}写作 ${claimed},实际为 ${claim.actual};请同步 README`);
+      drifted++;
+    }
+  }
+  if (drifted === 0) console.log(`  [通过] README 的 ${README_CLAIMS.length} 项拓扑数字与世界数据一致`);
+}
 
 // ---------------- 能力推进拓扑可达性(BFS 到不动点) ----------------
 const abilityOf: Record<string, Ability> = { F: 'paper', W: 'cling', J: 'djump', D: 'dash', G: 'kanami' };

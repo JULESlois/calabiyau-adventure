@@ -1,6 +1,7 @@
 import { VIEW_W, VIEW_H } from '../constants';
 import type { Player } from '../entities/Player';
-import type { Boss } from '../entities/boss';
+import type { BossLike } from '../types';
+import { CRYSTAL_MILESTONES } from '../world/world';
 import type { WorldState } from '../world/WorldState';
 
 const GOLD = '#c8a050';
@@ -93,7 +94,7 @@ export function drawHUD(
   player: Player,
   world: WorldState,
   totalCrystals: number,
-  boss: Boss | null,
+  boss: BossLike | null,
   muted: boolean,
 ): void {
   const crystals = world.crystals.size;
@@ -128,8 +129,16 @@ export function drawHUD(
   const lowHp = player.hp <= 25;
   const hpFill = lowHp && Math.floor(performance.now() / 300) % 2 === 0 ? '#e04a5c' : '#a82838';
   ornateBar(ctx, 38, 19, 72, 5, player.hp / world.hpMax, hpFill, '#e8707c', '#26090f');
-  // 弦能条
-  ornateBar(ctx, 38, 27, 72, 4, player.energy / world.energyMax, '#4ab4cc', '#a8ecf4', '#0a2028');
+  // 弦能条:满槽只够约 3 秒弦化,见底会让玩家在空中直接脱离飘飞,
+  // 所以和血条一样需要一个提前的闪烁预警,而不是无声见底。
+  const energyRatio = player.energy / world.energyMax;
+  const lowEnergy = energyRatio <= 0.25;
+  const energyFill = lowEnergy && Math.floor(performance.now() / 220) % 2 === 0 ? '#8ae0f4' : '#4ab4cc';
+  ornateBar(ctx, 38, 27, 72, 4, energyRatio, energyFill, '#a8ecf4', '#0a2028');
+  if (lowEnergy) {
+    ctx.fillStyle = Math.floor(performance.now() / 220) % 2 === 0 ? '#a8ecf4' : '#3a6a80';
+    ctx.fillRect(113, 27, 2, 4);
+  }
 
   // ---- 技能符印(菱形)----
   const cd = player.skillCd[player.char];
@@ -149,9 +158,18 @@ export function drawHUD(
   ctx.font = isM ? '7px "SimSun", "Songti SC", serif' : '9px monospace';
   ctx.fillText(isM ? '喵' : '♪', sx, sy - 5);
   if (cd > 0) {
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.font = '7px monospace';
-    ctx.fillText(Math.ceil(cd).toString(), sx, sy - 3);
+    // 冷却期把符印压暗并用一条竖向排空的进度替代数字:
+    // 6-7px 的数字挤在旋转方框里几乎读不出来。
+    const total = player.char === 'michele' ? 9 : 10;
+    const left = Math.min(1, cd / total);
+    ctx.fillStyle = 'rgba(8,6,14,0.62)';
+    ctx.fillRect(sx - 8, sy - 13, 16, Math.round(16 * left));
+    ctx.fillStyle = '#6a6080';
+    ctx.fillRect(sx - 8, sy + 3 - Math.round(16 * left), 16, 1);
+  } else if (Math.floor(performance.now() / 260) % 2 === 0) {
+    // 冷却结束后短暂高亮,提示技能又能用了。
+    ctx.strokeStyle = '#fff0c0';
+    ctx.strokeRect(sx - 9.5, sy - 14.5, 19, 19);
   }
   ctx.font = '6px monospace';
   ctx.fillStyle = '#6a6080';
@@ -164,6 +182,24 @@ export function drawHUD(
   ctx.fillText('◆', VIEW_W - 56, 9);
   ctx.fillStyle = GOLD_TXT;
   ctx.fillText(`${crystals}/${totalCrystals}`, VIEW_W - 46, 9);
+  // 距离下一次共鸣还差几枚 —— 没有这行,17/76 这个数字对玩家毫无意义。
+  const next = CRYSTAL_MILESTONES.find((m) => crystals < m.count);
+  ctx.font = '7px monospace';
+  if (next) {
+    const prev = CRYSTAL_MILESTONES.filter((m) => m.count <= crystals).pop();
+    const from = prev ? prev.count : 0;
+    const span = Math.max(1, next.count - from);
+    const filled = Math.round(((crystals - from) / span) * 12);
+    ctx.fillStyle = '#3a2a3e';
+    ctx.fillRect(VIEW_W - 56, 12, 24, 2);
+    ctx.fillStyle = '#e878c0';
+    ctx.fillRect(VIEW_W - 56, 12, Math.max(0, filled * 2), 2);
+    ctx.fillStyle = '#8a7a98';
+    ctx.fillText(`+${next.count - crystals}`, VIEW_W - 30, 14);
+  } else {
+    ctx.fillStyle = '#7a6a8e';
+    ctx.fillText('共鸣全开', VIEW_W - 56, 14);
+  }
   // 晶尘
   ctx.fillStyle = '#ffe9a8';
   ctx.fillText(`✦ ${world.dust}`, VIEW_W - 56, 20);
@@ -180,15 +216,16 @@ export function drawHUD(
     ctx.font = '9px "SimSun", "Songti SC", serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = GOLD_TXT;
-    ctx.fillText('守望者 MK-III', VIEW_W / 2, VIEW_H - 28);
+    ctx.fillText(boss.displayName, VIEW_W / 2, VIEW_H - 28);
     ctx.textAlign = 'left';
     ctx.fillStyle = PLATE;
     ctx.fillRect(x - 4, y - 3, w + 8, 13);
     ornateBar(ctx, x, y, w, 6, boss.hp / boss.maxHp, '#a02838', '#e8707c', '#1c0710');
-    // 阶段刻痕
+    // 阶段刻痕:按该 Boss 实际阶段数划分,而不是固定三段
     ctx.fillStyle = GOLD;
-    ctx.fillRect(x + Math.round(w * 0.33), y - 2, 1, 10);
-    ctx.fillRect(x + Math.round(w * 0.66), y - 2, 1, 10);
+    for (let i = 1; i < boss.phases; i++) {
+      ctx.fillRect(x + Math.round((w * i) / boss.phases), y - 2, 1, 10);
+    }
     // 端饰
     ctx.fillStyle = GOLD;
     ctx.fillRect(x - 4, y - 3, 2, 13);

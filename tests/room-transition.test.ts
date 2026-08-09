@@ -301,7 +301,7 @@ test('moving platforms are initialized at the restored scene time before first r
         dashCdT: 0,
       },
     });
-    for (const mover of state.movers) {
+    for (const mover of state.mechanics.movers) {
       const expected = moverDisplacement(sceneTime, mover.speed, mover.phase, mover.range);
       if (mover.axis === 'h') assert.ok(Math.abs(mover.x - (mover.baseX + expected)) < 1e-9, room.id);
       else assert.ok(Math.abs(mover.y - (mover.baseY + expected)) < 1e-9, room.id);

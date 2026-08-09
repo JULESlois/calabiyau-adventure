@@ -58,6 +58,12 @@ function celestialShift(cameraX: number, amount: number): number {
 export class Background {
   private decos: Deco[] = [];
   private fronts: FrontDeco[] = [];
+  /** 天空渐变按主题色缓存:渲染路径每帧重建渐变是纯浪费。 */
+  private skyGrad: CanvasGradient | null = null;
+  private skyGradKey = '';
+  private seaGrad: CanvasGradient | null = null;
+  /** 星点位置在构造时定下,避免每帧重跑 RNG 得到同一批坐标。 */
+  private stars: { x: number; y: number; big: boolean; cool: boolean }[] = [];
 
   constructor(
     private theme: LevelTheme,
@@ -66,6 +72,7 @@ export class Background {
     const rng = makeRng(levelId * 7919 + 23);
     const span = BACKGROUND_PERIOD;
     this.buildFront(rng);
+    if (levelId === 2) this.buildStars();
 
     if (levelId === 1) {
       // 远景:城堡尖塔群 + 城墙
@@ -137,14 +144,33 @@ export class Background {
     this.theme = theme;
   }
 
+  /** 星点在构造时一次性铺开(仅 L2 夜空使用),渲染时只做闪烁。 */
+  private buildStars(): void {
+    const rng = makeRng(77);
+    for (let i = 0; i < 40; i++) {
+      const x = rng() * VIEW_W;
+      const y = rng() * 150;
+      this.stars.push({ x: Math.round(x), y: Math.round(y), big: i % 7 === 0, cool: i % 5 === 0 });
+    }
+  }
+
+  private skyGradient(ctx: CanvasRenderingContext2D): CanvasGradient {
+    const key = `${this.theme.skyTop}|${this.theme.skyBottom}`;
+    if (!this.skyGrad || this.skyGradKey !== key) {
+      const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+      grad.addColorStop(0, this.theme.skyTop);
+      grad.addColorStop(1, this.theme.skyBottom);
+      this.skyGrad = grad;
+      this.skyGradKey = key;
+    }
+    return this.skyGrad;
+  }
+
   render(ctx: CanvasRenderingContext2D, camX: number, camY: number, time: number): void {
     const t = this.theme;
 
     // ---- 天空 ----
-    const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
-    grad.addColorStop(0, t.skyTop);
-    grad.addColorStop(1, t.skyBottom);
-    ctx.fillStyle = grad;
+    ctx.fillStyle = this.skyGradient(ctx);
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
     // ---- 天体 ----
@@ -194,10 +220,13 @@ export class Background {
     // ---- 海面(L1)----
     if (this.levelId === 1) {
       const seaY = 214;
-      const seaGrad = ctx.createLinearGradient(0, seaY, 0, VIEW_H);
-      seaGrad.addColorStop(0, 'rgba(60,20,40,0.55)');
-      seaGrad.addColorStop(1, 'rgba(20,8,20,0.75)');
-      ctx.fillStyle = seaGrad;
+      if (!this.seaGrad) {
+        const seaGrad = ctx.createLinearGradient(0, seaY, 0, VIEW_H);
+        seaGrad.addColorStop(0, 'rgba(60,20,40,0.55)');
+        seaGrad.addColorStop(1, 'rgba(20,8,20,0.75)');
+        this.seaGrad = seaGrad;
+      }
+      ctx.fillStyle = this.seaGrad;
       ctx.fillRect(0, seaY, VIEW_W, VIEW_H - seaY);
       // 落日光路
       const sunX = Math.round(VIEW_W * 0.68 - celestialShift(camX, 24));
@@ -493,14 +522,13 @@ export class Background {
       }
       // 星
       if (this.levelId === 2) {
-        const rng = makeRng(77);
-        for (let i = 0; i < 40; i++) {
-          const sx = rng() * VIEW_W;
-          const sy = rng() * 150;
+        for (let i = 0; i < this.stars.length; i++) {
+          const s = this.stars[i];
           const tw = 0.3 + 0.7 * Math.abs(Math.sin(time * 1.2 + i * 1.7));
           ctx.globalAlpha = tw * 0.8;
-          ctx.fillStyle = i % 5 === 0 ? '#aef4ff' : '#e8ecf8';
-          ctx.fillRect(Math.round(sx), Math.round(sy), i % 7 === 0 ? 2 : 1, i % 7 === 0 ? 2 : 1);
+          ctx.fillStyle = s.cool ? '#aef4ff' : '#e8ecf8';
+          const size = s.big ? 2 : 1;
+          ctx.fillRect(s.x, s.y, size, size);
         }
         ctx.globalAlpha = 1;
       }

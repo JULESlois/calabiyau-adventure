@@ -1,6 +1,6 @@
 // 角色部署物:米雪儿的「喵喵卫士」猫炮塔、香奈美的「旋律回响」声呐镖。
 import { makeTurretBolt } from './bullets';
-import type { PlayState } from '../states/PlayState';
+import type { GadgetHost } from '../types';
 
 export const TURRET_LIFE = 10; // 秒
 export const TURRET_RANGE = 150;
@@ -21,7 +21,7 @@ export class CatTurret {
     return this.t <= 0;
   }
 
-  update(dt: number, ps: PlayState): void {
+  update(dt: number, ps: GadgetHost): void {
     this.t -= dt;
     this.fireT -= dt;
     if (this.fireT > 0) return;
@@ -115,7 +115,7 @@ export class SonarDart {
     return this.t <= 0;
   }
 
-  update(dt: number, ps: PlayState): void {
+  update(dt: number, ps: GadgetHost): void {
     this.t -= dt;
     this.ringT = Math.max(0, this.ringT - dt);
     if (!this.stuck) {

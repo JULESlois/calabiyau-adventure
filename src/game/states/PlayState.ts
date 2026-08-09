@@ -1,10 +1,11 @@
-import { COLORS, INVULN_TIME, TILE, VIEW_H, VIEW_W } from '../constants';
+import { INVULN_TIME, TILE, VIEW_H, VIEW_W } from '../constants';
 import { Boss } from '../entities/boss';
 import type { EnemyBullet, PlayerBullet } from '../entities/bullets';
 import { Enemy, type EnemyKind } from '../entities/enemies';
 import { ParticleSystem } from '../entities/particles';
 import { makePickup, type Pickup } from '../entities/pickups';
 import { Player } from '../entities/Player';
+import { Warden } from '../entities/warden';
 import {
   parseRows,
   T_EMPTY,
@@ -22,7 +23,15 @@ import { Background } from '../render/background';
 import { drawCandle, drawExitGate, drawPickup } from '../render/sprites';
 import { drawAbilityShrine, drawBench, drawCagedKanami, drawNavigator } from '../render/props';
 import { drawHUD } from '../render/hud';
-import type { StringMode, WorldApi } from '../types';
+import { CONTROLS_PAGE_COUNT, drawControlsPanel } from '../render/controlsPanel';
+import {
+  drawOverlays,
+  PAUSE_ITEMS,
+  type Overlay,
+  type OverlayView,
+  type PauseAction,
+} from '../render/overlays';
+import type { BossLike, GadgetHost, PlayerHost, StringMode, WorldApi } from '../types';
 import { clamp, lerp, rectsOverlap, type Rect } from '../utils';
 import type { Engine, GameState } from '../Engine';
 import {
@@ -39,11 +48,13 @@ import {
   type Ability,
   type ExitDef,
   type RoomDef,
-  type ShortcutDef,
   type ZoneDef,
   type ZoneId,
 } from '../world/world';
 import type { WorldState } from '../world/WorldState';
+import { moverDisplacement, RegionMechanics, type MechanicsHost, type ShortcutRuntime } from './regionMechanics';
+
+export { moverDisplacement };
 
 export interface SceneContinuity {
   /** 出口门槛在旧画面中的位置,用于把新房间的对应门槛对齐。 */
@@ -77,57 +88,6 @@ export type EntryInfo =
       scene?: SceneContinuity;
     };
 
-interface Mover {
-  baseX: number;
-  baseY: number;
-  x: number;
-  y: number;
-  prevX: number;
-  prevY: number;
-  w: number;
-  h: number;
-  axis: 'h' | 'v';
-  range: number;
-  speed: number;
-  phase: number;
-}
-
-interface Updraft {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-interface PressureJet {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  dir: -1 | 1;
-  phase: number;
-}
-
-interface Resonator {
-  x: number;
-  y: number;
-  phase: number;
-  beat: number;
-}
-
-interface Conveyor {
-  x: number;
-  y: number;
-  w: number;
-  dir: -1 | 1;
-}
-
-interface ShortcutRuntime {
-  def: ShortcutDef;
-  gate: Rect;
-  lever: { x: number; y: number };
-}
-
 interface BenchSpot {
   x: number;
   y: number;
@@ -148,8 +108,6 @@ interface FloatingHint {
   t: number;
   maxT: number;
 }
-
-type Overlay = 'none' | 'pause' | 'dead' | 'ability' | 'victory' | 'map' | 'shop' | 'fast_travel';
 
 const TOTAL_CRYSTALS = totalCrystals();
 const ZONE_INDEX: Record<string, number> = {
@@ -186,29 +144,19 @@ export function roomBackdropAnchor(room: RoomDef): { x: number; y: number } {
   };
 }
 
-export function moverDisplacement(time: number, speed: number, phase: number, range: number): number {
-  return Math.sin(time * speed + phase) * range;
-}
-
-export class PlayState implements GameState, WorldApi {
+export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost, GadgetHost {
   roomId: string;
   room: RoomDef;
   zone: ZoneDef;
   level: ParsedRows;
   player: Player;
   enemies: Enemy[] = [];
-  boss: Boss | null = null;
+  boss: BossLike | null = null;
   playerBullets: PlayerBullet[] = [];
   enemyBullets: EnemyBullet[] = [];
   pickups: (Pickup & { id?: string; chipId?: string })[] = [];
-  movers: Mover[] = [];
-  updrafts: Updraft[] = [];
-  pressureJets: PressureJet[] = [];
-  resonators: Resonator[] = [];
-  conveyors: Conveyor[] = [];
-  polaritySpots: { x: number; y: number }[] = [];
-  polarityOpen = false;
-  shortcuts: ShortcutRuntime[] = [];
+  /** 区域机关(平台/气流/喷流/共鸣器/传送带/极性终端/捷径闸门) */
+  mechanics = new RegionMechanics(this);
   turrets: CatTurret[] = [];
   darts: SonarDart[] = [];
   /** 显形中的隐藏平台:tile 索引 → 剩余秒数 */
@@ -219,6 +167,11 @@ export class PlayState implements GameState, WorldApi {
   shopSpot: { x: number; y: number } | null = null;
   shopSel = 0;
   fastTravelIndex = 0;
+  pauseSel = 0;
+  pauseConfirm: PauseAction | null = null;
+  controlsPage = 0;
+  /** 由 Engine 在首次进入房间时置位,用来报一次房间名。 */
+  announceRoomName = false;
   private nearBenchSpot: BenchSpot | null = null;
   private nearShop = false;
   private nearAbilitySpot: AbilitySpot | null = null;
@@ -274,24 +227,14 @@ export class PlayState implements GameState, WorldApi {
     }
 
     const world = this.world;
-    this.shortcuts = (this.room.shortcuts ?? []).map((def) => ({
-      def,
-      gate: {
-        x: def.gate.col * TILE,
-        y: def.gate.row * TILE,
-        w: def.gate.w * TILE,
-        h: def.gate.h * TILE,
-      },
-      lever: {
-        x: def.lever.col * TILE + TILE / 2,
-        y: (def.lever.row + 1) * TILE,
-      },
-    }));
+    this.mechanics.buildShortcuts(this.room.shortcuts ?? []);
+    this.mechanics.bossGate = this.room.bossGate;
     let startX = 40;
     let startY = 100;
     for (const s of this.level.spawns) {
       const cx = s.col * TILE + TILE / 2;
       const bottom = (s.row + 1) * TILE;
+      if (this.mechanics.spawn(s.char, cx, bottom, s.col, s.row)) continue;
       switch (s.char) {
         case 'P':
           startX = cx;
@@ -363,45 +306,18 @@ export class PlayState implements GameState, WorldApi {
         case '4':
           this.enemies.push(new Enemy('shield', cx, bottom));
           break;
-        case 'M':
-          this.movers.push({
-            baseX: cx, baseY: s.row * TILE, x: cx, y: s.row * TILE,
-            prevX: cx, prevY: s.row * TILE, w: 40, h: 6,
-            axis: 'h', range: 52, speed: 1.1, phase: s.col * 0.7,
-          });
+        case '7':
+          this.enemies.push(new Enemy('leech', cx, bottom));
           break;
-        case 'N':
-          this.movers.push({
-            baseX: cx, baseY: s.row * TILE, x: cx, y: s.row * TILE,
-            prevX: cx, prevY: s.row * TILE, w: 40, h: 6,
-            axis: 'v', range: 62, speed: 0.9, phase: s.col * 0.7,
-          });
+        case '8':
+          this.enemies.push(new Enemy('mortar', cx, bottom));
           break;
-        case 'U':
-          this.updrafts.push({ x: cx - 48, y: bottom - 104, w: 96, h: 104 });
+        case '9':
+          this.enemies.push(new Enemy('hound', cx, bottom));
           break;
-        case '>':
-        case '<': {
-          const dir = s.char === '>' ? 1 : -1;
-          this.pressureJets.push({
-            x: dir > 0 ? cx - 8 : cx - 88,
-            y: bottom - 48,
-            w: 96,
-            h: 48,
-            dir,
-            phase: s.col * 0.31,
-          });
-          break;
-        }
-        case 'I':
-          this.polaritySpots.push({ x: cx, y: bottom });
-          break;
-        case 'O':
-          this.resonators.push({ x: cx, y: bottom - 9, phase: s.col * 0.07, beat: -1 });
-          break;
-        case 'K':
-        case 'k':
-          this.conveyors.push({ x: cx - 32, y: bottom - 4, w: 64, dir: s.char === 'K' ? 1 : -1 });
+        case 'Z':
+          // 回响守卫:已击败则屏障永久解封,不再重生。
+          if (!world.flags.has('boss:warden')) this.boss = new Warden(cx, bottom);
           break;
         case 'B':
           if (world.flags.has('boss:guardian')) {
@@ -454,7 +370,7 @@ export class PlayState implements GameState, WorldApi {
       this.player.dashCdT = entry.scene.dashCdT;
       this.time = entry.scene.time;
     }
-    this.syncMoversToTime(true);
+    this.mechanics.syncMoversToTime(true);
     this.lastEntryX = this.player.x;
     this.lastEntryY = this.player.y;
 
@@ -554,17 +470,28 @@ export class PlayState implements GameState, WorldApi {
   tileAt(c: number, r: number): number {
     if (c < 0 || c >= this.level.w) return T_SOLID; // 左右边界为墙
     if (r < 0 || r >= this.level.h) return T_EMPTY; // 上下开放
-    for (const shortcut of this.shortcuts) {
-      if (this.world.shortcuts.has(shortcut.def.id)) continue;
-      const g = shortcut.def.gate;
-      if (c >= g.col && c < g.col + g.w && r >= g.row && r < g.row + g.h) return T_SOLID;
-    }
+    if (this.mechanics.gateSolidAt(c, r)) return T_SOLID;
     const t = this.level.tiles[r * this.level.w + c];
-    if (t === T_POLARITY) return this.polarityOpen ? T_EMPTY : T_MEMBRANE;
+    if (t === T_POLARITY) return this.mechanics.polarityOpen ? T_EMPTY : T_MEMBRANE;
     if (t === T_HIDDEN) {
       return (this.hiddenReveal.get(r * this.level.w + c) ?? 0) > 0 ? T_SOLID : T_EMPTY;
     }
     return t;
+  }
+
+  /** MechanicsHost:共鸣器与声呐共用的隐藏平台显形入口。 */
+  revealHiddenTile(tileIndex: number, seconds: number): void {
+    this.hiddenReveal.set(tileIndex, seconds);
+  }
+
+  /** MechanicsHost:捷径闸门是否已由玩家从远端开启。 */
+  isShortcutOpen(id: string): boolean {
+    return this.world.shortcuts.has(id);
+  }
+
+  /** MechanicsHost:守卫屏障读世界旗标(Boss 击败后永久解封)。 */
+  isFlagSet(flag: string): boolean {
+    return this.world.flags.has(flag);
   }
 
   rectHitsSolid(rect: Rect, paper = false): boolean {
@@ -611,7 +538,9 @@ export class PlayState implements GameState, WorldApi {
 
   // ---------------- 主循环 ----------------
   enter(): void {
-    // 音乐由 Engine.startRoom 按场景切换
+    // 音乐由 Engine.startRoom 按场景切换。
+    // 房间名过去只出现在地图与传送列表里,首次进入报一次,57 个房间才叫得出名字。
+    if (this.announceRoomName && this.introT <= 0) this.toast(this.room.name);
   }
 
   update(dt: number): void {
@@ -636,20 +565,60 @@ export class PlayState implements GameState, WorldApi {
     if (input.pressed('pause')) {
       if (this.overlay === 'none') {
         this.overlay = 'pause';
+        this.pauseSel = 0;
+        this.pauseConfirm = null;
         this.sfx('ui');
         return;
       }
       if (this.overlay === 'pause') {
-        this.overlay = 'none';
+        // 确认框里的 Esc 只取消确认,不直接退出菜单。
+        if (this.pauseConfirm) this.pauseConfirm = null;
+        else this.overlay = 'none';
         this.sfx('ui');
+        return;
       }
     }
 
+    if (this.overlay === 'controls') {
+      this.time += dt * 0.2;
+      if (input.pressed('left') || input.pressed('up')) {
+        this.controlsPage = (this.controlsPage + CONTROLS_PAGE_COUNT - 1) % CONTROLS_PAGE_COUNT;
+        this.sfx('ui');
+      }
+      if (input.pressed('right') || input.pressed('down')) {
+        this.controlsPage = (this.controlsPage + 1) % CONTROLS_PAGE_COUNT;
+        this.sfx('ui');
+      }
+      if (input.pressed('pause') || input.pressed('confirm') || input.pressed('map')) {
+        this.overlay = 'pause';
+        this.sfx('ui');
+      }
+      return;
+    }
+
     if (this.overlay === 'pause') {
-      if (input.pressed('shoot')) this.engine.respawnAtBench();
-      else if (input.pressed('skill')) {
-        this.persistRuntime();
-        this.engine.showTitle();
+      this.time += dt * 0.2;
+      if (this.pauseConfirm) {
+        if (input.pressed('confirm') || input.pressed('interact')) {
+          this.runPauseAction(this.pauseConfirm);
+        }
+        return;
+      }
+      const n = PAUSE_ITEMS.length;
+      if (input.pressed('up')) {
+        this.pauseSel = (this.pauseSel - 1 + n) % n;
+        this.sfx('ui');
+      }
+      if (input.pressed('down')) {
+        this.pauseSel = (this.pauseSel + 1) % n;
+        this.sfx('ui');
+      }
+      if (input.pressed('confirm') || input.pressed('interact')) {
+        const item = PAUSE_ITEMS[this.pauseSel];
+        this.sfx('ui');
+        // 会丢掉探索进度的两项一律先问一遍。
+        if (item.danger) this.pauseConfirm = item.action;
+        else this.runPauseAction(item.action);
       }
       return;
     }
@@ -729,7 +698,11 @@ export class PlayState implements GameState, WorldApi {
     // 结算类覆盖层
     if (this.overlay === 'dead') {
       this.overlayT -= dt;
-      if (this.overlayT <= 0) this.engine.respawnAtBench();
+      // 死亡不该是强制等待:过掉最初的演出后就允许立刻重生。
+      const canSkip = this.overlayT < 1.2;
+      if (this.overlayT <= 0 || (canSkip && (input.pressed('confirm') || input.pressed('interact')))) {
+        this.engine.respawnAtBench();
+      }
       return;
     }
     if (this.overlay === 'victory') {
@@ -742,21 +715,15 @@ export class PlayState implements GameState, WorldApi {
     }
 
     // 移动平台
-    for (const m of this.movers) {
-      m.prevX = m.x;
-      m.prevY = m.y;
-      const s = moverDisplacement(this.time, m.speed, m.phase, m.range);
-      if (m.axis === 'h') m.x = m.baseX + s;
-      else m.y = m.baseY + s;
-    }
-    this.updateResonators();
+    this.mechanics.advanceMovers();
+    this.mechanics.updateResonators();
 
     // 玩家
     this.player.update(dt, this);
-    this.applyUpdrafts(dt);
-    this.applyPressureJets(dt);
-    this.rideMovers();
-    this.rideConveyors(dt);
+    this.mechanics.applyUpdrafts(dt, this.player);
+    this.mechanics.applyPressureJets(dt, this.player);
+    this.mechanics.rideMovers(this.player);
+    this.mechanics.rideConveyors(dt, this.player);
 
     // 房间出口(可能切换状态,之后立即返回)
     if (this.checkExits()) return;
@@ -773,20 +740,7 @@ export class PlayState implements GameState, WorldApi {
       }
       const wasDead = this.boss.state === 'dead';
       this.boss.update(dt, this);
-      if (!wasDead && this.boss.state === 'dead' && !this.gate.active) {
-        this.engine.audio.playStinger('bossDefeat');
-        this.engine.audio.playSong('hangar', 1.8);
-        this.engine.audio.setMusicState({ intensity: 0, ducked: false });
-        this.world.flags.add('boss:guardian');
-        this.world.dust += 120;
-        this.toast('获得 120 晶尘');
-        this.engine.persistWorld();
-        this.gate.x = this.mapW / 2;
-        this.gate.y = this.mapH - 3 * TILE;
-        this.gate.active = true;
-        this.enemyBullets = [];
-        for (const e of this.enemies) e.dead = true;
-      }
+      if (!wasDead && this.boss.state === 'dead') this.onBossDefeated(this.boss);
     }
 
     // 敌人
@@ -843,6 +797,58 @@ export class PlayState implements GameState, WorldApi {
       this.engine.audio.setMusicState({ intensity: 0, ducked: true });
       this.sfx('explosion');
       this.particles.burst(this.playerX, this.playerY, 24, this.player.char === 'michele' ? '#8fd7ff' : '#ffb0d8', 150, 0.8);
+    }
+  }
+
+  /**
+   * 两场 Boss 战的结算完全不同:守望者开通关门,回响守卫只解封弦能屏障。
+   * 共同点是清场、写旗标与立即存档 —— 玩家不该因为战后掉线而重打。
+   */
+  private onBossDefeated(boss: BossLike): void {
+    this.engine.audio.playStinger('bossDefeat');
+    this.engine.audio.playSong(this.zone.song, 1.8);
+    this.engine.audio.setMusicState({ intensity: 0, ducked: false });
+    this.enemyBullets = [];
+    for (const e of this.enemies) e.dead = true;
+
+    if (boss.kind === 'guardian') {
+      if (this.gate.active) return;
+      this.world.flags.add('boss:guardian');
+      this.world.dust += 120;
+      this.toast('获得 120 晶尘');
+      this.gate.x = this.mapW / 2;
+      this.gate.y = this.mapH - 3 * TILE;
+      this.gate.active = true;
+    } else {
+      if (this.world.flags.has('boss:warden')) return;
+      this.world.flags.add('boss:warden');
+      this.world.dust += 60;
+      this.toast('弦能屏障解除 · 获得 60 晶尘');
+      this.shake(4);
+      this.particles.burst(boss.x, boss.y - 16, 26, '#c47eff', 150, 0.9, 'spark');
+    }
+    this.persistRuntime();
+  }
+
+  private runPauseAction(action: PauseAction): void {
+    this.pauseConfirm = null;
+    switch (action) {
+      case 'resume':
+        this.overlay = 'none';
+        break;
+      case 'controls':
+        this.overlay = 'controls';
+        this.controlsPage = 0;
+        break;
+      case 'bench':
+        this.engine.respawnAtBench();
+        break;
+      case 'title':
+        this.persistRuntime();
+        this.engine.showTitle();
+        break;
+      default:
+        break;
     }
   }
 
@@ -971,7 +977,7 @@ export class PlayState implements GameState, WorldApi {
 
     // 永久捷径开关:只在关闭时显示 F,从远端开启后立即持久化。
     this.nearShortcutSpot = null;
-    for (const shortcut of this.shortcuts) {
+    for (const shortcut of this.mechanics.shortcuts) {
       if (this.world.shortcuts.has(shortcut.def.id)) continue;
       const zone: Rect = { x: shortcut.lever.x - 12, y: shortcut.lever.y - 28, w: 24, h: 28 };
       if (!rectsOverlap(pr, zone)) continue;
@@ -991,14 +997,14 @@ export class PlayState implements GameState, WorldApi {
 
     // 研究区极性终端:切换本房间的极性弦膜。
     this.nearPolaritySpot = null;
-    for (const spot of this.polaritySpots) {
+    for (const spot of this.mechanics.polaritySpots) {
       const zone: Rect = { x: spot.x - 12, y: spot.y - 28, w: 24, h: 28 };
       if (!rectsOverlap(pr, zone)) continue;
       this.nearPolaritySpot = spot;
       if (this.input.pressed('interact')) {
-        this.polarityOpen = !this.polarityOpen;
+        this.mechanics.polarityOpen = !this.mechanics.polarityOpen;
         this.sfx('switch');
-        this.toast(this.polarityOpen ? '极性膜：开放' : '极性膜：封锁');
+        this.toast(this.mechanics.polarityOpen ? '极性膜：开放' : '极性膜：封锁');
         this.particles.burst(spot.x, spot.y - 12, 12, '#7ef0ff', 70, 0.4, 'spark');
         return;
       }
@@ -1012,6 +1018,16 @@ export class PlayState implements GameState, WorldApi {
       if (rectsOverlap(pr, zone)) {
         this.nearBenchSpot = b;
         if (this.input.pressed('interact')) {
+          if (b.resting) {
+            // 已经休息过:同一个键改为开传送列表,并把光标停在当前信标上,
+            // 免得手快连按两次 F 就被送回开局房间。
+            this.overlay = 'fast_travel';
+            const list = this.getVisitedBenches();
+            const here = list.findIndex((entry) => entry.isCurrent);
+            this.fastTravelIndex = here >= 0 ? here : 0;
+            this.sfx('ui');
+            return;
+          }
           b.resting = true;
           const w = this.world;
           p.hp = w.hpMax;
@@ -1025,11 +1041,6 @@ export class PlayState implements GameState, WorldApi {
           this.sfx('checkpoint');
           this.toast('信标已激活 · 进度已保存');
           this.particles.burst(b.x, b.y - 14, 16, '#8ee8f4', 70, 0.7, 'spark');
-
-          // 开启快速传送 overlay
-          this.overlay = 'fast_travel';
-          this.fastTravelIndex = 0;
-          this.sfx('ui');
           return;
         }
         break;
@@ -1221,121 +1232,6 @@ export class PlayState implements GameState, WorldApi {
     }
   }
 
-  private rideMovers(): void {
-    const p = this.player;
-    const pr = p.rect();
-    for (const m of this.movers) {
-      const top = m.y;
-      const mx0 = m.x - m.w / 2;
-      const mx1 = m.x + m.w / 2;
-      const overlapX = pr.x + pr.w > mx0 && pr.x < mx1;
-      if (!overlapX) continue;
-      const dy = m.y - m.prevY;
-      if (p.vy >= 0 && p.y >= top - 8 && p.y <= top + Math.max(8, dy + 8)) {
-        p.y = top;
-        p.vy = 0;
-        p.onGround = true;
-        p.jumpsUsed = 0;
-        p.x += m.x - m.prevX;
-      }
-    }
-  }
-
-  private applyUpdrafts(dt: number): void {
-    const p = this.player;
-    if (p.stringMode !== 'glide') return;
-    const pr = p.rect();
-    for (const u of this.updrafts) {
-      if (!rectsOverlap(pr, u)) continue;
-      p.vy = Math.max(-150, p.vy - 520 * dt);
-      if (Math.random() < 0.35) {
-        this.particles.spawn({
-          x: p.x + (Math.random() - 0.5) * 14,
-          y: p.y - Math.random() * p.h,
-          vx: (Math.random() - 0.5) * 12,
-          vy: -40 - Math.random() * 35,
-          life: 0.35,
-          color: '#e8f4ff',
-          shape: 'paper',
-          size: 1,
-        });
-      }
-    }
-  }
-
-  private pressureJetActive(jet: PressureJet): boolean {
-    return Math.sin(this.time * 2.2 + jet.phase) > -0.2;
-  }
-
-  private applyPressureJets(dt: number): void {
-    const p = this.player;
-    if (p.stringMode === 'wall') return;
-    const pr = p.rect();
-    for (const jet of this.pressureJets) {
-      if (!this.pressureJetActive(jet) || !rectsOverlap(pr, jet)) continue;
-      const force = p.paper ? 520 : 260;
-      p.vx = clamp(p.vx + jet.dir * force * dt, -190, 190);
-      if (Math.random() < 0.18) {
-        this.particles.spawn({
-          x: p.x - jet.dir * (4 + Math.random() * 10),
-          y: p.centerY() + (Math.random() - 0.5) * 16,
-          vx: jet.dir * (45 + Math.random() * 35),
-          vy: (Math.random() - 0.5) * 18,
-          life: 0.28,
-          color: '#8de0c4',
-          shape: 'spark',
-          size: 1,
-        });
-      }
-    }
-  }
-
-  private rideConveyors(dt: number): void {
-    const p = this.player;
-    if (!p.onGround || p.stringMode === 'wall') return;
-    for (const belt of this.conveyors) {
-      if (p.x < belt.x || p.x > belt.x + belt.w || Math.abs(p.y - (belt.y + 4)) > 5) continue;
-      p.vx = clamp(p.vx + belt.dir * 420 * dt, -155, 155);
-    }
-  }
-
-  private updateResonators(): void {
-    for (const resonator of this.resonators) {
-      const beat = Math.floor((this.time + resonator.phase) / 2.8);
-      if (beat === resonator.beat) continue;
-      resonator.beat = beat;
-      const radius = 150;
-      const c0 = Math.max(0, Math.floor((resonator.x - radius) / TILE));
-      const c1 = Math.min(this.level.w - 1, Math.floor((resonator.x + radius) / TILE));
-      const r0 = Math.max(0, Math.floor((resonator.y - radius) / TILE));
-      const r1 = Math.min(this.level.h - 1, Math.floor((resonator.y + radius) / TILE));
-      for (let r = r0; r <= r1; r++) {
-        for (let c = c0; c <= c1; c++) {
-          if (this.level.tiles[r * this.level.w + c] !== T_HIDDEN) continue;
-          const x = c * TILE + TILE / 2;
-          const y = r * TILE + TILE / 2;
-          if (Math.hypot(x - resonator.x, y - resonator.y) <= radius) {
-            this.hiddenReveal.set(r * this.level.w + c, 1.2);
-          }
-        }
-      }
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2;
-        this.particles.spawn({
-          x: resonator.x + Math.cos(a) * 8,
-          y: resonator.y + Math.sin(a) * 8,
-          vx: Math.cos(a) * 120,
-          vy: Math.sin(a) * 120,
-          life: 0.42,
-          color: '#f0b4dc',
-          shape: 'note',
-          size: 1,
-        });
-      }
-      if (Math.hypot(this.playerX - resonator.x, this.playerY - resonator.y) < 240) this.sfx('switch');
-    }
-  }
-
   private updateBullets(dt: number): void {
     for (let i = this.playerBullets.length - 1; i >= 0; i--) {
       const b = this.playerBullets[i];
@@ -1515,7 +1411,7 @@ export class PlayState implements GameState, WorldApi {
         }
       }
       if (this.boss && this.boss.active && this.boss.state !== 'stunned' && rectsOverlap(pr, this.boss.rect())) {
-        p.hurt(18, this.boss.x, this);
+        p.hurt(this.boss.contactDmg, this.boss.x, this);
       }
     }
 
@@ -1763,18 +1659,6 @@ export class PlayState implements GameState, WorldApi {
     if (!renderedSource && !renderedTarget) this.bg.renderFront(ctx, backdropX, backdropY, this.time);
   }
 
-  private syncMoversToTime(resetPrevious: boolean): void {
-    for (const mover of this.movers) {
-      const displacement = moverDisplacement(this.time, mover.speed, mover.phase, mover.range);
-      if (mover.axis === 'h') mover.x = mover.baseX + displacement;
-      else mover.y = mover.baseY + displacement;
-      if (resetPrevious) {
-        mover.prevX = mover.x;
-        mover.prevY = mover.y;
-      }
-    }
-  }
-
   private updateCamera(dt: number): void {
     const targetX = clamp(
       this.playerX + this.player.facing * 24 - VIEW_W / 2,
@@ -1810,45 +1694,7 @@ export class PlayState implements GameState, WorldApi {
     ctx.translate(-cx + transitionWorldOffsetX, -cy + transitionWorldOffsetY);
 
     this.renderTiles(ctx, cx, cy);
-    this.renderWorldMechanics(ctx);
-
-    // 上升气流:只对空中飘飞状态生效。
-    for (const u of this.updrafts) {
-      ctx.save();
-      ctx.globalAlpha = 0.07;
-      ctx.fillStyle = this.theme.accent;
-      ctx.fillRect(u.x, u.y, u.w, u.h);
-      ctx.globalAlpha = 0.4;
-      ctx.strokeStyle = this.theme.accent;
-      ctx.lineWidth = 1;
-      for (let i = 0; i < 9; i++) {
-        const xx = u.x + 7 + ((i * 29 + this.time * 24) % Math.max(1, u.w - 14));
-        const yy = u.y + u.h - ((i * 31 + this.time * 46) % u.h);
-        ctx.beginPath();
-        ctx.moveTo(Math.round(xx), Math.round(yy + 9));
-        ctx.quadraticCurveTo(xx + Math.sin(this.time * 2 + i) * 4, yy + 4, xx, yy);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    // 移动平台
-    const theme = this.theme;
-    for (const m of this.movers) {
-      const x = Math.round(m.x - m.w / 2);
-      const y = Math.round(m.y);
-      ctx.fillStyle = theme.tileEdge;
-      ctx.fillRect(x, y, m.w, 2);
-      ctx.fillStyle = theme.tileBase;
-      ctx.fillRect(x, y + 2, m.w, m.h - 2);
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fillRect(x, y + m.h - 1, m.w, 1);
-      ctx.fillStyle = theme.accent;
-      ctx.globalAlpha = 0.8;
-      ctx.fillRect(x + 3, y + 3, 2, 2);
-      ctx.fillRect(x + m.w - 5, y + 3, 2, 2);
-      ctx.globalAlpha = 1;
-    }
+    this.mechanics.render(ctx);
 
     // 信标 / 能力祭坛 / 香奈美 / 传送门
     for (const b of this.benches) drawBench(ctx, b.x, b.y, b.resting || this.world.benchRoom === this.roomId, this.time);
@@ -1908,7 +1754,7 @@ export class PlayState implements GameState, WorldApi {
     this.renderBackgroundFront(ctx, backdropX, backdropY, backgroundMix);
 
     // 环境微粒(屏幕空间)
-    ctx.fillStyle = theme.ember;
+    ctx.fillStyle = this.theme.ember;
     for (const e of this.embers) {
       const tw = 0.25 + 0.3 * Math.abs(Math.sin(e.ph * 2));
       ctx.globalAlpha = tw;
@@ -1995,92 +1841,14 @@ export class PlayState implements GameState, WorldApi {
       ctx.globalAlpha = 1;
     }
 
-    if (transient) this.renderToasts(ctx);
-  }
-
-  private renderWorldMechanics(ctx: CanvasRenderingContext2D): void {
-    const theme = this.theme;
-
-    for (const jet of this.pressureJets) {
-      const active = this.pressureJetActive(jet);
-      ctx.save();
-      ctx.globalAlpha = active ? 0.2 : 0.06;
-      ctx.fillStyle = '#8de0c4';
-      ctx.fillRect(jet.x, jet.y, jet.w, jet.h);
-      ctx.strokeStyle = '#b8f4df';
-      ctx.globalAlpha = active ? 0.48 : 0.14;
-      for (let i = 0; i < 6; i++) {
-        const travel = ((this.time * (active ? 72 : 18) + i * 19) % jet.w);
-        const x = jet.dir > 0 ? jet.x + travel : jet.x + jet.w - travel;
-        const y = jet.y + 7 + ((i * 13) % Math.max(8, jet.h - 14));
-        ctx.beginPath();
-        ctx.moveTo(Math.round(x - jet.dir * 10), Math.round(y));
-        ctx.lineTo(Math.round(x), Math.round(y));
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    for (const belt of this.conveyors) {
-      ctx.fillStyle = '#1b2028';
-      ctx.fillRect(belt.x, belt.y, belt.w, 4);
-      ctx.fillStyle = theme.accent;
-      for (let i = 0; i < belt.w; i += 10) {
-        const raw = (this.time * 30 * belt.dir + i) % belt.w;
-        const off = Math.floor((raw + belt.w) % belt.w);
-        ctx.fillRect(belt.x + off, belt.y + 1, 4, 1);
-      }
-      ctx.fillStyle = '#758090';
-      ctx.fillRect(belt.x, belt.y, belt.w, 1);
-    }
-
-    for (const resonator of this.resonators) {
-      const cycle = ((this.time + resonator.phase) % 2.8) / 2.8;
-      ctx.save();
-      ctx.globalAlpha = (1 - cycle) * 0.3;
-      ctx.strokeStyle = '#f0b4dc';
-      ctx.beginPath();
-      ctx.arc(resonator.x, resonator.y, 8 + cycle * 70, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#39243f';
-      ctx.fillRect(resonator.x - 6, resonator.y - 7, 12, 7);
-      ctx.fillStyle = '#f0b4dc';
-      ctx.fillRect(resonator.x - 2, resonator.y - 12, 4, 7);
-      ctx.fillStyle = '#fff0fa';
-      ctx.fillRect(resonator.x - 1, resonator.y - 11, 2, 2);
-      ctx.restore();
-    }
-
-    for (const spot of this.polaritySpots) {
-      ctx.fillStyle = '#18243a';
-      ctx.fillRect(spot.x - 6, spot.y - 18, 12, 18);
-      ctx.strokeStyle = '#7088b8';
-      ctx.strokeRect(spot.x - 5.5, spot.y - 17.5, 11, 17);
-      ctx.fillStyle = this.polarityOpen ? '#8de0c4' : '#e878c0';
-      ctx.fillRect(spot.x - 2, spot.y - 14, 4, 4);
-    }
-
-    for (const shortcut of this.shortcuts) {
-      const open = this.world.shortcuts.has(shortcut.def.id);
-      if (!open) {
-        const gate = shortcut.gate;
-        ctx.fillStyle = 'rgba(20,18,28,0.78)';
-        ctx.fillRect(gate.x, gate.y, gate.w, gate.h);
-        ctx.strokeStyle = '#b58b4a';
-        ctx.strokeRect(gate.x + 0.5, gate.y + 0.5, gate.w - 1, gate.h - 1);
-        ctx.fillStyle = '#74654f';
-        for (let x = gate.x + 3; x < gate.x + gate.w; x += 6) ctx.fillRect(x, gate.y, 2, gate.h);
-        for (let y = gate.y + 7; y < gate.y + gate.h; y += 12) ctx.fillRect(gate.x, y, gate.w, 2);
-      }
-      const lever = shortcut.lever;
-      ctx.fillStyle = '#25222c';
-      ctx.fillRect(lever.x - 6, lever.y - 17, 12, 17);
-      ctx.strokeStyle = '#75664d';
-      ctx.strokeRect(lever.x - 5.5, lever.y - 16.5, 11, 16);
-      ctx.fillStyle = open ? '#8de0c4' : '#d8a850';
-      ctx.fillRect(lever.x - 2, lever.y - 13, 4, 4);
-      ctx.fillRect(lever.x - (open ? 1 : 4), lever.y - 10, 2, 6);
+    if (transient) drawOverlays(ctx, this.overlayView());
+    if (transient && this.overlay === 'controls') {
+      drawControlsPanel(ctx, {
+        abilities: this.world.abilities,
+        chips: this.world.chips,
+        device: this.engine.input.lastDevice,
+        page: this.controlsPage,
+      });
     }
   }
 
@@ -2227,14 +1995,14 @@ export class PlayState implements GameState, WorldApi {
           }
           case T_POLARITY: {
             const pulse = 0.35 + Math.sin(this.time * 4 + (c + r) * 0.7) * 0.15;
-            ctx.globalAlpha = this.polarityOpen ? 0.12 : pulse + 0.18;
-            ctx.fillStyle = this.polarityOpen ? '#8de0c4' : '#7060d0';
+            ctx.globalAlpha = this.mechanics.polarityOpen ? 0.12 : pulse + 0.18;
+            ctx.fillStyle = this.mechanics.polarityOpen ? '#8de0c4' : '#7060d0';
             ctx.fillRect(x + 2, y, TILE - 4, TILE);
-            ctx.globalAlpha = this.polarityOpen ? 0.3 : 0.8;
-            ctx.fillStyle = this.polarityOpen ? '#b8f4df' : '#e878c0';
+            ctx.globalAlpha = this.mechanics.polarityOpen ? 0.3 : 0.8;
+            ctx.fillStyle = this.mechanics.polarityOpen ? '#b8f4df' : '#e878c0';
             ctx.fillRect(x + 1, y, TILE - 2, 1);
             ctx.fillRect(x + 1, y + TILE - 1, TILE - 2, 1);
-            if (!this.polarityOpen) {
+            if (!this.mechanics.polarityOpen) {
               const off = Math.floor(this.time * 12) % 5;
               ctx.fillRect(x + 4 + off, y + 2, 1, TILE - 4);
               ctx.fillRect(x + 10 - off, y + 2, 1, TILE - 4);
@@ -2249,402 +2017,53 @@ export class PlayState implements GameState, WorldApi {
     }
   }
 
-  private ornateFrame(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
-    ctx.fillStyle = 'rgba(10,7,16,0.88)';
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = '#a8823c';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 2.5, y + 2.5, w - 5, h - 5);
-    ctx.strokeStyle = '#4a3c22';
-    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    ctx.fillStyle = '#c8a050';
-    for (const [dx, dy] of [
-      [1, 1],
-      [w - 4, 1],
-      [1, h - 4],
-      [w - 4, h - 4],
-    ]) {
-      ctx.fillRect(x + dx, y + dy, 3, 3);
-    }
-  }
-
-  private renderMap(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = 'rgba(4,3,10,0.88)';
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-
-    const cw = 30;
-    const ch = 20;
-    let minX = 99;
-    let maxX = -99;
-    let minY = 99;
-    let maxY = -99;
-    for (const r of ROOM_LIST) {
-      minX = Math.min(minX, r.mapX);
-      maxX = Math.max(maxX, r.mapX);
-      minY = Math.min(minY, r.mapY);
-      maxY = Math.max(maxY, r.mapY + (r.mapH ?? 1) - 1);
-    }
-    const ox = Math.round((VIEW_W - (maxX - minX + 1) * cw) / 2);
-    const oy = Math.round((VIEW_H - (maxY - minY + 1) * ch) / 2) + 8;
-
-    const zoneColor: Record<string, string> = {
-      coast: '#c2743e', tide: '#58a894', lab: '#5a78c8',
-      choir: '#b878b8', sky: '#a8b0cc', hangar: '#c85a5c',
+  /** 覆盖层与 toast 由 render/overlays.ts 绘制;这里只组装它需要的当帧快照。 */
+  private overlayView(): OverlayView {
+    return {
+      world: this.world,
+      roomId: this.roomId,
+      roomName: this.room.name,
+      time: this.time,
+      camX: this.camX,
+      camY: this.camY,
+      overlay: this.overlay,
+      overlayT: this.overlayT,
+      abilityKind: this.abilityKind,
+      shopSel: this.shopSel,
+      fastTravelIndex: this.fastTravelIndex,
+      totalCrystals: TOTAL_CRYSTALS,
+      toasts: this.toasts,
+      promptAnchor: this.interactionPromptAnchor(),
+      promptLabel: this.interactionPromptLabel(),
+      benches: this.getVisitedBenches(),
+      device: this.engine.input.lastDevice,
+      pauseSel: this.pauseSel,
+      pauseConfirm: this.pauseConfirm,
     };
-
-    // 已探索房间之间的连线,让地图呈现真实回环而不是孤立色块。
-    const linked = new Set<string>();
-    ctx.lineWidth = 1;
-    for (const r of ROOM_LIST) {
-      if (!this.world.visited.has(r.id)) continue;
-      for (const e of r.exits) {
-        if (!this.world.visited.has(e.target)) continue;
-        const key = [r.id, e.target].sort().join('|');
-        if (linked.has(key)) continue;
-        linked.add(key);
-        const target = ROOMS[e.target];
-        const x0 = ox + (r.mapX - minX + 0.5) * cw;
-        const y0 = oy + (r.mapY - minY + (r.mapH ?? 1) / 2) * ch;
-        const x1 = ox + (target.mapX - minX + 0.5) * cw;
-        const y1 = oy + (target.mapY - minY + (target.mapH ?? 1) / 2) * ch;
-        ctx.globalAlpha = 0.16;
-        ctx.strokeStyle = zoneColor[r.zone];
-        ctx.beginPath();
-        ctx.moveTo(Math.round(x0), Math.round(y0));
-        ctx.lineTo(Math.round(x1), Math.round(y1));
-        ctx.stroke();
-      }
-    }
-    ctx.globalAlpha = 1;
-
-    for (const r of ROOM_LIST) {
-      if (!this.world.visited.has(r.id)) continue;
-      const x = ox + (r.mapX - minX) * cw;
-      const y = oy + (r.mapY - minY) * ch;
-      const h = (r.mapH ?? 1) * ch;
-      const current = r.id === this.roomId;
-      ctx.globalAlpha = current ? 0.55 : 0.28;
-      ctx.fillStyle = zoneColor[r.zone];
-      ctx.fillRect(x + 2, y + 2, cw - 4, h - 4);
-      if (r.transition) {
-        ctx.fillStyle = zoneColor[r.transition.to];
-        if (r.transition.toSide === 'left') ctx.fillRect(x + 2, y + 2, (cw - 4) / 2, h - 4);
-        else if (r.transition.toSide === 'down') ctx.fillRect(x + 2, y + h / 2, cw - 4, h / 2 - 2);
-        else ctx.fillRect(x + cw / 2, y + 2, cw / 2 - 2, h - 4);
-      }
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = current && Math.floor(this.time * 10) % 2 === 0 ? '#f0e0b0' : zoneColor[r.zone];
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x + 2.5, y + 2.5, cw - 5, h - 5);
-      // 信标标记
-      if (r.rows.some((row) => row.includes('T'))) {
-        ctx.fillStyle = '#8ee8f4';
-        ctx.fillRect(x + cw / 2 - 1, y + h / 2 - 1, 3, 3);
-      }
-      if (r.shortcuts?.length) {
-        const allOpen = r.shortcuts.every((shortcut) => this.world.shortcuts.has(shortcut.id));
-        ctx.fillStyle = allOpen ? '#8de0c4' : '#d8a850';
-        ctx.fillRect(x + cw - 7, y + 4, 3, 3);
-      }
-      if (current) {
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(x + cw / 2 - 1, y + h / 2 - 5, 2, 2);
-      }
-    }
-
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 12px "SimSun", "Songti SC", serif';
-    ctx.fillStyle = '#e8d8a8';
-    ctx.fillText('欧拉 · 区域图', VIEW_W / 2, 22);
-    ctx.font = '8px "SimSun", "Songti SC", serif';
-    ctx.fillStyle = '#8a7a98';
-    ctx.fillText(`${this.room.name}    ◆ ${this.world.crystals.size}/${TOTAL_CRYSTALS}`, VIEW_W / 2, VIEW_H - 24);
-    ctx.fillText('Tab / Esc 关闭', VIEW_W / 2, VIEW_H - 12);
-    ctx.textAlign = 'left';
   }
 
-  private renderShop(ctx: CanvasRenderingContext2D): void {
-    ctx.save();
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = 'rgba(4,3,10,0.82)';
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    this.ornateFrame(ctx, VIEW_W / 2 - 128, 40, 256, 178);
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 13px "SimSun", "Songti SC", serif';
-    ctx.fillStyle = '#e8d8a8';
-    ctx.fillText('引航者 · 诺笛', VIEW_W / 2, 60);
-    ctx.font = '8px "SimSun", "Songti SC", serif';
-    ctx.fillStyle = '#ffe9a8';
-    ctx.fillText(`晶尘 ${this.world.dust}`, VIEW_W / 2, 79);
-
-    ctx.textAlign = 'left';
-    SHOP_ITEMS.forEach((it, i) => {
-      const rowTop = 91 + i * 25;
-      const nameY = rowTop + 9;
-      const sel = i === this.shopSel;
-      const owned = this.world.chips.has(it.id);
-      if (sel) {
-        ctx.fillStyle = 'rgba(168,130,60,0.18)';
-        ctx.fillRect(VIEW_W / 2 - 118, rowTop, 236, 23);
-        ctx.fillStyle = '#e8c860';
-        ctx.fillRect(VIEW_W / 2 - 111, nameY - 4, 3, 3);
-      }
-      ctx.font = '9px "SimSun", "Songti SC", serif';
-      ctx.fillStyle = owned ? '#5a5468' : sel ? '#f0e0b0' : '#b8accc';
-      ctx.fillText(it.name, VIEW_W / 2 - 104, nameY);
-      ctx.font = '8px "SimSun", "Songti SC", serif';
-      ctx.fillStyle = owned ? '#4a4458' : '#8a7a98';
-      ctx.fillText(it.desc, VIEW_W / 2 - 104, nameY + 10);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = owned ? '#5a5468' : this.world.dust >= it.cost ? '#ffe9a8' : '#a85a5c';
-      ctx.fillText(owned ? '已接入' : `${it.cost}`, VIEW_W / 2 + 110, nameY);
-      ctx.textAlign = 'left';
-    });
-
-    ctx.textAlign = 'center';
-    ctx.font = '8px "SimSun", "Songti SC", serif';
-    ctx.fillStyle = '#8a7a98';
-    ctx.fillText('↑↓ 选择 · F 购买 · Esc 关闭', VIEW_W / 2, 208);
-    ctx.restore();
+  /** 让玩家在按下之前就知道这一下会发生什么。 */
+  private interactionPromptLabel(): string {
+    if (this.nearBenchSpot) return this.nearBenchSpot.resting ? '传送' : '休息';
+    if (this.nearShortcutSpot) return '开启闸门';
+    if (this.nearPolaritySpot) return this.mechanics.polarityOpen ? '封锁极性膜' : '开放极性膜';
+    if (this.nearAbilitySpot) return '取得能力';
+    if (this.nearKanamiSpot) return '解救香奈美';
+    if (this.nearShop && this.shopSpot) return '交易';
+    return '';
   }
 
-  // 房间名 / 事件提示
-  private renderToasts(ctx: CanvasRenderingContext2D): void {
-    if (this.toasts.length > 0) {
-      ctx.textAlign = 'center';
-      ctx.font = '9px "SimSun", "Songti SC", serif';
-      let ty = VIEW_H - 34;
-      for (const t of this.toasts) {
-        const a = clamp(t.t / 0.5, 0, 1);
-        ctx.globalAlpha = a * 0.9;
-        ctx.fillStyle = 'rgba(8,5,14,0.75)';
-        const tw = ctx.measureText(t.msg).width;
-        ctx.fillRect(VIEW_W / 2 - tw / 2 - 6, ty - 3, tw + 12, 13);
-        ctx.fillStyle = '#d8ccb0';
-        ctx.fillText(t.msg, VIEW_W / 2, ty);
-        ctx.globalAlpha = 1;
-        ty -= 16;
-      }
-      ctx.textAlign = 'left';
+  /** F 提示只显示一个目标,优先级与 updateInteractables 的检测顺序一致。 */
+  private interactionPromptAnchor(): { x: number; y: number } | null {
+    if (this.nearBenchSpot) return { x: this.nearBenchSpot.x, y: this.nearBenchSpot.y - 32 };
+    if (this.nearShortcutSpot) {
+      return { x: this.nearShortcutSpot.lever.x, y: this.nearShortcutSpot.lever.y - 22 };
     }
-
-    this.renderInteractionPrompts(ctx);
-    this.renderOverlay(ctx);
-  }
-
-  private renderInteractionPrompts(ctx: CanvasRenderingContext2D): void {
-    let px = 0;
-    let py = 0;
-
-    if (this.nearBenchSpot) {
-      px = this.nearBenchSpot.x;
-      py = this.nearBenchSpot.y - 32;
-    } else if (this.nearShortcutSpot) {
-      px = this.nearShortcutSpot.lever.x;
-      py = this.nearShortcutSpot.lever.y - 22;
-    } else if (this.nearPolaritySpot) {
-      px = this.nearPolaritySpot.x;
-      py = this.nearPolaritySpot.y - 22;
-    } else if (this.nearAbilitySpot) {
-      px = this.nearAbilitySpot.x;
-      py = this.nearAbilitySpot.y - 28;
-    } else if (this.nearKanamiSpot) {
-      px = this.nearKanamiSpot.x;
-      py = this.nearKanamiSpot.y - 26;
-    } else if (this.nearShop && this.shopSpot) {
-      px = this.shopSpot.x;
-      py = this.shopSpot.y - 26;
-    } else {
-      return;
-    }
-
-    const bx = Math.round(px - this.camX);
-    const by = Math.round(py - this.camY);
-    ctx.save();
-    ctx.font = 'bold 9px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(8, 6, 16, 0.9)';
-    ctx.fillRect(bx - 6, by - 10, 12, 12);
-    ctx.strokeStyle = '#8ee8f4';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(bx - 5.5, by - 9.5, 11, 11);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('F', bx, by - 4);
-    ctx.restore();
-  }
-
-  private renderFastTravel(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = 'rgba(4, 3, 10, 0.88)';
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-
-    const frameW = 270;
-    const frameH = 238;
-    const frameX = Math.round(VIEW_W / 2 - frameW / 2);
-    const frameY = 16;
-    this.ornateFrame(ctx, frameX, frameY, frameW, frameH);
-
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillStyle = '#8ee8f4';
-    ctx.fillText('信 标 传 送', VIEW_W / 2, frameY + 20);
-
-    ctx.fillStyle = '#4a3c5c';
-    ctx.fillRect(frameX + 20, frameY + 26, frameW - 40, 1);
-
-    const benches = this.getVisitedBenches();
-    if (benches.length === 0) {
-      ctx.font = '10px sans-serif';
-      ctx.fillStyle = '#8a7a98';
-      ctx.fillText('尚未激活其他信标……', VIEW_W / 2, frameY + 110);
-    } else {
-      const MAX_VISIBLE = 5;
-      const total = benches.length;
-      // 保持当前选中项在可视窗口内
-      const scrollOffset = Math.max(0, Math.min(total - MAX_VISIBLE, this.fastTravelIndex - 2));
-      const visibleList = benches.slice(scrollOffset, scrollOffset + MAX_VISIBLE);
-
-      const listStartY = frameY + 32;
-      const cardW = 236;
-      const cardH = 25;
-      const cardX = Math.round(VIEW_W / 2 - cardW / 2);
-
-      visibleList.forEach((b, index) => {
-        const i = scrollOffset + index;
-        const cardY = listStartY + index * 29;
-        const isSel = i === this.fastTravelIndex;
-
-        // 只保留轻量选中标记,避免每个传送点都被文字框包围。
-        if (isSel) {
-          ctx.fillStyle = '#8ee8f4';
-          ctx.fillRect(cardX - 5, cardY + 10, 3, 3);
-          ctx.globalAlpha = 0.22;
-          ctx.fillRect(cardX + 4, cardY + cardH - 1, cardW - 8, 1);
-          ctx.globalAlpha = 1;
-        }
-
-        // 左侧文字: 区域与房间名
-        ctx.textAlign = 'left';
-        ctx.font = isSel ? 'bold 10px sans-serif' : '10px sans-serif';
-
-        // 区域前缀
-        ctx.fillStyle = isSel ? '#7ae0c8' : '#8a7a98';
-        const zoneTag = `[${b.zoneName}] `;
-        ctx.fillText(zoneTag, cardX + 8, cardY + 16);
-        const tagW = ctx.measureText(zoneTag).width;
-
-        // 房间名
-        ctx.fillStyle = b.isCurrent ? '#ffd75e' : isSel ? '#ffffff' : '#c8b8d8';
-        ctx.fillText(b.name, cardX + 8 + tagW, cardY + 16);
-
-        // 右侧状态标签
-        ctx.textAlign = 'right';
-        ctx.font = '9px sans-serif';
-        if (b.isCurrent) {
-          ctx.fillStyle = '#ffd75e';
-          ctx.fillText('(当前信标)', cardX + cardW - 8, cardY + 16);
-        } else if (isSel) {
-          ctx.fillStyle = '#8ee8f4';
-          ctx.fillText('按 F 传送 ▶', cardX + cardW - 8, cardY + 16);
-        } else {
-          ctx.fillStyle = '#5a4c6a';
-          ctx.fillText('已到访', cardX + cardW - 8, cardY + 16);
-        }
-      });
-
-      // 滚动指示指示器
-      if (scrollOffset > 0) {
-        ctx.textAlign = 'center';
-        ctx.font = '8px sans-serif';
-        ctx.fillStyle = '#8ee8f4';
-        ctx.fillText('▲', frameX + frameW - 22, frameY + 20);
-      }
-      if (scrollOffset + MAX_VISIBLE < total) {
-        ctx.textAlign = 'center';
-        ctx.font = '8px sans-serif';
-        ctx.fillStyle = '#8ee8f4';
-        ctx.fillText('▼', frameX + frameW - 22, listStartY + MAX_VISIBLE * 29);
-      }
-    }
-
-    ctx.textAlign = 'center';
-    ctx.font = '9px sans-serif';
-    ctx.fillStyle = '#8a7a98';
-    ctx.fillText('↑/↓ 选择 · F 键 确认传送 · Esc 取消', VIEW_W / 2, frameY + frameH - 10);
-    ctx.textAlign = 'left';
-  }
-
-  private renderOverlay(ctx: CanvasRenderingContext2D): void {
-    if (this.overlay === 'none') return;
-    if (this.overlay === 'map') {
-      this.renderMap(ctx);
-      return;
-    }
-    if (this.overlay === 'shop') {
-      this.renderShop(ctx);
-      return;
-    }
-    if (this.overlay === 'fast_travel') {
-      this.renderFastTravel(ctx);
-      return;
-    }
-    ctx.fillStyle = 'rgba(4, 3, 10, 0.72)';
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    ctx.textAlign = 'center';
-    const F_BIG = 'bold 16px "SimSun", "Songti SC", serif';
-    const F_MID = '10px "SimSun", "Songti SC", serif';
-    const F_SMALL = '9px "SimSun", "Songti SC", serif';
-
-    if (this.overlay === 'pause') {
-      this.ornateFrame(ctx, VIEW_W / 2 - 90, 78, 180, 84);
-      ctx.font = F_BIG;
-      ctx.fillStyle = '#e8d8a8';
-      ctx.fillText('暂 停', VIEW_W / 2, 104);
-      ctx.font = F_SMALL;
-      ctx.fillStyle = '#8a7a98';
-      ctx.fillText('Esc 继续 · J 回到信标 · L 返回标题', VIEW_W / 2, 136);
-    } else if (this.overlay === 'dead') {
-      ctx.font = F_BIG;
-      ctx.fillStyle = '#c86a9a';
-      ctx.fillText('信 号 中 断 ……', VIEW_W / 2, 112);
-      ctx.font = F_SMALL;
-      ctx.fillStyle = '#8a7a98';
-      ctx.fillText('正在回到最后的信标', VIEW_W / 2, 138);
-    } else if (this.overlay === 'ability') {
-      const info = ABILITY_INFO[this.abilityKind];
-      const a = clamp(this.overlayT / 0.4, 0, 1);
-      ctx.globalAlpha = a;
-      this.ornateFrame(ctx, VIEW_W / 2 - 90, 84, 180, 82);
-      ctx.font = F_BIG;
-      ctx.fillStyle = this.abilityKind === 'kanami' ? '#ffb0d8' : '#8ee8f4';
-      ctx.fillText(info.name, VIEW_W / 2, 108);
-      ctx.font = F_SMALL;
-      ctx.fillStyle = '#e8d8a8';
-      ctx.fillText('已获得', VIEW_W / 2, 132);
-      if (this.overlayT > 0.6) {
-        ctx.fillStyle = '#8a7a98';
-        ctx.fillText('确认', VIEW_W / 2, 154);
-      }
-      ctx.globalAlpha = 1;
-    } else if (this.overlay === 'victory') {
-      this.ornateFrame(ctx, VIEW_W / 2 - 130, 58, 260, 156);
-      ctx.font = 'bold 18px "SimSun", "Songti SC", serif';
-      ctx.fillStyle = '#e8c860';
-      ctx.fillText('守望者 已被击败', VIEW_W / 2, 88);
-      ctx.font = F_MID;
-      ctx.fillStyle = '#d8ccE8';
-      ctx.fillText('欧拉的夜空,重归平静。', VIEW_W / 2, 114);
-      ctx.fillStyle = COLORS.michele;
-      ctx.fillText('米雪儿:「任务完成,回家喝热可可!」', VIEW_W / 2, 136);
-      ctx.fillStyle = COLORS.kanami;
-      ctx.fillText('香奈美:「下次冒险,也要一起哦♪」', VIEW_W / 2, 154);
-      ctx.font = F_SMALL;
-      ctx.fillStyle = '#e878c0';
-      ctx.fillText(`◆ 弦晶 ${this.world.crystals.size} / ${TOTAL_CRYSTALS}`, VIEW_W / 2, 176);
-      ctx.fillStyle = '#8a7a98';
-      ctx.fillText('感谢游玩 · 按 确认 返回标题', VIEW_W / 2, 196);
-    }
-    ctx.textAlign = 'left';
+    if (this.nearPolaritySpot) return { x: this.nearPolaritySpot.x, y: this.nearPolaritySpot.y - 22 };
+    if (this.nearAbilitySpot) return { x: this.nearAbilitySpot.x, y: this.nearAbilitySpot.y - 28 };
+    if (this.nearKanamiSpot) return { x: this.nearKanamiSpot.x, y: this.nearKanamiSpot.y - 26 };
+    if (this.nearShop && this.shopSpot) return { x: this.shopSpot.x, y: this.shopSpot.y - 26 };
+    return null;
   }
 }
 

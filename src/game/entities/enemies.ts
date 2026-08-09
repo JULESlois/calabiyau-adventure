@@ -2,9 +2,18 @@ import { GRAVITY, MAX_FALL } from '../constants';
 import type { Rect } from '../utils';
 import { clamp, dist } from '../utils';
 import type { WorldApi } from '../types';
-import { drawEnemy } from '../render/sprites';
+import { drawEnemy, type EnemyPose } from '../render/sprites';
 
-export type EnemyKind = 'patrol' | 'drone' | 'turret' | 'shield' | 'exploder' | 'slasher';
+export type EnemyKind =
+  | 'patrol'
+  | 'drone'
+  | 'turret'
+  | 'shield'
+  | 'exploder'
+  | 'slasher'
+  | 'leech'
+  | 'mortar'
+  | 'hound';
 
 const STATS: Record<EnemyKind, { hp: number; contact: number; w: number; h: number }> = {
   patrol: { hp: 30, contact: 10, w: 14, h: 12 },
@@ -13,6 +22,9 @@ const STATS: Record<EnemyKind, { hp: number; contact: number; w: number; h: numb
   shield: { hp: 60, contact: 14, w: 14, h: 18 },
   exploder: { hp: 26, contact: 10, w: 15, h: 13 },
   slasher: { hp: 34, contact: 14, w: 13, h: 12 },
+  leech: { hp: 24, contact: 12, w: 12, h: 10 },
+  mortar: { hp: 50, contact: 8, w: 16, h: 14 },
+  hound: { hp: 32, contact: 14, w: 14, h: 12 },
 };
 
 export class Enemy {
@@ -40,9 +52,15 @@ export class Enemy {
   summoned = false;
   /** 爆裂魔怪:引信(<0 未点燃) */
   fuseT = -1;
-  /** 刺镰魔怪:0 徘徊 / >0 蓄力 / <0 突刺剩余 */
+  /** 刺镰魔怪与逆弦犬共用:0 徘徊 / >0 蓄力 / <0 突刺剩余 */
   lungeT = 0;
   recoverT = 0;
+  /** 弦蛭:'hang' 吸附天花板 / 'drop' 坠落 / 'crawl' 落地后爬行 */
+  leechPhase: 'hang' | 'drop' | 'crawl' = 'hang';
+  /** 迫击晶:装填进度(0..1),满则发射;<0 为冷却 */
+  chargeT = -1;
+  /** 逆弦犬:锁定玩家的剩余时间(锁定期间无视纸片形态) */
+  lockT = 0;
 
   constructor(kind: EnemyKind, x: number, y: number) {
     this.kind = kind;
@@ -68,6 +86,23 @@ export class Enemy {
     return Math.sign(-bulletVx) === Math.sign(this.dir) && bulletVx !== 0;
   }
 
+  /** 需要重力的地面型;弦蛭吸附天花板时不算,坠落后才算。 */
+  get grounded(): boolean {
+    switch (this.kind) {
+      case 'patrol':
+      case 'shield':
+      case 'exploder':
+      case 'slasher':
+      case 'mortar':
+      case 'hound':
+        return true;
+      case 'leech':
+        return this.leechPhase !== 'hang';
+      default:
+        return false;
+    }
+  }
+
   hit(dmg: number, freeze: number, _w: WorldApi): void {
     if (this.markT > 0) dmg *= 1.3;
     this.hp -= dmg;
@@ -82,7 +117,7 @@ export class Enemy {
     if (this.frozen > 0) {
       this.frozen -= dt;
       // 冻结时仍受重力(地面型)
-      if (this.kind === 'patrol' || this.kind === 'shield') this.applyGravity(dt, w);
+      if (this.grounded) this.applyGravity(dt, w);
       return;
     }
 
@@ -167,7 +202,8 @@ export class Enemy {
         // 晶源体·爆裂魔怪:爬向玩家,近身点燃引信自爆
         if (this.fuseT >= 0) {
           this.fuseT -= dt;
-          this.hurtT = Math.max(this.hurtT, 0.05); // 引信闪烁
+          // 引信由渲染层按 fuseT 画独立的闪烁与爆炸半径圈,
+          // 不再借用 hurtT —— 那会让"点燃"和"被打中"看起来一模一样。
           if (this.fuseT <= 0) {
             for (let i = 0; i < 8; i++) {
               const a = (i / 8) * Math.PI * 2;
@@ -240,6 +276,123 @@ export class Enemy {
         }
         break;
       }
+      case 'leech': {
+        // 弦蛭:吸附天花板的伏击者,玩家走到下方才脱落。
+        if (this.leechPhase === 'hang') {
+          this.dir = px > this.x ? 1 : -1;
+          // 只有玩家确实在正下方时才脱落,避免远处经过就白白掉光。
+          if (Math.abs(px - this.x) < 18 && py > this.y && d < 150) {
+            this.leechPhase = 'drop';
+            this.vy = 0;
+            w.sfx('switch');
+          }
+          break;
+        }
+        this.applyGravity(dt, w);
+        if (this.leechPhase === 'drop') {
+          if (w.hasGroundAt(this.x, this.y + 2)) {
+            this.leechPhase = 'crawl';
+            w.particles.burst(this.x, this.y - 4, 8, '#8de0c4', 70, 0.35);
+          }
+          break;
+        }
+        // 落地后贴地爬行追击
+        this.dir = px > this.x ? 1 : -1;
+        const leechFront: Rect = {
+          x: this.x + this.dir * (this.w / 2 + 1) - 1,
+          y: this.y - this.h + 2,
+          w: 2,
+          h: this.h - 4,
+        };
+        if (!w.rectHitsSolid(leechFront) && w.hasGroundAt(this.x + this.dir * (this.w / 2 + 3), this.y + 2)) {
+          this.x += this.dir * 56 * dt;
+        }
+        break;
+      }
+      case 'mortar': {
+        // 迫击晶:装填期完全静止且有明显蓄光,出膛后是可被近战击碎的慢速重弹。
+        this.applyGravity(dt, w);
+        this.dir = px > this.x ? 1 : -1;
+        if (this.chargeT < 0) {
+          this.chargeT += dt / 2.6; // 冷却
+          if (this.chargeT >= 0) this.chargeT = 0;
+          break;
+        }
+        if (d > 260 || w.playerPaper) {
+          this.chargeT = 0; // 目标离开则卸弹
+          break;
+        }
+        this.chargeT += dt / 1.1;
+        if (this.chargeT >= 1) {
+          const cy = this.y - this.h + 2;
+          const base = Math.atan2(py - cy, px - this.x);
+          for (let i = -1; i <= 1; i++) {
+            const a = base + i * 0.22;
+            w.fireEnemyBullet(this.x, cy, Math.cos(a) * 82, Math.sin(a) * 82, 16, '#ffb066', 5, this);
+          }
+          w.sfx('explosion');
+          w.shake(2);
+          w.particles.burst(this.x, cy, 10, '#ffd08a', 90, 0.4, 'spark');
+          this.chargeT = -1;
+        }
+        break;
+      }
+      case 'hound': {
+        // 逆弦犬:唯一会追击纸片形态的敌人 —— 弦化不再是万能的隐身衣。
+        this.applyGravity(dt, w);
+        if (this.lungeT > 0) {
+          this.lungeT -= dt; // 嗅探起手,给玩家反应窗口
+          if (this.lungeT <= 0) {
+            this.lockT = 3.2;
+            w.sfx('bossRoar');
+          }
+          break;
+        }
+        if (this.lockT > 0) {
+          this.lockT -= dt;
+          this.dir = px > this.x ? 1 : -1;
+          const houndFront: Rect = {
+            x: this.x + this.dir * (this.w / 2 + 1) - 1,
+            y: this.y - this.h + 2,
+            w: 2,
+            h: this.h - 4,
+          };
+          if (!w.rectHitsSolid(houndFront) && w.hasGroundAt(this.x + this.dir * (this.w / 2 + 3), this.y + 2)) {
+            this.x += this.dir * 92 * dt;
+          }
+          if (Math.random() < 0.25) {
+            w.particles.spawn({
+              x: this.x - this.dir * 6,
+              y: this.y - 3,
+              vx: -this.dir * 20,
+              vy: -10,
+              life: 0.24,
+              color: '#c47eff',
+              shape: 'spark',
+              size: 1,
+            });
+          }
+          break;
+        }
+        // 巡游:注意这里不看 playerPaper,弦化同样会被嗅到。
+        if (d < 170) {
+          this.dir = px > this.x ? 1 : -1;
+          this.lungeT = 0.35;
+          w.sfx('melee');
+          break;
+        }
+        const roamFront: Rect = {
+          x: this.x + this.dir * (this.w / 2 + 1) - 1,
+          y: this.y - this.h + 2,
+          w: 2,
+          h: this.h - 4,
+        };
+        if (w.rectHitsSolid(roamFront) || !w.hasGroundAt(this.x + this.dir * (this.w / 2 + 3), this.y + 2)) {
+          this.dir *= -1;
+        }
+        this.x += this.dir * 30 * dt;
+        break;
+      }
       case 'shield': {
         const dx = px - this.x;
         if (Math.abs(dx) < 170) this.dir = dx > 0 ? 1 : -1;
@@ -277,6 +430,21 @@ export class Enemy {
     this.y = ny;
   }
 
+  /** 把攻击意图交给渲染层,让每个"要出手了"的状态都有独立的画面表达。 */
+  private pose(): EnemyPose {
+    return {
+      frozen: this.frozen > 0,
+      hurtFlash: this.hurtT > 0,
+      aimAngle: this.aimAngle,
+      windup: this.kind === 'mortar'
+        ? (this.chargeT >= 0 ? this.chargeT : -1)
+        : this.lungeT > 0 ? 1 - this.lungeT / (this.kind === 'hound' ? 0.35 : 0.45) : -1,
+      fuse: this.fuseT >= 0 ? 1 - this.fuseT / 0.7 : -1,
+      lunging: this.lungeT < 0 || this.leechPhase === 'drop',
+      locked: this.lockT > 0,
+    };
+  }
+
   render(ctx: CanvasRenderingContext2D, time: number): void {
     // 标记轮廓(猫踪喵迹 / 声呐)
     if (this.markT > 0) {
@@ -287,7 +455,7 @@ export class Enemy {
       ctx.strokeRect(Math.round(r.x) - 1.5, Math.round(r.y) - 1.5, r.w + 3, r.h + 3);
       ctx.globalAlpha = 1;
     }
-    drawEnemy(ctx, this.kind, this.x, this.y, this.dir, time, this.frozen > 0, this.hurtT > 0, this.aimAngle);
+    drawEnemy(ctx, this.kind, this.x, this.y, this.dir, time, this.pose());
     // 血条(受损时)
     if (this.hp < this.maxHp && this.hp > 0) {
       const w = 14;

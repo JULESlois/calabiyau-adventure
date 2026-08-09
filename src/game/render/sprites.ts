@@ -568,14 +568,29 @@ export function drawChar(
 
 }
 
+/** 敌人当帧的攻击意图;渲染层据此画出"要出手了"的预告。 */
+export interface EnemyPose {
+  frozen: boolean;
+  hurtFlash: boolean;
+  aimAngle: number;
+  /** 蓄力进度 0..1(刺镰突刺前摇 / 逆弦犬嗅探 / 迫击晶装填);<0 表示未蓄力 */
+  windup: number;
+  /** 引信进度 0..1(爆裂魔怪);<0 表示未点燃 */
+  fuse: number;
+  /** 是否处于突进 / 俯冲中 */
+  lunging: boolean;
+  /** 逆弦犬已锁定玩家 */
+  locked: boolean;
+}
+
 function paintEnemy(
   g: CanvasRenderingContext2D,
   kind: string,
   facing: number,
   time: number,
-  frozen: boolean,
-  aimAngle: number,
+  pose: EnemyPose,
 ): void {
+  const { frozen, aimAngle } = pose;
   const x0 = ORIGIN_X;
   const y0 = ORIGIN_Y;
   const body = frozen ? '#8fc8e8' : '#4a4658';
@@ -653,10 +668,24 @@ function paintEnemy(
     }
     case 'exploder': {
       if (facing < 0) g.scale(-1, 1);
-      const puls = 1 + Math.sin(time * 6) * 0.5;
-      const bodyC = frozen ? '#8fc8e8' : '#6a2a7a';
+      // 引信点燃时脉动速率随进度加快,并画出爆炸半径提示圈 ——
+      // 玩家需要看一眼就知道"还有多久"和"要躲多远"。
+      const lit = pose.fuse >= 0;
+      const beat = lit ? 6 + pose.fuse * 26 : 6;
+      const puls = 1 + Math.sin(time * beat) * 0.5;
+      const bodyC = frozen ? '#8fc8e8' : lit ? '#8a3a5a' : '#6a2a7a';
       const veinC = frozen ? '#c8ecf8' : '#c44a9a';
-      const coreC = frozen ? '#e8f8ff' : '#ff5a4a';
+      const coreC = frozen ? '#e8f8ff' : lit && Math.floor(time * beat) % 2 === 0 ? '#fff0d0' : '#ff5a4a';
+      if (lit) {
+        g.save();
+        g.globalAlpha = 0.10 + pose.fuse * 0.18;
+        g.strokeStyle = '#ff8a5c';
+        g.lineWidth = 1;
+        g.beginPath();
+        g.arc(0, -6, 15 + pose.fuse * 5, 0, Math.PI * 2);
+        g.stroke();
+        g.restore();
+      }
       // 蠕行的晶簇肉团
       px(g, -7, -10, 14, 8, bodyC);
       px(g, -7, -10, 14, 1, veinC);
@@ -670,6 +699,7 @@ function paintEnemy(
       // 不稳定核心(脉动)
       px(g, -2, -8, 4 + Math.round(puls), 3, coreC);
       px(g, -1, -7, 2, 1, '#ffd0a0');
+      if (lit) px(g, -3, -16, 2, 3, '#ffe08a'); // 引信火花
       // 蠕足
       const crawl = Math.floor(time * 8) % 2;
       px(g, -6 + crawl, -2, 3, 2, '#3a1a44');
@@ -679,26 +709,152 @@ function paintEnemy(
     }
     case 'slasher': {
       if (facing < 0) g.scale(-1, 1);
-      const bodyC = frozen ? '#8fc8e8' : '#7a2438';
+      const winding = pose.windup >= 0;
+      const bodyC = frozen ? '#8fc8e8' : winding ? '#a33048' : '#7a2438';
       const boneC = frozen ? '#c8ecf8' : '#e8c8c0';
       const eyeC2 = frozen ? '#e8f8ff' : '#ff3d5c';
+      // 突刺拖影:让高速位移读起来是"冲出去"而不是瞬移
+      if (pose.lunging) {
+        g.save();
+        g.globalAlpha = 0.22;
+        px(g, -12, -12, 11, 8, bodyC);
+        g.globalAlpha = 0.11;
+        px(g, -19, -11, 11, 7, bodyC);
+        g.restore();
+      }
+      // 蓄力时压低身体、镰刃高举 —— 前摇越满,举得越高
+      const crouch = winding ? Math.round(pose.windup * 2) : 0;
+      const raise = winding ? 2 + Math.round(pose.windup * 3) : Math.floor(time * 5) % 2;
       // 弓身晶壳
-      px(g, -6, -12, 11, 8, bodyC);
-      px(g, -6, -12, 11, 1, '#a84a60');
+      px(g, -6, -12 + crouch, 11, 8 - crouch, bodyC);
+      px(g, -6, -12 + crouch, 11, 1, '#a84a60');
       px(g, -7, -8, 2, 4, bodyC);
       // 镰刃前肢(骨白,起手上扬)
-      const raise = Math.floor(time * 5) % 2;
       px(g, 4, -14 - raise, 2, 6, boneC);
       px(g, 5, -16 - raise, 2, 3, boneC);
       px(g, 6, -17 - raise, 1, 2, '#fff4ec');
+      if (winding) {
+        // 刃尖寒光:蓄力的关键读牌信号
+        g.save();
+        g.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(time * 18));
+        px(g, 6, -19 - raise, 2, 2, '#ffffff');
+        px(g, 8, -17 - raise, 2, 1, '#ffe8f0');
+        g.restore();
+      }
       // 独眼
-      px(g, 0, -10, 4, 3, '#12060e');
-      px(g, 1, -9, 2, 1, eyeC2);
+      px(g, 0, -10 + crouch, 4, 3, '#12060e');
+      px(g, 1, -9 + crouch, 2, 1, winding ? '#fff0a0' : eyeC2);
       // 节肢
       const step = Math.floor(time * 10) % 2;
       px(g, -5 + step, -4, 2, 4, '#3a1420');
       px(g, -1, -4, 2, 4, '#3a1420');
       px(g, 3 - step, -4, 2, 4, '#3a1420');
+      break;
+    }
+    case 'leech': {
+      if (facing < 0) g.scale(-1, 1);
+      const bodyC = frozen ? '#8fc8e8' : '#2f5f58';
+      const finC = frozen ? '#c8ecf8' : '#8de0c4';
+      // 弦蛭:悬吊时垂下弦丝,坠落时收成锥形
+      if (pose.lunging) {
+        px(g, -4, -10, 8, 10, bodyC);
+        px(g, -4, -10, 8, 1, finC);
+        px(g, -2, -1, 4, 3, finC); // 收拢的尖端
+        px(g, -3, -7, 6, 2, '#12201e');
+        px(g, -2, -6, 2, 1, '#ffe08a');
+      } else {
+        // 悬吊:上方的弦丝随时间轻摆
+        const sway = Math.sin(time * 2.2) * 1.5;
+        g.save();
+        g.globalAlpha = 0.55;
+        px(g, Math.round(sway), -22, 1, 12, finC);
+        g.restore();
+        px(g, -6, -10, 12, 7, bodyC);
+        px(g, -6, -10, 12, 1, finC);
+        px(g, -4, -3, 8, 3, bodyC);
+        // 吸盘环
+        for (let i = 0; i < 3; i++) px(g, -4 + i * 3, -2, 2, 2, '#12201e');
+        px(g, -3, -7, 6, 2, '#12201e');
+        const blink = Math.floor(time * 3) % 4 === 0;
+        px(g, -2, -6, 2, 1, blink ? '#12201e' : '#ffe08a');
+        px(g, 1, -6, 2, 1, blink ? '#12201e' : '#ffe08a');
+      }
+      break;
+    }
+    case 'mortar': {
+      if (facing < 0) g.scale(-1, 1);
+      const charging = pose.windup >= 0;
+      const chargeLvl = charging ? pose.windup : 0;
+      const bodyC = frozen ? '#8fc8e8' : '#4a3a30';
+      const hiC = frozen ? '#c8ecf8' : '#7a6250';
+      // 底座与配重
+      px(g, -8, -6, 16, 6, bodyC);
+      px(g, -8, -6, 16, 1, hiC);
+      px(g, -9, -2, 18, 2, '#1e1610');
+      // 炮管上仰(固定角度,读起来就是抛射武器)
+      px(g, -2, -13, 5, 8, bodyC);
+      px(g, -1, -16, 5, 5, bodyC);
+      px(g, -1, -16, 5, 1, hiC);
+      // 装填蓄光:亮度与半径随进度上升,满蓄前一刻最刺眼
+      if (charging) {
+        g.save();
+        g.globalCompositeOperation = 'lighter';
+        g.globalAlpha = 0.25 + chargeLvl * 0.6;
+        g.fillStyle = chargeLvl > 0.8 ? '#fff0c8' : '#ffb066';
+        g.beginPath();
+        g.arc(1, -15, 2 + chargeLvl * 4, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+        px(g, 0, -16, 3, 2, chargeLvl > 0.8 ? '#ffffff' : '#ffd08a');
+      }
+      // 侧面弹仓
+      px(g, -7, -11, 4, 5, '#2e241c');
+      px(g, -6, -10, 2, 3, '#c8843c');
+      break;
+    }
+    case 'hound': {
+      if (facing < 0) g.scale(-1, 1);
+      const sniffing = pose.windup >= 0;
+      const hunting = pose.locked;
+      const bodyC = frozen ? '#8fc8e8' : hunting ? '#4a2a68' : '#33253f';
+      const hiC = frozen ? '#c8ecf8' : '#8a5ec8';
+      const glowC = frozen ? '#e8f8ff' : '#c47eff';
+      // 锁定时全身逆弦辉光:这是"它能看见纸片形态"的唯一提示
+      if (hunting) {
+        g.save();
+        g.globalCompositeOperation = 'lighter';
+        g.globalAlpha = 0.16 + 0.10 * Math.abs(Math.sin(time * 9));
+        g.fillStyle = glowC;
+        g.beginPath();
+        g.arc(0, -7, 13, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+      }
+      // 低伏的兽形躯干
+      px(g, -7, -11, 13, 6, bodyC);
+      px(g, -7, -11, 13, 1, hiC);
+      px(g, 4, -13, 6, 5, bodyC); // 头
+      px(g, 4, -13, 6, 1, hiC);
+      px(g, 9, -10, 2, 2, '#120c18'); // 吻部
+      // 双眼:嗅探时缩成一线,锁定后亮起
+      px(g, 6, -11, 3, sniffing ? 1 : 2, hunting ? '#ffe08a' : glowC);
+      // 背脊弦刺
+      for (let i = 0; i < 4; i++) px(g, -5 + i * 3, -13 - (i === 1 || i === 2 ? 1 : 0), 1, 2, glowC);
+      // 四肢:锁定冲刺时步频翻倍
+      const gait = Math.floor(time * (hunting ? 18 : 7)) % 2;
+      px(g, -5 + gait, -5, 2, 5, '#1a1220');
+      px(g, -1, -5, 2, 5, '#1a1220');
+      px(g, 3 - gait, -5, 2, 5, '#1a1220');
+      // 尾
+      px(g, -9, -12 + (gait ? 1 : 0), 3, 1, bodyC);
+      if (sniffing) {
+        // 嗅探火花:起手窗口的读牌信号
+        g.save();
+        g.globalAlpha = 0.6 + 0.4 * Math.abs(Math.sin(time * 20));
+        px(g, 11, -10, 2, 1, '#ffe08a');
+        px(g, 13, -11, 1, 1, '#fff4d0');
+        g.restore();
+      }
       break;
     }
     default:
@@ -715,19 +871,24 @@ export function drawEnemy(
   y: number,
   facing: number,
   time: number,
-  frozen: boolean,
-  hurtFlash: boolean,
-  aimAngle = 0,
+  pose: EnemyPose,
 ): void {
   if (!ensureWork() || !workCtx) return;
   workCtx.clearRect(0, 0, WORK, WORK);
-  paintEnemy(workCtx, kind, facing, time, frozen, aimAngle);
+  paintEnemy(workCtx, kind, facing, time, pose);
 
   ctx.save();
   ctx.translate(Math.round(x), Math.round(y));
-  if (hurtFlash) ctx.globalAlpha = 0.6;
+  // 受击用叠加亮闪而不是压低透明度:在暗背景上"变透明"读起来像消失,不像被打到。
   blitOutlined(ctx);
-  if (frozen) {
+  if (pose.hurtFlash) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.55;
+    blitOutlined(ctx);
+    ctx.restore();
+  }
+  if (pose.frozen) {
     ctx.globalAlpha = 0.3;
     px(ctx, -9, -20, 18, 20, '#bfeaff');
   }

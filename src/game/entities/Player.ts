@@ -30,12 +30,12 @@ import {
   WALL_SLIDE_SPEED,
 } from '../constants';
 import { T_MEMBRANE, T_ONEWAY, T_SOLID } from '../levels/levels';
-import type { CharId, StringMode } from '../types';
+import type { CharId, PlayerHost, StringMode } from '../types';
 import type { Rect } from '../utils';
 import { approach, clamp } from '../utils';
 import { makeQuickNote, makeRifleShot, makeSnipe } from './bullets';
 import { drawChar } from '../render/sprites';
-import type { PlayState } from '../states/PlayState';
+
 
 const TAKEOFF_ANIM_TIME = 0.12;
 const LANDING_ANIM_TIME = 0.16;
@@ -143,7 +143,7 @@ export class Player {
     return this.meleeStep === 2 ? 20 : 12;
   }
 
-  private setStringMode(mode: StringMode, ps: PlayState): void {
+  private setStringMode(mode: StringMode, ps: PlayerHost): void {
     if (this.stringMode === mode) return;
     const wasPaper = this.paper;
     const previousWidth = this.w;
@@ -173,13 +173,13 @@ export class Player {
     }
   }
 
-  private releaseWall(ps: PlayState): void {
+  private releaseWall(ps: PlayerHost): void {
     this.vx = 0;
     this.vy = 0;
     this.setStringMode('normal', ps);
   }
 
-  private attachToWall(dir: number, ps: PlayState): void {
+  private attachToWall(dir: number, ps: PlayerHost): void {
     this.setStringMode('wall', ps);
     // 变薄后保持朝墙一侧的边缘位置不变，避免下一帧因与墙产生缝隙而自动脱离。
     this.x += dir * ((PLAYER_W - this.w) / 2);
@@ -191,7 +191,7 @@ export class Player {
     this.airDashed = false;
   }
 
-  private jumpAwayFromWall(ps: PlayState): void {
+  private jumpAwayFromWall(ps: PlayerHost): void {
     const wallDir = this.clingDir;
     if (wallDir === 0) return;
     this.vx = -wallDir * WALL_JUMP_VX;
@@ -208,7 +208,7 @@ export class Player {
     ps.particles.burst(this.x, this.y, 8, '#aef4ff', 80, 0.35, 'paper');
   }
 
-  update(dt: number, ps: PlayState): void {
+  update(dt: number, ps: PlayerHost): void {
     const input = ps.input;
 
     // ---- 计时器 ----
@@ -503,7 +503,7 @@ export class Player {
   }
 
   /** 米雪儿·警探速射 */
-  private shoot(ps: PlayState): void {
+  private shoot(ps: PlayerHost): void {
     const gy = this.y - 11;
     ps.playerBullets.push(makeRifleShot(this.x + this.facing * 8, gy, this.facing));
     this.shootCd = 0.14;
@@ -513,7 +513,7 @@ export class Player {
   }
 
   /** 香奈美·谢幕曲(松开时按蓄力射出) */
-  private fireSnipe(ps: PlayState): void {
+  private fireSnipe(ps: PlayerHost): void {
     const gy = this.y - 11;
     if (this.chargeT < 0.15) {
       ps.playerBullets.push(makeQuickNote(this.x + this.facing * 7, gy, this.facing));
@@ -532,7 +532,7 @@ export class Player {
     ps.particles.burst(this.x + this.facing * 10, gy, 3, '#ffb0d8', 40, 0.15);
   }
 
-  private castSkill(ps: PlayState): void {
+  private castSkill(ps: PlayerHost): void {
     if (this.char === 'michele') {
       // 喵喵卫士:部署猫炮塔
       if (this.skillCd.michele > 0) return;
@@ -548,7 +548,7 @@ export class Player {
   }
 
   /** 受伤。返回是否实际受伤 */
-  hurt(dmg: number, fromX: number, ps: PlayState): boolean {
+  hurt(dmg: number, fromX: number, ps: PlayerHost): boolean {
     if (this.invuln > 0 || this.dead) return false;
     this.hp -= dmg;
     this.invuln = INVULN_TIME;
@@ -566,7 +566,7 @@ export class Player {
     return true;
   }
 
-  private standingOnOneway(ps: PlayState): boolean {
+  private standingOnOneway(ps: PlayerHost): boolean {
     const r = this.rect();
     const row = Math.floor((this.y + 1) / TILE);
     const c0 = Math.floor(r.x / TILE);
@@ -585,7 +585,7 @@ export class Player {
     return false;
   }
 
-  private rectBlocked(ps: PlayState, r: Rect): boolean {
+  private rectBlocked(ps: PlayerHost, r: Rect): boolean {
     const c0 = Math.floor(r.x / TILE);
     const c1 = Math.floor((r.x + r.w - 0.001) / TILE);
     const r0 = Math.floor(r.y / TILE);
@@ -599,7 +599,7 @@ export class Player {
   }
 
   /** 返回本帧脚底向下跨过的首个可站立砖块顶面。 */
-  private landingSurfaceY(ps: PlayState, prevFeet: number, nextFeet: number): number | null {
+  private landingSurfaceY(ps: PlayerHost, prevFeet: number, nextFeet: number): number | null {
     const c0 = Math.floor((this.x - this.w / 2) / TILE);
     const c1 = Math.floor((this.x + this.w / 2 - 0.001) / TILE);
     const rowStart = Math.max(0, Math.floor((prevFeet - 0.001) / TILE));
@@ -618,7 +618,7 @@ export class Player {
   }
 
   /** 检查指定方向 (dir: -1 左 / 1 右) 是否紧贴普通实体墙 (排除弦膜%) */
-  nearSolidWall(ps: PlayState, dir: number): boolean {
+  nearSolidWall(ps: PlayerHost, dir: number): boolean {
     const r = this.rect();
     const probe: Rect = {
       x: dir < 0 ? r.x - 3 : r.x + r.w,
@@ -638,7 +638,7 @@ export class Player {
     return false;
   }
 
-  private moveAndCollide(dt: number, ps: PlayState): void {
+  private moveAndCollide(dt: number, ps: PlayerHost): void {
     // --- 水平 ---
     let nx = this.x + this.vx * dt;
     nx = clamp(nx, this.w / 2, ps.mapW - this.w / 2);

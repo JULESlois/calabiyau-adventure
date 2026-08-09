@@ -67,6 +67,11 @@ export interface RoomDef {
   mapH?: number;
   /** 从远端开启、跨房间持久化的真正捷径。 */
   shortcuts?: ShortcutDef[];
+  /**
+   * 由 Boss 死亡(而非拉杆)解封的屏障:flag 未置位时按实体砖处理。
+   * 用来让守卫战真正成为能力的门,而不是可以绕过的摆设。
+   */
+  bossGate?: { flag: string; gate: { col: number; row: number; w: number; h: number } };
   /** 跨区缓冲空间:房间内视觉由当前区域逐渐混合到目标区域。 */
   transition?: {
     to: ZoneId;
@@ -244,6 +249,7 @@ const R: RoomDef[] = [];
   // 二段跳回访:高处平台(距地 4 格,单跳不可及)
   rect(g, 10, 10, 33, 36, '#');
   set(g, 9, 34, '*');
+  set(g, 13, 46, '8'); // 迫击晶:海崖回访时的新威胁
   R.push({
     id: 'coast_cliff', zone: 'coast', name: '海滨 · 断崖', rows: rows(g),
     mapX: 4, mapY: 2,
@@ -415,6 +421,8 @@ const R: RoomDef[] = [];
   rect(g, 12, 13, 12, 17, '#');
   rect(g, 10, 13, 18, 23, '#');
   rect(g, 12, 12, 29, 34, '=');
+  rect(g, 9, 10, 0, 5, '#'); // 泄流闸回程壁架(取得二段跳后可上)
+  rect(g, 11, 11, 2, 7, '=');
   set(g, 13, 8, 'T');
   set(g, 9, 21, '*');
   set(g, 13, 27, '>');
@@ -426,6 +434,7 @@ const R: RoomDef[] = [];
     exits: [
       { side: 'left', from: 11, to: 13, target: 'pass_coast_tide', ex: 46, ey: 13 },
       { side: 'right', from: 11, to: 13, target: 'tide_cistern', ex: 3, ey: 8 },
+      { side: 'left', from: 6, to: 8, target: 'tide_vault', ex: 3, ey: 30, needs: ['djump'] },
     ],
   });
 }
@@ -439,11 +448,13 @@ const R: RoomDef[] = [];
   rect(g, 14, 14, 13, 19, '=');
   rect(g, 20, 20, 23, 29, '=');
   rect(g, 25, 25, 8, 14, '=');
+  rect(g, 9, 10, 18, 26, '#'); // 中层顶板(弦蛭吸附处)
   set(g, 17, 25, 'N');
   set(g, 24, 11, '*');
   set(g, 30, 12, '>');
   set(g, 30, 6, '6');
   set(g, 30, 24, '3');
+  set(g, 12, 22, '7'); // 弦蛭吸附在中层顶板下
   set(g, 8, 6, 'e');
   R.push({
     id: 'tide_cistern', zone: 'tide', name: '沉潮 · 倒悬蓄水池', rows: rows(g),
@@ -502,6 +513,96 @@ const R: RoomDef[] = [];
       { side: 'left', from: 28, to: 30, target: 'tide_cistern', ex: 32, ey: 30 },
       { side: 'left', from: 19, to: 21, target: 'tide_reliquary', ex: 44, ey: 13 },
       { side: 'right', from: 8, to: 10, target: 'pass_tide_lab', ex: 3, ey: 13 },
+      { side: 'right', from: 28, to: 30, target: 'tide_sluice', ex: 3, ey: 30 },
+    ],
+  });
+}
+
+// 泄流支线:泵房底层向东的可选环线,终点的泄流闸把回程接回门楼上层。
+
+{
+  // 泄流阀道:纵向喷流井,压力喷流把纸片横向推过断层。
+  const g = grid(48, 34);
+  rect(g, 31, 33, 0, 47, '#');
+  rect(g, 20, 20, 6, 14, '=');
+  rect(g, 24, 24, 20, 28, '=');
+  rect(g, 14, 14, 10, 18, '=');
+  rect(g, 9, 11, 30, 39, '#');
+  set(g, 30, 8, '>');
+  set(g, 30, 34, '<');
+  set(g, 26, 24, 'N');
+  set(g, 8, 34, '*');
+  set(g, 13, 14, '*');
+  set(g, 30, 20, '5');
+  set(g, 30, 40, '1');
+  set(g, 30, 44, 'e');
+  R.push({
+    id: 'tide_sluice', zone: 'tide', name: '沉潮 · 泄流阀道', rows: rows(g),
+    mapX: 4, mapY: 7, mapH: 2,
+    exits: [
+      { side: 'left', from: 28, to: 30, target: 'tide_pumps', ex: 52, ey: 30 },
+      { side: 'right', from: 28, to: 30, target: 'tide_gallery', ex: 3, ey: 30 },
+    ],
+  });
+}
+
+{
+  // 沉没回廊:信标与声呐显形平台;喷流对撞制造中段站位压力。
+  const g = grid(52, 34);
+  rect(g, 31, 33, 0, 51, '#');
+  rect(g, 26, 26, 8, 16, '=');
+  rect(g, 21, 21, 18, 26, '=');
+  rect(g, 16, 16, 28, 36, '=');
+  rect(g, 11, 13, 40, 51, '#');
+  rect(g, 8, 8, 30, 36, 'H');
+  set(g, 30, 12, '>');
+  set(g, 30, 30, '<');
+  set(g, 23, 22, 'N');
+  set(g, 30, 26, 'T');
+  set(g, 7, 33, '*');
+  set(g, 10, 45, '*');
+  set(g, 15, 32, '*');
+  set(g, 30, 18, '6');
+  set(g, 30, 38, '3');
+  set(g, 30, 44, '9'); // 逆弦犬:纸片形态也会被嗅到
+  set(g, 30, 48, 'h');
+  R.push({
+    id: 'tide_gallery', zone: 'tide', name: '沉潮 · 沉没回廊', rows: rows(g),
+    mapX: 6, mapY: 8, mapH: 2,
+    exits: [
+      { side: 'left', from: 28, to: 30, target: 'tide_sluice', ex: 44, ey: 30 },
+      { side: 'right', from: 28, to: 30, target: 'tide_vault', ex: 3, ey: 30 },
+    ],
+  });
+}
+
+{
+  // 泄流库房:环线终点的战斗房;泄流闸开启后成为回门楼的永久捷径。
+  const g = grid(44, 34);
+  rect(g, 31, 33, 0, 43, '#');
+  rect(g, 24, 24, 6, 14, '=');
+  rect(g, 18, 18, 16, 24, '=');
+  rect(g, 12, 14, 26, 34, '#');
+  rect(g, 27, 27, 30, 38, '=');
+  set(g, 20, 20, 'N');
+  set(g, 11, 30, '*');
+  set(g, 26, 34, '*');
+  set(g, 30, 8, '4');
+  set(g, 30, 20, '5');
+  set(g, 30, 34, '6');
+  set(g, 30, 26, '8'); // 迫击晶压制中庭
+  set(g, 30, 38, 'e');
+  R.push({
+    id: 'tide_vault', zone: 'tide', name: '沉潮 · 泄流库房', rows: rows(g),
+    mapX: 7, mapY: 8, mapH: 2,
+    shortcuts: [{
+      id: 'tide_sluice_gate', name: '沉潮泄流闸',
+      gate: { col: 41, row: 28, w: 1, h: 3 },
+      lever: { col: 12, row: 30 },
+    }],
+    exits: [
+      { side: 'left', from: 28, to: 30, target: 'tide_gallery', ex: 48, ey: 30 },
+      { side: 'right', from: 28, to: 30, target: 'tide_entry', ex: 3, ey: 8 },
     ],
   });
 }
@@ -617,6 +718,7 @@ const R: RoomDef[] = [];
   rect(g, 8, 10, 50, 50, '#');
   set(g, 10, 47, 'G');
   set(g, 13, 20, '5'); // 爆裂魔怪
+  set(g, 13, 46, '9'); // 逆弦犬:研究区正是逆弦化的源头
   rect(g, 12, 13, 41, 42, '#'); // 登牢台阶
   R.push({
     id: 'lab_cells', zone: 'lab', name: '研究区 · 拘留舱', rows: rows(g),
@@ -667,6 +769,7 @@ const R: RoomDef[] = [];
   set(g, 13, 22, '*');
   set(g, 13, 40, 'e');
   set(g, 13, 48, '5'); // 爆裂魔怪
+  set(g, 13, 34, '8'); // 迫击晶压制迷宫长廊
   R.push({
     id: 'lab_maze', zone: 'lab', name: '研究区 · 弦膜密室', rows: rows(g),
     mapX: 5, mapY: 3,
@@ -718,6 +821,7 @@ const R: RoomDef[] = [];
   set(g, 13, 52, '3');
   set(g, 9, 27, '*');
   set(g, 13, 57, 'h');
+  set(g, 13, 26, '9'); // 检疫区的逆弦犬
   R.push({
     id: 'lab_quarantine', zone: 'lab', name: '研究区 · 失控隔离场', rows: rows(g),
     mapX: 8, mapY: 5,
@@ -788,18 +892,21 @@ const R: RoomDef[] = [];
   rect(g, 11, 11, 10, 17, '=');
   rect(g, 8, 8, 23, 31, 'H');
   rect(g, 11, 11, 38, 46, '=');
+  rect(g, 9, 10, 49, 55, '#'); // 环廊壁架(取得二段跳后可上)
   set(g, 13, 9, 'T');
   set(g, 7, 27, '*');
   set(g, 13, 28, 'O');
   set(g, 13, 21, '2');
   set(g, 13, 34, '4');
   set(g, 13, 48, '6');
+  set(g, 13, 43, '8'); // 迫击晶封锁中殿远端
   R.push({
     id: 'choir_nave', zone: 'choir', name: '圣堂 · 失声中殿', rows: rows(g),
     mapX: 3, mapY: 0,
     exits: [
       { side: 'left', from: 11, to: 13, target: 'pass_lab_choir', ex: 46, ey: 13 },
       { side: 'right', from: 11, to: 13, target: 'choir_crypt', ex: 3, ey: 13 },
+      { side: 'right', from: 6, to: 8, target: 'choir_ambulatory', ex: 3, ey: 13, needs: ['djump'] },
     ],
   });
 }
@@ -812,11 +919,13 @@ const R: RoomDef[] = [];
   rect(g, 8, 13, 15, 15, '%');
   rect(g, 10, 10, 20, 25, '=');
   rect(g, 8, 8, 37, 42, 'H');
+  rect(g, 6, 7, 43, 50, '#'); // 墓廊拱顶(弦蛭吸附处)
   set(g, 7, 39, '*');
   set(g, 13, 37, 'O');
   set(g, 13, 22, '5');
   set(g, 13, 41, '3');
   set(g, 13, 50, '6');
+  set(g, 9, 46, '7'); // 弦蛭吊在墓廊拱顶
   R.push({
     id: 'choir_crypt', zone: 'choir', name: '圣堂 · 无词墓廊', rows: rows(g),
     mapX: 4, mapY: 0,
@@ -866,6 +975,10 @@ const R: RoomDef[] = [];
   rect(g, 38, 38, 22, 28, '=');
   rect(g, 24, 24, 15, 20, '=');
   rect(g, 13, 13, 8, 14, '=');
+  rect(g, 20, 21, 0, 5, '#'); // 管风琴侧廊壁架
+  rect(g, 27, 27, 2, 6, '=');
+  rect(g, 24, 24, 2, 6, '=');
+  rect(g, 22, 22, 2, 6, '=');
   set(g, 44, 15, '2');
   set(g, 27, 10, '6');
   set(g, 14, 23, '2');
@@ -883,6 +996,86 @@ const R: RoomDef[] = [];
       { side: 'left', from: 44, to: 46, target: 'choir_crypt', ex: 56, ey: 13 },
       { side: 'left', from: 27, to: 29, target: 'choir_reliquary', ex: 44, ey: 13 },
       { side: 'right', from: 7, to: 9, target: 'pass_choir_sky', ex: 3, ey: 13, needs: ['cling'] },
+      { side: 'left', from: 17, to: 19, target: 'choir_organ', ex: 3, ey: 13, needs: ['djump'] },
+    ],
+  });
+}
+
+// 管风琴支线:中殿上层与钟塔中层之间的可选环线,三台共鸣器串起节拍平台。
+
+{
+  // 环廊:共鸣器显形看台,连接中殿壁架与抄经室。
+  const g = grid(52, 17);
+  rect(g, 14, 16, 0, 51, '#');
+  rect(g, 11, 11, 8, 15, '=');
+  rect(g, 8, 8, 20, 27, 'H');
+  rect(g, 11, 11, 32, 39, '=');
+  rect(g, 6, 6, 24, 31, '#');
+  set(g, 13, 18, 'O');
+  set(g, 7, 27, '*');
+  set(g, 10, 35, '*');
+  set(g, 13, 12, '5');
+  set(g, 13, 30, '2');
+  set(g, 13, 42, '6');
+  set(g, 13, 46, 'h');
+  R.push({
+    id: 'choir_ambulatory', zone: 'choir', name: '圣堂 · 无声环廊', rows: rows(g),
+    mapX: 2, mapY: 0,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'choir_nave', ex: 52, ey: 8 },
+      { side: 'right', from: 11, to: 13, target: 'choir_scriptorium', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 抄经室:尖刺与节拍平台交错,下劈可借尖刺弹起取上层弦晶。
+  const g = grid(48, 17);
+  rect(g, 14, 16, 0, 47, '#');
+  rect(g, 13, 13, 16, 19, '^');
+  rect(g, 11, 11, 6, 13, '=');
+  rect(g, 8, 8, 22, 29, 'H');
+  rect(g, 10, 10, 33, 40, '=');
+  rect(g, 5, 6, 34, 42, '#'); // 抄经室顶板(弦蛭吸附处)
+  set(g, 13, 24, 'O');
+  set(g, 7, 26, '*');
+  set(g, 8, 38, '7'); // 抄经室顶的弦蛭
+  set(g, 9, 36, '*');
+  set(g, 13, 21, '*');
+  set(g, 13, 10, '5');
+  set(g, 13, 31, '6');
+  set(g, 13, 43, '3');
+  R.push({
+    id: 'choir_scriptorium', zone: 'choir', name: '圣堂 · 无字抄经室', rows: rows(g),
+    mapX: 2, mapY: 1,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'choir_ambulatory', ex: 48, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'choir_organ', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 巨管风琴:支线信标与移动平台;右门接回断钟塔中层,闭合圣堂环线。
+  const g = grid(44, 17);
+  rect(g, 14, 16, 0, 43, '#');
+  rect(g, 11, 11, 10, 17, '=');
+  rect(g, 8, 8, 21, 28, 'H');
+  rect(g, 5, 7, 30, 37, '#');
+  set(g, 10, 24, 'M');
+  set(g, 13, 20, 'O');
+  set(g, 13, 25, 'T');
+  set(g, 7, 25, '*');
+  set(g, 4, 33, '*');
+  set(g, 13, 14, '4');
+  set(g, 13, 30, '5');
+  set(g, 13, 38, '6');
+  R.push({
+    id: 'choir_organ', zone: 'choir', name: '圣堂 · 巨管风琴', rows: rows(g),
+    mapX: 2, mapY: -1,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'choir_scriptorium', ex: 44, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'choir_belfry', ex: 3, ey: 19 },
     ],
   });
 }
@@ -935,6 +1128,7 @@ const R: RoomDef[] = [];
   set(g, 13, 40, '5'); // 爆裂魔怪
   set(g, 13, 48, '3');
   set(g, 13, 56, 'h');
+  set(g, 13, 44, '9'); // 天穹竖廊的逆弦犬
   R.push({
     id: 'sky_corridor', zone: 'sky', name: '天穹 · 回廊', rows: rows(g),
     mapX: 8, mapY: 1,
@@ -974,13 +1168,11 @@ const R: RoomDef[] = [];
 
 {
   // 弦翼圣所:守卫战后获得「弦翼」。
+  // 「回响守卫」倒下前,弦能屏障封住能力祭坛所在的壁龛 —— 这场战斗是真正的门。
   const g = grid(48, 17);
   rect(g, 14, 16, 0, 47, '#');
-  set(g, 13, 20, '2');
-  set(g, 13, 26, '4');
-  set(g, 13, 32, '6'); // 刺镰魔怪
+  set(g, 13, 20, 'Z'); // 回响守卫
   set(g, 13, 36, '3');
-  rect(g, 12, 13, 41, 41, '#');
   set(g, 13, 43, 'J');
   rect(g, 10, 10, 8, 11, '='); // 二段跳可及的高台
   set(g, 9, 9, '*');
@@ -989,6 +1181,7 @@ const R: RoomDef[] = [];
   R.push({
     id: 'sky_wing', zone: 'sky', name: '天穹 · 弦翼圣所', rows: rows(g),
     mapX: 10, mapY: 1,
+    bossGate: { flag: 'boss:warden', gate: { col: 41, row: 11, w: 1, h: 3 } },
     exits: [
       { side: 'left', from: 11, to: 13, target: 'sky_windworks', ex: 56, ey: 13 },
       { side: 'right', from: 7, to: 9, target: 'sky_orrery', ex: 3, ey: 13, needs: ['djump'] },
@@ -1034,6 +1227,8 @@ const R: RoomDef[] = [];
   set(g, 13, 34, '3');
   set(g, 13, 46, '6');
   set(g, 13, 50, '*');
+  set(g, 13, 37, '8'); // 迫击晶封锁档案馆中段
+  set(g, 13, 24, '9'); // 云背档案馆的逆弦犬
   R.push({
     id: 'sky_archive', zone: 'sky', name: '天穹 · 云背档案馆', rows: rows(g),
     mapX: 9, mapY: 3,
@@ -1104,6 +1299,7 @@ const R: RoomDef[] = [];
   rect(g, 10, 10, 20, 25, '=');
   rect(g, 8, 8, 36, 42, 'H');
   rect(g, 11, 11, 49, 55, '=');
+  rect(g, 9, 10, 57, 63, '#'); // 高空步道壁架
   set(g, 9, 22, 'M');
   set(g, 13, 18, 'K');
   set(g, 13, 46, 'k');
@@ -1120,6 +1316,7 @@ const R: RoomDef[] = [];
       { side: 'left', from: 11, to: 13, target: 'pass_sky_hangar', ex: 46, ey: 13 },
       { side: 'right', from: 11, to: 13, target: 'hangar_gate', ex: 3, ey: 30 },
       { side: 'down', from: 30, to: 32, target: 'hangar_reactor', ex: 4, ey: 13, needs: ['paper'] },
+      { side: 'right', from: 6, to: 8, target: 'hangar_catwalk', ex: 3, ey: 8, needs: ['djump'] },
     ],
   });
 }
@@ -1142,6 +1339,7 @@ const R: RoomDef[] = [];
   set(g, 13, 27, '4');
   set(g, 13, 33, '2');
   set(g, 13, 45, '3');
+  set(g, 13, 29, '9'); // 逆弦犬巡守反应堆
   set(g, 13, 50, '*');
   R.push({
     id: 'hangar_reactor', zone: 'hangar', name: '机库 · 反应堆旁路', rows: rows(g),
@@ -1158,6 +1356,9 @@ const R: RoomDef[] = [];
   rect(g, 10, 12, 0, 14, '#');
   rect(g, 23, 23, 12, 18, '=');
   rect(g, 17, 17, 22, 28, '=');
+  rect(g, 10, 12, 32, 39, '#'); // 熔铸台门槛
+  rect(g, 14, 14, 30, 36, '=');
+  set(g, 12, 30, 'N');
   set(g, 21, 15, 'N');
   set(g, 30, 16, 'T');
   set(g, 30, 24, 'h');
@@ -1175,6 +1376,7 @@ const R: RoomDef[] = [];
       { side: 'left', from: 7, to: 9, target: 'hangar_reactor', ex: 52, ey: 13 },
       { side: 'left', from: 28, to: 30, target: 'hangar_assembly', ex: 60, ey: 13 },
       { side: 'right', from: 28, to: 30, target: 'hangar_boss', ex: 3, ey: 13 },
+      { side: 'right', from: 7, to: 9, target: 'hangar_foundry', ex: 3, ey: 13, needs: ['djump'] },
     ],
   });
 }
@@ -1192,6 +1394,98 @@ const R: RoomDef[] = [];
     id: 'hangar_boss', zone: 'hangar', name: '塔顶机库', rows: rows(g),
     mapX: 15, mapY: 1,
     exits: [{ side: 'left', from: 11, to: 13, target: 'hangar_gate', ex: 36, ey: 30 }],
+  });
+}
+
+// 熔铸支线:前厅上层向东的可选环线,高空步道把回程接回装配线顶层。
+
+{
+  // 熔铸台:双向传送带改变站位,尖刺带迫使玩家用下劈或冲刺过线。
+  const g = grid(56, 17);
+  rect(g, 14, 16, 0, 55, '#');
+  rect(g, 13, 13, 18, 21, '^');
+  rect(g, 11, 11, 8, 14, '=');
+  rect(g, 8, 8, 24, 31, '=');
+  rect(g, 11, 11, 38, 45, '=');
+  set(g, 13, 16, 'K');
+  set(g, 13, 34, 'k');
+  set(g, 7, 27, '*');
+  set(g, 10, 41, '*');
+  set(g, 13, 12, '5');
+  set(g, 13, 26, '4');
+  set(g, 13, 31, '6');
+  set(g, 13, 42, '3');
+  set(g, 13, 46, '8'); // 迫击晶守熔铸台出口
+  set(g, 13, 50, 'h');
+  R.push({
+    id: 'hangar_foundry', zone: 'hangar', name: '机库 · 熔铸台', rows: rows(g),
+    mapX: 15, mapY: 0,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'hangar_gate', ex: 36, ey: 9 },
+      { side: 'right', from: 11, to: 13, target: 'hangar_catwalk', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 高空步道:支线信标;移动平台与上升气流把玩家送上壁架回装配线。
+  const g = grid(60, 17);
+  rect(g, 14, 16, 0, 59, '#');
+  rect(g, 9, 10, 0, 6, '#'); // 装配线回程壁架
+  rect(g, 11, 11, 3, 9, '=');
+  rect(g, 8, 8, 18, 25, '=');
+  rect(g, 11, 11, 30, 37, '=');
+  rect(g, 6, 6, 42, 49, '#');
+  set(g, 10, 20, 'M');
+  set(g, 12, 33, 'U');
+  set(g, 13, 14, 'K');
+  set(g, 13, 44, 'k');
+  set(g, 13, 26, 'T');
+  set(g, 7, 22, '*');
+  set(g, 5, 45, '*');
+  set(g, 13, 34, '4');
+  set(g, 13, 40, '6');
+  set(g, 13, 52, '3');
+  set(g, 13, 56, 'e');
+  R.push({
+    id: 'hangar_catwalk', zone: 'hangar', name: '机库 · 高空步道', rows: rows(g),
+    mapX: 15, mapY: 2,
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'hangar_foundry', ex: 52, ey: 13 },
+      { side: 'right', from: 11, to: 13, target: 'hangar_hold', ex: 3, ey: 13 },
+      { side: 'left', from: 6, to: 8, target: 'hangar_assembly', ex: 60, ey: 8 },
+    ],
+  });
+}
+
+{
+  // 弹药舱:环线尽头的战斗房;补给闸开启后才能取到上层弦晶。
+  const g = grid(48, 17);
+  rect(g, 14, 16, 0, 47, '#');
+  rect(g, 13, 13, 20, 23, '^');
+  rect(g, 11, 11, 6, 13, '=');
+  rect(g, 8, 8, 26, 33, 'H');
+  rect(g, 5, 7, 36, 43, '#');
+  set(g, 13, 17, 'K');
+  set(g, 13, 30, 'k');
+  set(g, 7, 30, '*');
+  set(g, 4, 39, '*');
+  set(g, 13, 14, '*');
+  set(g, 13, 10, '5');
+  set(g, 13, 26, '4');
+  set(g, 13, 34, '6');
+  set(g, 13, 44, '3');
+  R.push({
+    id: 'hangar_hold', zone: 'hangar', name: '机库 · 弹药舱', rows: rows(g),
+    mapX: 15, mapY: 3,
+    shortcuts: [{
+      id: 'hold_supply_gate', name: '弹药补给闸',
+      gate: { col: 35, row: 11, w: 1, h: 3 },
+      lever: { col: 12, row: 13 },
+    }],
+    exits: [
+      { side: 'left', from: 11, to: 13, target: 'hangar_catwalk', ex: 56, ey: 13 },
+    ],
   });
 }
 

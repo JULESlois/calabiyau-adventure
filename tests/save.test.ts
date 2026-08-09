@@ -31,10 +31,10 @@ test('valid saves are normalized before deserialization', () => {
   assert.deepEqual(parsed.abilities, ['paper', 'kanami']);
   assert.deepEqual(parsed.visited, ['coast_start']);
   assert.deepEqual(parsed.activatedBeacons, ['coast_start']);
-  assert.equal(parsed.hpMax, 125);
 
   const world = WorldState.deserialize(parsed);
   assert.equal(world.char, 'kanami');
+  // 被吹大的 hpMax 不会进入解析结果,由弦晶与芯片重新推导
   assert.equal(world.hpMax, 125);
   assert.equal(world.dust, 80);
   assert.deepEqual([...world.activatedBeacons], ['coast_start']);
@@ -63,7 +63,7 @@ test('hidden relic chips persist and contribute their permanent stat bonus', () 
   });
 
   assert.ok(parsed);
-  assert.equal(parsed.hpMax, 135);
+  assert.equal(parsed.chips.length, 3);
   const world = WorldState.deserialize(parsed);
   assert.equal(world.hpMax, 135);
   assert.deepEqual([...world.chips], ['chip_hp', 'relic_beacon', 'relic_echo']);
@@ -80,12 +80,28 @@ test('permanent shortcuts and crystal milestone bonuses survive save normalizati
 
   assert.ok(parsed);
   assert.deepEqual(parsed.shortcuts, ['beacon_lift', 'service_hatch']);
-  assert.equal(parsed.hpMax, 135);
   const world = WorldState.deserialize(parsed);
   assert.equal(world.shortcuts.has('beacon_lift'), true);
   assert.equal(world.shortcuts.has('service_hatch'), true);
   assert.equal(world.hpMax, 135);
   assert.equal(world.energyMax, 110);
+});
+
+test('tampered character and stale rooms are normalized by the parser itself', () => {
+  const parsed = parseWorldSave({
+    ...validSave,
+    abilities: ['paper'],
+    char: 'kanami',
+    visited: ['coast_start', 'deleted_room'],
+  });
+
+  assert.ok(parsed);
+  // 没有 kanami 能力就不能以 kanami 上场,已不存在的房间也不进地图
+  assert.equal(parsed.char, 'michele');
+  assert.deepEqual(parsed.visited, ['coast_start']);
+  const world = WorldState.deserialize(parsed);
+  assert.equal(world.char, 'michele');
+  assert.deepEqual([...world.visited], ['coast_start']);
 });
 
 test('invalid or partial v2 saves are rejected without throwing', () => {
