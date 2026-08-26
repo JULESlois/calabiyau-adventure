@@ -1040,6 +1040,7 @@ const R: RoomDef[] = [];
   rect(g, 10, 10, 33, 40, '=');
   rect(g, 5, 6, 34, 42, '#'); // 抄经室顶板(弦蛭吸附处)
   set(g, 13, 24, 'O');
+  set(g, 13, 45, 'T'); // 管风琴环信标(原在巨管风琴,给审判庭让位)
   set(g, 7, 26, '*');
   set(g, 8, 38, '7'); // 抄经室顶的弦蛭
   set(g, 9, 36, '*');
@@ -1064,18 +1065,18 @@ const R: RoomDef[] = [];
   rect(g, 11, 11, 10, 17, '=');
   rect(g, 8, 8, 21, 28, 'H');
   rect(g, 5, 7, 30, 37, '#');
+  rect(g, 9, 10, 38, 43, '#'); // 祭坛壁龛顶板
   set(g, 10, 24, 'M');
   set(g, 13, 20, 'O');
-  set(g, 13, 34, 'Y'); // 踏空蓄步祭坛:管风琴环的最终奖励
-  set(g, 13, 25, 'T');
+  set(g, 13, 41, 'Y'); // 踏空蓄步祭坛:审判者倒下前被弦能屏障封在壁龛里
   set(g, 7, 25, '*');
   set(g, 4, 33, '*');
   set(g, 13, 14, '4');
-  set(g, 13, 30, '5');
-  set(g, 13, 38, '6');
+  set(g, 13, 30, 'A'); // 弦相审判者
   R.push({
     id: 'choir_organ', zone: 'choir', name: '圣堂 · 巨管风琴', rows: rows(g),
     mapX: 2, mapY: -1,
+    bossGate: { flag: 'boss:arbiter', gate: { col: 38, row: 11, w: 1, h: 3 } },
     exits: [
       { side: 'left', from: 11, to: 13, target: 'choir_scriptorium', ex: 44, ey: 13 },
       { side: 'right', from: 11, to: 13, target: 'choir_belfry', ex: 3, ey: 19 },

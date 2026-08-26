@@ -32,6 +32,12 @@ export interface WorldApi {
   sfx(name: string): void;
   shake(n: number): void;
   spawnEnemy(kind: string, x: number, y: number): void;
+  /**
+   * 直接对玩家结算一次伤害(受无敌帧保护)。
+   * 敌弹永远打不到纸片形态,而「弦相审判」的平面相攻击恰恰只打纸片 ——
+   * 这类"非弹丸"的命中只能由 Boss 主动发起。
+   */
+  hurtPlayer(dmg: number, fromX: number): boolean;
 }
 
 /**
@@ -54,7 +60,7 @@ export interface PlayerHost extends WorldApi {
  */
 export interface BossLike {
   /** 区分结算方式:守望者通关,回响守卫只解封屏障。 */
-  readonly kind: 'guardian' | 'warden';
+  readonly kind: 'guardian' | 'warden' | 'arbiter';
   readonly displayName: string;
   /** HUD 血条的阶段刻痕数量。 */
   readonly phases: number;

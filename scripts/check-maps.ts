@@ -11,7 +11,7 @@ import { WorldState } from '../src/game/world/WorldState';
 declare const process: { exit(code: number): void };
 
 let errors = 0;
-const knownSpawns = new Set('PTFWJGDSXY*heabcd123456789RMNUBZ><IOKk'.split(''));
+const knownSpawns = new Set('PTFWJGDSXYA*heabcd123456789RMNUBZ><IOKk'.split(''));
 const err = (msg: string) => {
   errors++;
   console.error(`  [错误] ${msg}`);
@@ -37,7 +37,7 @@ for (const room of ROOM_LIST) {
 
   // 地面实体下方必须有支撑('2' 浮游炮除外)
   for (const s of lvl.spawns) {
-    if (!'PTFWJGDSXYabcd1345689RBZIOKk><'.includes(s.char)) continue;
+    if (!'PTFWJGDSXYAabcd1345689RBZIOKk><'.includes(s.char)) continue;
     let supported = false;
     for (let r = s.row + 1; r < lvl.h; r++) {
       const t = tileAt(s.col, r);
@@ -174,7 +174,7 @@ for (const room of ROOM_LIST) {
         }
       }
     }
-    if (!lvl.spawns.some((spawn) => spawn.char === 'B' || spawn.char === 'Z')) {
+    if (!lvl.spawns.some((spawn) => spawn.char === 'B' || spawn.char === 'Z' || spawn.char === 'A')) {
       err(`${room.id} 有守卫屏障但房间里没有 Boss,屏障将永远无法解封`);
     }
   }
@@ -193,6 +193,7 @@ const globalCount = (c: string) => allSpawns.filter((s) => s.char === c).length;
 if (globalCount('P') !== 1) err(`P 出生点数量 = ${globalCount('P')},应为 1`);
 if (globalCount('B') !== 1) err(`Boss B 数量 = ${globalCount('B')},应为 1`);
 if (globalCount('Z') !== 1) err(`中 Boss Z 数量 = ${globalCount('Z')},应为 1`);
+if (globalCount('A') !== 1) err(`审判者 A 数量 = ${globalCount('A')},应为 1`);
 for (const ch of ['F', 'W', 'J', 'G', 'D', 'X', 'Y']) {
   if (globalCount(ch) !== 1) err(`能力 ${ch} 数量 = ${globalCount(ch)},应为 1`);
 }

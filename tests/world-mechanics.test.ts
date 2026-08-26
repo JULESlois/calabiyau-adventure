@@ -585,3 +585,58 @@ test('the stringer holds its ground while the pressure threshold is not met', ()
   e.update(1 / 60, w);
   assert.equal(e.travelT, -1, '无压力时不该换位');
 });
+
+// ---------------- 弦相审判(arbiter) ----------------
+
+test('the arbiter guards the skystep shrine behind a boss gate', () => {
+  const state = makePlayState('choir_organ');
+  assert.ok(state.boss, '巨管风琴应有审判者');
+  assert.equal(state.boss?.kind, 'arbiter');
+  // 壁龛被屏障封住
+  assert.equal(state.tileAt(38, 12), T_SOLID);
+  state.world.flags.add('boss:arbiter');
+  assert.equal(state.tileAt(38, 12), T_EMPTY);
+});
+
+test('planar sweeps hurt only the paper form; volumetric blooms are bullets', () => {
+  const state = makePlayState('choir_organ');
+  const boss = state.boss;
+  assert.ok(boss);
+  const arbiter = boss as unknown as {
+    sweeps: { x: number; dir: number; hit: boolean }[];
+    update(dt: number, w: unknown): void;
+  };
+  const p = state.player;
+  boss.awaken(state);
+
+  // 手动放一道波纹压到玩家位置
+  arbiter.sweeps.push({ x: p.centerX() - 2, dir: 1, hit: false });
+
+  // 3D 形态:波纹穿过,毫发无伤
+  const hp3d = p.hp;
+  arbiter.update(1 / 60, state);
+  assert.equal(p.hp, hp3d, '普通形态不该被平面相击中');
+
+  // 纸片形态:被结算
+  (p as unknown as { stringMode: string }).stringMode = 'ground';
+  p.invuln = 0;
+  arbiter.sweeps.length = 0;
+  arbiter.sweeps.push({ x: p.centerX() - 2, dir: 1, hit: false });
+  arbiter.update(1 / 60, state);
+  assert.ok(p.hp < hp3d, '纸片形态应被平面相击中');
+});
+
+test('defeating the arbiter unseals the gate without ending the game', () => {
+  const state = makePlayState('choir_organ');
+  const boss = state.boss;
+  assert.ok(boss);
+  boss.awaken(state);
+  boss.hit(boss.maxHp + 50, state);
+  for (let i = 0; i < 400 && boss.state !== 'dead'; i++) state.update(1 / 60);
+
+  assert.equal(boss.state, 'dead');
+  assert.ok(state.world.flags.has('boss:arbiter'), '击败应写入旗标');
+  assert.equal(state.tileAt(38, 12), T_EMPTY, '屏障应解封');
+  assert.equal(state.world.cleared, false, '可选 Boss 不该判定通关');
+  assert.equal(state.overlay, 'none');
+});

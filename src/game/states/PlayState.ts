@@ -5,6 +5,7 @@ import { Enemy, type EnemyKind } from '../entities/enemies';
 import { ParticleSystem } from '../entities/particles';
 import { makePickup, type Pickup } from '../entities/pickups';
 import { Player } from '../entities/Player';
+import { Arbiter } from '../entities/arbiter';
 import { Warden } from '../entities/warden';
 import {
   parseRows,
@@ -328,6 +329,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
           // 回响守卫:已击败则屏障永久解封,不再重生。
           if (!world.flags.has('boss:warden')) this.boss = new Warden(cx, bottom);
           break;
+        case 'A':
+          if (!world.flags.has('boss:arbiter')) this.boss = new Arbiter(cx, bottom);
+          break;
         case 'B':
           if (world.flags.has('boss:guardian')) {
             this.gate.x = this.mapW / 2;
@@ -534,6 +538,12 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     owner?: object,
   ): void {
     this.enemyBullets.push({ x, y, vx, vy, r, dmg, life: 3.2, color, owner });
+  }
+
+  /** WorldApi:Boss 的非弹丸攻击直接结算(平面相扫击等)。 */
+  hurtPlayer(dmg: number, fromX: number): boolean {
+    if (this.player.dead) return false;
+    return this.player.hurt(dmg, fromX, this);
   }
 
   spawnEnemy(kind: string, x: number, y: number): void {
@@ -829,10 +839,12 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       this.gate.y = this.mapH - 3 * TILE;
       this.gate.active = true;
     } else {
-      if (this.world.flags.has('boss:warden')) return;
-      this.world.flags.add('boss:warden');
-      this.world.dust += 60;
-      this.toast('弦能屏障解除 · 获得 60 晶尘');
+      const flag = boss.kind === 'warden' ? 'boss:warden' : 'boss:arbiter';
+      if (this.world.flags.has(flag)) return;
+      this.world.flags.add(flag);
+      const dust = boss.kind === 'warden' ? 60 : 80;
+      this.world.dust += dust;
+      this.toast(`弦能屏障解除 · 获得 ${dust} 晶尘`);
       this.shake(4);
       this.particles.burst(boss.x, boss.y - 16, 26, '#c47eff', 150, 0.9, 'spark');
     }
@@ -1438,7 +1450,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
           }
         }
       }
-      if (this.boss && this.boss.active && this.boss.state !== 'stunned' && rectsOverlap(pr, this.boss.rect())) {
+      const bossTouchable = this.boss && this.boss.active
+        && this.boss.state !== 'stunned' && this.boss.state !== 'unfurl' && this.boss.state !== 'dash';
+      if (bossTouchable && this.boss && rectsOverlap(pr, this.boss.rect())) {
         p.hurt(this.boss.contactDmg, this.boss.x, this);
       }
     }
