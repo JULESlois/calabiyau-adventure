@@ -147,6 +147,25 @@ export function npcById(id: string): NpcDef | undefined {
   return NPCS.find((npc) => npc.id === id);
 }
 
+/**
+ * 诺笛(商人)随进度变化的一句话。
+ *
+ * 刻意**不**做成对话框:每次买东西都要先读一段字是纯粹的摩擦。
+ * 这句话画在商店面板里 —— 他因此有了声音,而买卖一次按键都没多。
+ */
+export function nodiRemark(world: WorldState): string {
+  if (world.flags.has('boss:guardian')) return '「塔顶那位安静了。这趟买卖,我做得值。」';
+  if (world.chips.size >= 6) return '「你把我这儿快搬空了 —— 我喜欢这样的客人。」';
+  if (world.flags.has('boss:arbiter') || world.flags.has('boss:gambit')) {
+    return '「圣堂那边的动静,连我这儿都听得见。」';
+  }
+  if (world.flags.has('boss:warden')) return '「守卫倒了?那货路总算能通了。」';
+  if (world.dust >= 400) return '「揣这么多晶尘乱跑,不如换成能救命的东西。」';
+  if (world.flags.has('rescue:kanami')) return '「两个人一起走,总比一个人安全些。」';
+  if (world.chips.size === 0) return '「记忆芯片。装上就是你的一部分,拆不下来的那种。」';
+  return '「灯还亮着,买卖就还做得下去。」';
+}
+
 /** 当前应当出场的 NPC(城镇热闹度由此推出)。 */
 export function presentNpcs(world: WorldState): NpcDef[] {
   return NPCS.filter((npc) => npc.present(world));

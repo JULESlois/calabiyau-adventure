@@ -12,12 +12,13 @@ import {
   NPCS,
   NPC_MARKERS,
   npcById,
+  nodiRemark,
   presentNpcs,
 } from '../src/game/npc';
 import { pageLength } from '../src/game/render/dialogue';
 import { havenDecorCount, havenDecorFor } from '../src/game/render/havenProps';
 import { PlayState, type Interactable } from '../src/game/states/PlayState';
-import { CRYSTAL_MILESTONES, ROOM_LIST, totalCrystals } from '../src/game/world/world';
+import { CRYSTAL_MILESTONES, ROOM_LIST, SHOP_CHIPS, totalCrystals } from '../src/game/world/world';
 import { WorldState } from '../src/game/world/WorldState';
 
 function makePlayState(
@@ -295,4 +296,28 @@ test('the town is where the NPCs actually live', () => {
     0,
   );
   assert.equal(placed, NPCS.length, '名册上的人应当全部住在城镇里');
+});
+
+test('Nodi speaks, and what he says tracks the adventure', () => {
+  // 他刻意不走对话框:每次买东西先读一段字是纯粹的摩擦。
+  // 但"随进度评论战绩"这条要求仍然成立 —— 只是画在商店面板里。
+  const build = (f: (w: WorldState) => void) => { const w = new WorldState(); f(w); return w; };
+  const states = [
+    build(() => undefined),
+    build((w) => w.flags.add('rescue:kanami')),
+    build((w) => w.flags.add('boss:warden')),
+    build((w) => w.flags.add('boss:arbiter')),
+    build((w) => w.flags.add('boss:guardian')),
+    build((w) => { w.dust = 500; }),
+    build((w) => { for (const c of SHOP_CHIPS) w.chips.add(c.id); }),
+  ];
+  const lines = states.map((w) => nodiRemark(w));
+  for (const line of lines) assert.ok(line.length > 0, '诺笛不该沉默');
+  assert.ok(new Set(lines).size >= 5, `诺笛只有 ${new Set(lines).size} 种说法,不够跟着进度走`);
+});
+
+test('every roster NPC now has a voice', () => {
+  // 2.4 名册四人:三人走对话框,诺笛走商店面板 —— 但都不是哑巴。
+  for (const npc of NPCS) assert.ok(npc.lines(new WorldState()).length > 0, `${npc.name} 没有台词`);
+  assert.ok(nodiRemark(new WorldState()).length > 0, '诺笛没有台词');
 });

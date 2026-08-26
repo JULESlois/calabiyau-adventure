@@ -14,6 +14,7 @@ import {
   SHOP_ITEMS,
   type Ability,
 } from '../world/world';
+import { nodiRemark } from '../npc';
 import { completionReport, type CompletionEntry } from '../world/WorldState';
 import type { WorldState } from '../world/WorldState';
 
@@ -550,7 +551,7 @@ function drawVictory(ctx: CanvasRenderingContext2D, view: OverlayView): void {
 
 /** 商店列表几何:框高随商品数推导,加一条商品就不必再手改四处坐标。 */
 const SHOP_ROW_H = 20;
-const SHOP_LIST_TOP = 74;
+const SHOP_LIST_TOP = 84;
 const SHOP_FRAME_TOP = 26;
 
 function drawShop(ctx: CanvasRenderingContext2D, view: OverlayView): void {
@@ -567,7 +568,11 @@ function drawShop(ctx: CanvasRenderingContext2D, view: OverlayView): void {
   ctx.fillText('引航者 · 诺笛', VIEW_W / 2, 46);
   ctx.font = '8px "SimSun", "Songti SC", serif';
   ctx.fillStyle = '#ffe9a8';
-  ctx.fillText(`晶尘 ${world.dust}`, VIEW_W / 2, 62);
+  ctx.fillText(`晶尘 ${world.dust}`, VIEW_W / 2, 60);
+  // 诺笛随进度换一句话 —— 他因此有了声音,而买卖一次按键都没多
+  ctx.font = F_SMALL;
+  ctx.fillStyle = '#9a8ab0';
+  ctx.fillText(nodiRemark(world), VIEW_W / 2, 73);
 
   ctx.textAlign = 'left';
   // 行距随商品数收紧:商品从 4 条增到 7 条,旧的 25px 行距会顶穿画面底边
