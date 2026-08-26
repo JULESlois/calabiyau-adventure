@@ -6,6 +6,7 @@ import { ParticleSystem } from '../entities/particles';
 import { makePickup, type Pickup } from '../entities/pickups';
 import { Player } from '../entities/Player';
 import { Arbiter } from '../entities/arbiter';
+import { Gambit } from '../entities/gambit';
 import { Warden } from '../entities/warden';
 import {
   parseRows,
@@ -334,6 +335,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
           break;
         case 'A':
           if (!world.flags.has('boss:arbiter')) this.boss = new Arbiter(cx, bottom);
+          break;
+        case 'g':
+          if (!world.flags.has('boss:gambit')) this.boss = new Gambit(cx, bottom);
           break;
         case 'B':
           if (world.flags.has('boss:guardian')) {
@@ -843,10 +847,10 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       this.gate.y = this.mapH - 3 * TILE;
       this.gate.active = true;
     } else {
-      const flag = boss.kind === 'warden' ? 'boss:warden' : 'boss:arbiter';
+      const flag = `boss:${boss.kind}`;
       if (this.world.flags.has(flag)) return;
       this.world.flags.add(flag);
-      const dust = boss.kind === 'warden' ? 60 : 80;
+      const dust = boss.kind === 'warden' ? 60 : boss.kind === 'arbiter' ? 80 : 70;
       this.world.dust += dust;
       this.toast(`弦能屏障解除 · 获得 ${dust} 晶尘`);
       this.shake(4);
@@ -1361,6 +1365,15 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
           break;
         }
       }
+      if (!consumed && this.boss?.active && this.boss.decoyRects && this.boss.hitDecoy) {
+        const decoyBoxes = this.boss.decoyRects();
+        for (let di = 0; di < decoyBoxes.length; di++) {
+          if (!rectsOverlap(br, decoyBoxes[di])) continue;
+          this.boss.hitDecoy(di, this);
+          consumed = true;
+          break;
+        }
+      }
       if (!consumed && this.boss && this.boss.active && rectsOverlap(br, this.boss.rect())) {
         if (!b.hit) b.hit = new Set();
         if (!b.hit.has(this.boss)) {
@@ -1392,6 +1405,12 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
           this.onEnemyDamaged(e);
           this.shake(p.meleeStep === 2 ? 3 : 1);
           if (wasDown) pogoHit = true;
+        }
+      }
+      if (this.boss?.active && this.boss.decoyRects && this.boss.hitDecoy) {
+        const decoyBoxes = this.boss.decoyRects();
+        for (let di = decoyBoxes.length - 1; di >= 0; di--) {
+          if (rectsOverlap(melee, decoyBoxes[di])) this.boss.hitDecoy(di, this);
         }
       }
       if (this.boss && this.boss.active && this.meleeHits.get(this.boss) !== p.swingId) {
@@ -1465,7 +1484,8 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         }
       }
       const bossTouchable = this.boss && this.boss.active
-        && this.boss.state !== 'stunned' && this.boss.state !== 'unfurl' && this.boss.state !== 'dash';
+        && this.boss.state !== 'stunned' && this.boss.state !== 'unfurl'
+        && this.boss.state !== 'dash' && this.boss.state !== 'castle';
       if (bossTouchable && this.boss && rectsOverlap(pr, this.boss.rect())) {
         p.hurt(this.boss.contactDmg, this.boss.x, this);
       }

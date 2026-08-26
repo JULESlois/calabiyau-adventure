@@ -60,7 +60,7 @@ export interface PlayerHost extends WorldApi {
  */
 export interface BossLike {
   /** 区分结算方式:守望者通关,回响守卫只解封屏障。 */
-  readonly kind: 'guardian' | 'warden' | 'arbiter';
+  readonly kind: 'guardian' | 'warden' | 'arbiter' | 'gambit';
   readonly displayName: string;
   /** HUD 血条的阶段刻痕数量。 */
   readonly phases: number;
@@ -77,6 +77,9 @@ export interface BossLike {
   hit(dmg: number, w: WorldApi): void;
   update(dt: number, w: WorldApi): void;
   render(ctx: CanvasRenderingContext2D, time: number): void;
+  /** 真假身 Boss(王车棋士)才有:假身受击盒与击碎回调。 */
+  decoyRects?(): Rect[];
+  hitDecoy?(index: number, w: WorldApi): void;
 }
 
 /** 部署物(喵喵卫士 / 声呐镖)需要索敌,因此比敌人多看到敌人与 Boss 列表。 */

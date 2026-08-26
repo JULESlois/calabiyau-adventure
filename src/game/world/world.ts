@@ -1271,6 +1271,7 @@ const R: RoomDef[] = [];
     exits: [
       { side: 'left', from: 28, to: 30, target: 'sky_archive', ex: 50, ey: 13 },
       { side: 'right', from: 7, to: 9, target: 'sky_peak', ex: 3, ey: 9, needs: ['djump'] },
+      { side: 'right', from: 28, to: 30, target: 'sky_gambit', ex: 3, ey: 13 },
     ],
   });
 }
@@ -1300,6 +1301,25 @@ const R: RoomDef[] = [];
       { side: 'left', from: 7, to: 9, target: 'sky_belltower', ex: 32, ey: 9 },
       { side: 'right', from: 7, to: 9, target: 'pass_sky_hangar', ex: 3, ey: 13 },
     ],
+  });
+}
+
+{
+  // 星弈厅:王车迷局 —— 加拉蒂亚式真假身换位 Boss 的对弈场。
+  // 五枚牌位锚点由 Boss 自持;屏障封住右侧弦晶密室,倒下才解封。
+  const g = grid(48, 17);
+  rect(g, 14, 16, 0, 47, '#');
+  rect(g, 10, 10, 10, 16, '=');
+  rect(g, 10, 10, 30, 36, '=');
+  rect(g, 9, 13, 40, 40, '#'); // 密室隔墙(缺口由屏障封住)
+  set(g, 13, 23, 'g'); // 王车棋士
+  set(g, 13, 43, '*');
+  set(g, 12, 45, '*');
+  R.push({
+    id: 'sky_gambit', zone: 'sky', name: '天穹 · 星弈厅', rows: rows(g),
+    mapX: 11, mapY: 3,
+    bossGate: { flag: 'boss:gambit', gate: { col: 41, row: 11, w: 1, h: 3 } },
+    exits: [{ side: 'left', from: 11, to: 13, target: 'sky_belltower', ex: 32, ey: 30 }],
   });
 }
 

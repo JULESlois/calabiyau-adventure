@@ -749,3 +749,67 @@ test('without the kinetic ability no charge ever builds', () => {
   }
   assert.equal(p.kineticCharge, 0, '未取得能力不该蓄电');
 });
+
+// ---------------- 王车迷局(#64) ----------------
+
+test('the gambit boss deals decoys and castles after taking enough damage', () => {
+  const state = makePlayState('sky_gambit');
+  const boss = state.boss;
+  assert.ok(boss, '星弈厅应有王车棋士');
+  assert.equal(boss?.kind, 'gambit');
+  boss.awaken(state);
+  for (let i = 0; i < 120 && boss.state !== 'idle'; i++) boss.update(1 / 60, state);
+
+  const gambit = boss as unknown as {
+    decoys: { x: number }[];
+    trail: object | null;
+  };
+  assert.equal(gambit.decoys.length, 2, '开局应有两具假身');
+
+  // 受创累积 → 王车易位
+  const xBefore = boss.x;
+  boss.hit(60, state);
+  boss.update(1 / 60, state);
+  assert.equal(boss.state, 'castle', '受创满额应触发易位');
+  assert.ok(gambit.trail, '易位应留下可读轨迹');
+
+  // 行程中不可触碰
+  const hpDuring = boss.hp;
+  boss.hit(99, state);
+  assert.equal(boss.hp, hpDuring, '易位行程中不该吃到伤害');
+
+  for (let i = 0; i < 60 && boss.state === 'castle'; i++) boss.update(1 / 60, state);
+  assert.equal(boss.state, 'idle');
+  assert.ok(Math.abs(boss.x - xBefore) > 20, '易位应真的换了位置');
+});
+
+test('shattering a decoy never damages the real body', () => {
+  const state = makePlayState('sky_gambit');
+  const boss = state.boss;
+  assert.ok(boss);
+  boss.awaken(state);
+  for (let i = 0; i < 120 && boss.state !== 'idle'; i++) boss.update(1 / 60, state);
+
+  const hpBefore = boss.hp;
+  assert.ok(boss.decoyRects && boss.hitDecoy, '王车棋士应暴露假身接口');
+  const boxes = boss.decoyRects!();
+  assert.equal(boxes.length, 2);
+  boss.hitDecoy!(0, state);
+  assert.equal(boss.hp, hpBefore, '击碎假身不该掉 Boss 血');
+  assert.equal(boss.decoyRects!().length, 1, '假身应被移除');
+});
+
+test('defeating the gambit unseals the crystal vault without ending the game', () => {
+  const state = makePlayState('sky_gambit');
+  const boss = state.boss;
+  assert.ok(boss);
+  assert.equal(state.tileAt(41, 12), T_SOLID, '弦晶密室应被屏障封住');
+  boss.awaken(state);
+  boss.hit(boss.maxHp + 100, state);
+  for (let i = 0; i < 400 && boss.state !== 'dead'; i++) state.update(1 / 60);
+
+  assert.equal(boss.state, 'dead');
+  assert.ok(state.world.flags.has('boss:gambit'));
+  assert.equal(state.tileAt(41, 12), T_EMPTY, '屏障应解封');
+  assert.equal(state.world.cleared, false);
+});
