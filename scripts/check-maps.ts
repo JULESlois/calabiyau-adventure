@@ -431,6 +431,47 @@ console.log(
     `${thornCount} 荆棘 / ${iceCount} 冰面 / ${waterCount} 水体 / ${chainCount} 吊链 / ${darkRooms} 暗区`,
 );
 
+// ---------------- 地形必须与背景分得开 ----------------
+// 天穹区曾经出现过这个缺陷:地形与近景层几乎同亮,玩家看不清自己站在哪里。
+//
+// **这条静态检查只是下限,不是保证。** 它比较的是调色板里的底色,
+// 而真正画出来的一格还要叠上勾缝、孔洞与阴影 —— 实测各材质会把分离度侵蚀到
+// 原值的 0.45–1.03 倍(乱石砌与细琢条石最狠,金属板几乎不掉)。
+// 也就是说调色板差 12 的区域,画出来可能只剩 5.5。
+// 权威数值请跑 `npm run qa:tiles`,它会直接量渲染结果并打印每区的实测分离度。
+{
+  const lum = (hex: string): number => {
+    const m = hex.match(/#([0-9a-f]{6})/i);
+    if (!m) return 0;
+    const n = m[1];
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16));
+    return ((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255) * 100;
+  };
+  const MIN_SEPARATION = 11; // 留出材质侵蚀的余量(最狠的材质约减半)
+  let worst = Infinity;
+  for (const [id, zone] of Object.entries(ZONES)) {
+    const gap = Math.abs(lum(zone.theme.tileBase) - lum(zone.theme.near));
+    worst = Math.min(worst, gap);
+    if (gap < MIN_SEPARATION) {
+      err(
+        `区域 ${id} 的地形与近景层感知亮度只差 ${gap.toFixed(1)}(下限 ${MIN_SEPARATION})`
+          + ' —— 玩家会看不清自己站在哪里',
+      );
+    }
+  }
+  if (worst >= MIN_SEPARATION) {
+    console.log(`  [通过] 六区地形/背景亮度分离最小 ${worst.toFixed(1)}(下限 ${MIN_SEPARATION})`);
+  }
+
+  // 材质必须互不相同:六个区域共用一种砌法,等于只有配色区别
+  const styles = Object.values(ZONES).map((z) => z.theme.tileStyle);
+  if (new Set(styles).size !== styles.length) {
+    err(`地形材质重复:${styles.join(', ')} —— 每个区域应有自己的砌法,而不只是换色`);
+  } else {
+    console.log(`  [通过] ${styles.length} 个区域各有独立地形材质`);
+  }
+}
+
 // ---------------- 奖励曲线不得中途断掉 ----------------
 // 世界一扩张,收集品数量就涨,而里程碑与商店价格是写死的常量 —— 于是奖励曲线
 // 会静默地在半程结束。这里把"探索到最后仍有回报"变成一条会失败的构建规则。

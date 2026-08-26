@@ -1,3 +1,5 @@
+import type { TileStyle } from '../render/tileStyles';
+
 // tile 解析与常量。房间数据见 ../world/world.ts。
 // 图例:
 //   #  实体砖块        =  单向平台        ^  尖刺        %  弦膜(纸片形态可穿过)
@@ -10,6 +12,11 @@
 // 地形 tile 一律用标点,生成符一律用字母数字 —— 见 docs/ROADMAP.md 的字符命名空间。
 
 export interface LevelTheme {
+  /**
+   * 地形材质(砌法)。颜色之外的第二个区域身份维度 ——
+   * 在此之前六区共用同一种砖,只换颜色,而地面占满每一帧的下半屏。
+   */
+  tileStyle: TileStyle;
   skyTop: string;
   skyBottom: string;
   far: string;

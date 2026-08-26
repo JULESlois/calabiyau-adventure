@@ -6,15 +6,15 @@
 // 在深色主题上等于隐形,单元测试全绿、check-maps 全绿,却是个"米雪儿永远找不到这堵墙"的 bug。
 // 因此这里只实现 renderTiles 真正用到的 Canvas2D 子集(fillRect / strokeRect / alpha / 颜色 / translate),
 // 其余方法留空,足够把 tile 层画出来。新增地形时请在末尾加一组 shoot(),然后真的去看那张图。
-import { deflateSync } from 'node:zlib';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { deflateSync, inflateSync } from 'node:zlib';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { TILE, VIEW_H, VIEW_W } from '../src/game/constants';
 import type { Engine } from '../src/game/Engine';
 import { drawOverlays, type OverlayView } from '../src/game/render/overlays';
 import { drawDialogue, pageLength } from '../src/game/render/dialogue';
 import { npcById } from '../src/game/npc';
 import { PlayState } from '../src/game/states/PlayState';
-import { HIDDEN_CHIPS, ROOM_LIST, SHOP_CHIPS, SHORTCUT_IDS } from '../src/game/world/world';
+import { HIDDEN_CHIPS, ROOM_LIST, SHOP_CHIPS, SHORTCUT_IDS, ZONES } from '../src/game/world/world';
 import { BOSS_FLAGS, WorldState } from '../src/game/world/WorldState';
 
 mkdirSync('.qa', { recursive: true });
@@ -256,6 +256,19 @@ shoot('09-crumble-collapsed', 'tide_gallery', 30, 25, 12, 8, (s) => {
 shoot('13-water', 'tide_cistern', 4, 26, 16, 8);
 shoot('14-chain', 'tide_cistern', 29, 8, 10, 10);
 
+// 六区地形对照:同样一段地面,只换主题色。
+// 用来回答"六个区域到底是六个地方,还是一个地方的六种配色"。
+const ZONE_SHOTS: [string, string][] = [
+  ['coast', '20-zone-coast'], ['tide', '21-zone-tide'], ['lab', '22-zone-lab'],
+  ['choir', '23-zone-choir'], ['sky', '24-zone-sky'], ['hangar', '25-zone-hangar'],
+];
+shoot('20-zone-coast', 'coast_walk', 20, 8, 14, 8);
+shoot('21-zone-tide', 'tide_entry', 20, 8, 14, 8);
+shoot('22-zone-lab', 'lab_cells', 20, 8, 14, 8);
+shoot('23-zone-choir', 'choir_nave', 20, 8, 14, 8);
+shoot('24-zone-sky', 'sky_corridor', 20, 8, 14, 8);
+shoot('25-zone-hangar', 'hangar_assembly', 20, 8, 14, 8);
+
 // 对话框版面(2.1)。汉字在这里画成占位盒 —— 无法验证字形,
 // 但**能验证版面**:框体是否溢出 480×270、正文行距是否与头像/名牌打架、
 // 打字机中途的断字位置是否合理。
@@ -330,5 +343,43 @@ shootOverlay('12-shop', 'lab_gate', (s) => {
   s.world.chips.add('chip_hp');
   s.world.forgeLevel = 2;
 });
+
+// ---- 图底分离实测 ----
+// check-maps 里的静态检查只看调色板底色;真正画出来的一格还叠着勾缝与阴影,
+// 分离度会被侵蚀到原值的一半左右。这里直接量渲染结果 —— 这才是权威数值。
+function measureSeparation(): void {
+  const lum = (r: number, g: number, b: number) => ((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255) * 100;
+  const nearLum = (hexStr: string) => {
+    const n = hexStr.slice(1);
+    return lum(parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16));
+  };
+  console.log('\n图底分离实测(地形渲染均值 vs 近景层):');
+  for (const [zone, file] of ZONE_SHOTS) {
+    const png = readFileSync(`.qa/${file}.png`);
+    let pos = 8; const idat: Buffer[] = []; let w = 0, h = 0;
+    while (pos < png.length) {
+      const len = png.readUInt32BE(pos);
+      const type = png.toString('ascii', pos + 4, pos + 8);
+      if (type === 'IHDR') { w = png.readUInt32BE(pos + 8); h = png.readUInt32BE(pos + 12); }
+      if (type === 'IDAT') idat.push(png.subarray(pos + 8, pos + 8 + len));
+      pos += 12 + len;
+    }
+    const raw = inflateSync(Buffer.concat(idat));
+    const stride = w * 4 + 1;
+    let sum = 0, n = 0;
+    for (let y = Math.floor(h * 0.78); y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * stride + 1 + x * 4;
+        sum += lum(raw[i], raw[i + 1], raw[i + 2]);
+        n++;
+      }
+    }
+    const got = sum / n;
+    const bg = nearLum(ZONES[zone as keyof typeof ZONES].theme.near);
+    const d = Math.abs(got - bg);
+    console.log(`  ${zone.padEnd(8)} 地形 ${got.toFixed(1).padStart(5)}  近景 ${bg.toFixed(1).padStart(5)}  分离 ${d.toFixed(1).padStart(5)}${d < 7 ? '  ← 偏低' : ''}`);
+  }
+}
+measureSeparation();
 
 console.log('\n渲染完毕');

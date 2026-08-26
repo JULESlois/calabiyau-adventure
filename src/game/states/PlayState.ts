@@ -46,6 +46,7 @@ import {
 import { CatTurret, SonarDart } from '../entities/gadgets';
 import { Background } from '../render/background';
 import { drawCandle, drawExitGate, drawPickup } from '../render/sprites';
+import { drawSolidTile, roomSeedOf, tileNoise } from '../render/tileStyles';
 import { drawAbilityShrine, drawBench, drawCagedKanami, drawNavigator, drawVillager } from '../render/props';
 import { NPC_MARKERS, npcById, type NpcDef } from '../npc';
 import { drawDialogue, pageLength, type DialogueView } from '../render/dialogue';
@@ -241,6 +242,8 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
    * 它同时决定「按 F 会发生什么」与「提示显示什么」—— 这是把两者绑死在一起的那一个字段。
    */
   private activeInteractable: Interactable | null = null;
+  /** 房间散列:让每格的装饰噪点不再只由世界坐标决定(否则堆叠的房间会完全重复) */
+  private readonly roomSeed: number;
   /** 本房间在场的 NPC(present() 为假的不生成 —— 城镇热闹度即由此体现) */
   private npcSpots: { npc: NpcDef; x: number; y: number }[] = [];
   particles = new ParticleSystem();
@@ -281,6 +284,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     entry: EntryInfo,
   ) {
     this.roomId = roomId;
+    this.roomSeed = roomSeedOf(roomId);
     this.room = ROOMS[roomId];
     this.zone = ZONES[this.room.zone];
     this.theme = this.zone.theme;
@@ -2301,52 +2305,16 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         const y = r * TILE;
         switch (t) {
           case T_SOLID: {
+            const h = tileNoise(c, r, this.roomSeed);
+            drawSolidTile(ctx, x, y, theme.tileStyle, {
+              theme,
+              up: this.tileAt(c, r - 1) === T_SOLID,
+              down: this.tileAt(c, r + 1) === T_SOLID,
+              left: this.tileAt(c - 1, r) === T_SOLID,
+              right: this.tileAt(c + 1, r) === T_SOLID,
+              h,
+            });
             const solidUp = this.tileAt(c, r - 1) === T_SOLID;
-            const solidDn = this.tileAt(c, r + 1) === T_SOLID;
-            const solidL = this.tileAt(c - 1, r) === T_SOLID;
-            const solidR = this.tileAt(c + 1, r) === T_SOLID;
-            const h = (c * 31 + r * 17) & 255;
-
-            ctx.fillStyle = theme.tileBase;
-            ctx.fillRect(x, y, TILE, TILE);
-            ctx.fillStyle = theme.tileDark;
-            ctx.fillRect(x, y + 7, TILE, 1);
-            ctx.fillRect(x, y + 15, TILE, 1);
-            ctx.fillRect(x, y, 1, 7);
-            ctx.fillRect(x + 8, y + 8, 1, 7);
-            if (h % 5 === 0) {
-              ctx.fillStyle = 'rgba(255,255,255,0.06)';
-              ctx.fillRect(x + (h % 11), y + 2 + (h % 4), 2, 1);
-            }
-            if (h % 7 === 0) {
-              ctx.fillStyle = theme.tileDark;
-              ctx.fillRect(x + 3 + (h % 9), y + 9, 1, 3);
-              ctx.fillRect(x + 2 + (h % 9), y + 11, 1, 2);
-            }
-            if (!solidUp) {
-              ctx.fillStyle = theme.tileEdge;
-              ctx.fillRect(x, y, TILE, 2);
-              ctx.fillStyle = 'rgba(0,0,0,0.25)';
-              ctx.fillRect(x, y + 2, TILE, 1);
-              if (h % 4 === 0) {
-                ctx.fillStyle = theme.accent;
-                ctx.globalAlpha = 0.5;
-                ctx.fillRect(x + 6, y, 3, 1);
-                ctx.globalAlpha = 1;
-              }
-            }
-            if (!solidDn) {
-              ctx.fillStyle = 'rgba(0,0,0,0.4)';
-              ctx.fillRect(x, y + 14, TILE, 2);
-            }
-            if (!solidL) {
-              ctx.fillStyle = 'rgba(255,255,255,0.10)';
-              ctx.fillRect(x, y, 1, TILE);
-            }
-            if (!solidR) {
-              ctx.fillStyle = 'rgba(0,0,0,0.28)';
-              ctx.fillRect(x + TILE - 1, y, 1, TILE);
-            }
             if (!solidUp && (c * 13 + r * 7) % 29 === 0 && this.tileAt(c, r - 1) === T_EMPTY && this.tileAt(c, r - 2) === T_EMPTY) {
               drawCandle(ctx, x + 7, y, this.time + h, theme.accent);
             }
@@ -2713,9 +2681,13 @@ function blendThemeColor(from: string, to: string, mix: number): string {
 }
 
 export function blendLevelThemes(from: LevelTheme, to: LevelTheme, mix: number): LevelTheme {
-  const result = {} as LevelTheme;
+  const t = clamp(mix, 0, 1);
+  // 材质不能插值(砌法之间没有"中间态"),因此在过渡房正中一次换过去 ——
+  // 颜色连续渐变、砌法在中线突变,反而给了跨区一个明确的"已经过界"的节拍。
+  const result = { tileStyle: t < 0.5 ? from.tileStyle : to.tileStyle } as LevelTheme;
   for (const key of Object.keys(from) as (keyof LevelTheme)[]) {
-    result[key] = blendThemeColor(from[key], to[key], clamp(mix, 0, 1));
+    if (key === 'tileStyle') continue;
+    result[key] = blendThemeColor(from[key] as string, to[key] as string, t);
   }
   return result;
 }

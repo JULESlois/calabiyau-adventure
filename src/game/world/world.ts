@@ -97,8 +97,9 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     subtitle: '欧拉海滨市郊,失控的安保机器人开始游荡……',
     song: 'coast',
     theme: {
+      tileStyle: 'masonry',
       skyTop: '#1c0f2e', skyBottom: '#c2541e', far: '#472441', mid: '#2f1a33',
-      near: '#1c1024', tileBase: '#3e3448', tileEdge: '#c08a5a', tileDark: '#231c2c',
+      near: '#1c1024', tileBase: '#4a3f56', tileEdge: '#c08a5a', tileDark: '#231c2c',
       accent: '#e8b06a', fog: 'rgba(200,110,60,0.10)', ember: '#ffb066',
       ambient: 'rgba(200,110,60,0.06)',
     },
@@ -109,6 +110,7 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     subtitle: '被海水遗忘的旧城区,泵轮仍在黑暗中缓慢转动。',
     song: 'tide',
     theme: {
+      tileStyle: 'wetblock',
       skyTop: '#07131a', skyBottom: '#16323a', far: '#17323a', mid: '#102a31',
       near: '#091b22', tileBase: '#29454a', tileEdge: '#8db8ad', tileDark: '#14272b',
       accent: '#8de0c4', fog: 'rgba(80,150,145,0.10)', ember: '#9bd7c7',
@@ -121,6 +123,7 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     subtitle: '深入米斯忒篷研究设施,弦膜封锁了通路。',
     song: 'lab',
     theme: {
+      tileStyle: 'panel',
       skyTop: '#060812', skyBottom: '#182448', far: '#1c2444', mid: '#121a34',
       near: '#0a1020', tileBase: '#2a2c44', tileEdge: '#9aa8d8', tileDark: '#161828',
       accent: '#7ef0ff', fog: 'rgba(100,130,200,0.09)', ember: '#aac8e8',
@@ -133,8 +136,9 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     subtitle: '废弃的共鸣礼堂仍在回应每一发子弹与每一次脚步。',
     song: 'choir',
     theme: {
+      tileStyle: 'ashlar',
       skyTop: '#130b20', skyBottom: '#3b244b', far: '#33203f', mid: '#24172f',
-      near: '#170e20', tileBase: '#43354f', tileEdge: '#d0a7cc', tileDark: '#251a2c',
+      near: '#170e20', tileBase: '#50405e', tileEdge: '#d0a7cc', tileDark: '#251a2c',
       accent: '#f0b4dc', fog: 'rgba(175,100,175,0.10)', ember: '#efb8dc',
       ambient: 'rgba(145,70,145,0.06)',
     },
@@ -145,8 +149,9 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     subtitle: '通往塔顶的空中走廊,弦化是唯一的通行证。',
     song: 'sky',
     theme: {
+      tileStyle: 'cloudstone',
       skyTop: '#3a4468', skyBottom: '#a8b0cc', far: '#8890b0', mid: '#666e92',
-      near: '#4a5274', tileBase: '#565c78', tileEdge: '#d0d6ec', tileDark: '#383e56',
+      near: '#7a83a8', tileBase: '#2b3048', tileEdge: '#d0d6ec', tileDark: '#1a1e2e',
       accent: '#f0ecd8', fog: 'rgba(200,210,235,0.12)', ember: '#e0e6f4',
       ambient: 'rgba(190,200,230,0.06)',
     },
@@ -157,6 +162,7 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
     subtitle: '「守望者 MK-III」在此沉眠。终结这一切吧!',
     song: 'hangar',
     theme: {
+      tileStyle: 'plate',
       skyTop: '#12060e', skyBottom: '#3c0d18', far: '#301024', mid: '#200a18',
       near: '#12060e', tileBase: '#342030', tileEdge: '#a85a4a', tileDark: '#1c101c',
       accent: '#ff6a5c', fog: 'rgba(170,50,60,0.10)', ember: '#ff7a50',
