@@ -8,11 +8,13 @@ import { actionLabel, type InputDevice } from '../Input';
 import { clamp } from '../utils';
 import {
   ABILITY_INFO,
+  repeatableCost,
   ROOMS,
   ROOM_LIST,
   SHOP_ITEMS,
   type Ability,
 } from '../world/world';
+import { completionReport, type CompletionEntry } from '../world/WorldState';
 import type { WorldState } from '../world/WorldState';
 
 export type Overlay =
@@ -68,6 +70,8 @@ export interface OverlayView {
   /** 暂停菜单光标与二次确认目标。 */
   pauseSel: number;
   pauseConfirm: PauseAction | null;
+  /** 结算屏光标:0 = 继续探索,1 = 返回标题。 */
+  victorySel: number;
 }
 
 const ZONE_COLOR: Record<string, string> = {
@@ -220,22 +224,7 @@ function drawOverlay(ctx: CanvasRenderingContext2D, view: OverlayView): void {
     }
     ctx.globalAlpha = 1;
   } else if (view.overlay === 'victory') {
-    ornateFrame(ctx, VIEW_W / 2 - 130, 58, 260, 156);
-    ctx.font = 'bold 18px "SimSun", "Songti SC", serif';
-    ctx.fillStyle = '#e8c860';
-    ctx.fillText('守望者 已被击败', VIEW_W / 2, 88);
-    ctx.font = F_MID;
-    ctx.fillStyle = '#d8ccE8';
-    ctx.fillText('欧拉的夜空,重归平静。', VIEW_W / 2, 114);
-    ctx.fillStyle = COLORS.michele;
-    ctx.fillText('米雪儿:「任务完成,回家喝热可可!」', VIEW_W / 2, 136);
-    ctx.fillStyle = COLORS.kanami;
-    ctx.fillText('香奈美:「下次冒险,也要一起哦♪」', VIEW_W / 2, 154);
-    ctx.font = F_SMALL;
-    ctx.fillStyle = '#e878c0';
-    ctx.fillText(`◆ 弦晶 ${view.world.crystals.size} / ${view.totalCrystals}`, VIEW_W / 2, 176);
-    ctx.fillStyle = '#8a7a98';
-    ctx.fillText(`感谢游玩 · ${actionLabel('confirm', view.device)} 返回标题`, VIEW_W / 2, 196);
+    drawVictory(ctx, view);
   }
   ctx.textAlign = 'left';
 }
@@ -484,42 +473,123 @@ function drawMap(ctx: CanvasRenderingContext2D, view: OverlayView): void {
   ctx.textAlign = 'left';
 }
 
+/**
+ * 通关结算屏。
+ * 原先这里只报一个弦晶数,然后 7 秒后强制弹回标题 —— 玩家跑遍全世界拿到的遗珍、
+ * 捷径、房间、可选 Boss 一概不被提及,而世界里还有大半没走完。
+ * 现在给出分项完成度,并让「继续探索」成为默认选项。
+ */
+function drawVictory(ctx: CanvasRenderingContext2D, view: OverlayView): void {
+  const report = completionReport(view.world);
+  ornateFrame(ctx, VIEW_W / 2 - 136, 26, 272, 220);
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 16px "SimSun", "Songti SC", serif';
+  ctx.fillStyle = '#e8c860';
+  ctx.fillText('守望者 已被击败', VIEW_W / 2, 50);
+  ctx.font = F_SMALL;
+  ctx.fillStyle = '#d8ccE8';
+  ctx.fillText('欧拉的夜空,重归平静。', VIEW_W / 2, 66);
+  ctx.fillStyle = COLORS.michele;
+  ctx.fillText('米雪儿:「任务完成,回家喝热可可!」', VIEW_W / 2, 80);
+  ctx.fillStyle = COLORS.kanami;
+  ctx.fillText('香奈美:「下次冒险,也要一起哦♪」', VIEW_W / 2, 92);
+
+  // 分项完成度:两列,让"还差什么"一眼可读
+  const left = VIEW_W / 2 - 118;
+  report.entries.forEach((entry: CompletionEntry, i: number) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const x = left + col * 122;
+    const y = 116 + row * 16;
+    const full = entry.got >= entry.total;
+    ctx.textAlign = 'left';
+    ctx.font = F_SMALL;
+    ctx.fillStyle = full ? '#e8c860' : '#8a7a98';
+    ctx.fillText(entry.label, x, y);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = full ? '#ffe9a8' : '#b8accc';
+    ctx.fillText(`${entry.got} / ${entry.total}`, x + 104, y);
+    // 细进度条:数字之外再给一个可扫读的形状
+    const w = 104;
+    const p = entry.total > 0 ? Math.min(1, entry.got / entry.total) : 1;
+    ctx.fillStyle = 'rgba(120,110,150,0.35)';
+    ctx.fillRect(x, y + 3, w, 1);
+    ctx.fillStyle = full ? '#e8c860' : '#7a6f96';
+    ctx.fillRect(x, y + 3, Math.round(w * p), 1);
+  });
+
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 13px "SimSun", "Songti SC", serif';
+  ctx.fillStyle = report.percent >= 100 ? '#ffe9a8' : '#e878c0';
+  ctx.fillText(`完成度 ${report.percent}%`, VIEW_W / 2, 182);
+
+  // 通关后仍可继续探索;默认光标就停在这一项
+  const options = ['继续探索', '返回标题'];
+  ctx.font = F_SMALL;
+  options.forEach((label, i) => {
+    const y = 202 + i * 15;
+    const sel = i === view.victorySel;
+    if (sel) {
+      ctx.fillStyle = 'rgba(168,130,60,0.20)';
+      ctx.fillRect(VIEW_W / 2 - 62, y - 9, 124, 13);
+    }
+    ctx.fillStyle = sel ? '#f0e0b0' : '#8a7a98';
+    ctx.fillText(label, VIEW_W / 2, y);
+  });
+  ctx.fillStyle = '#6a6080';
+  ctx.fillText(
+    `↑↓ 选择 · ${actionLabel('confirm', view.device)} 确认`,
+    VIEW_W / 2,
+    236,
+  );
+}
+
+/** 商店列表几何:框高随商品数推导,加一条商品就不必再手改四处坐标。 */
+const SHOP_ROW_H = 20;
+const SHOP_LIST_TOP = 74;
+const SHOP_FRAME_TOP = 26;
+
 function drawShop(ctx: CanvasRenderingContext2D, view: OverlayView): void {
   const world = view.world;
   ctx.save();
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(4,3,10,0.82)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  ornateFrame(ctx, VIEW_W / 2 - 128, 40, 256, 178);
+  const frameH = SHOP_LIST_TOP + SHOP_ITEMS.length * SHOP_ROW_H + 22 - SHOP_FRAME_TOP;
+  ornateFrame(ctx, VIEW_W / 2 - 128, SHOP_FRAME_TOP, 256, frameH);
   ctx.textAlign = 'center';
   ctx.font = 'bold 13px "SimSun", "Songti SC", serif';
   ctx.fillStyle = '#e8d8a8';
-  ctx.fillText('引航者 · 诺笛', VIEW_W / 2, 60);
+  ctx.fillText('引航者 · 诺笛', VIEW_W / 2, 46);
   ctx.font = '8px "SimSun", "Songti SC", serif';
   ctx.fillStyle = '#ffe9a8';
-  ctx.fillText(`晶尘 ${world.dust}`, VIEW_W / 2, 79);
+  ctx.fillText(`晶尘 ${world.dust}`, VIEW_W / 2, 62);
 
   ctx.textAlign = 'left';
+  // 行距随商品数收紧:商品从 4 条增到 7 条,旧的 25px 行距会顶穿画面底边
   SHOP_ITEMS.forEach((it, i) => {
-    const rowTop = 91 + i * 25;
-    const nameY = rowTop + 9;
+    const rowTop = SHOP_LIST_TOP + i * SHOP_ROW_H;
+    const nameY = rowTop + 8;
     const sel = i === view.shopSel;
-    const owned = world.chips.has(it.id);
+    const repeat = it.repeatable;
+    const level = repeat ? world.forgeLevel : 0;
+    const maxed = repeat ? level >= repeat.max : world.chips.has(it.id);
+    const cost = repeat ? repeatableCost(it, level) : it.cost;
     if (sel) {
       ctx.fillStyle = 'rgba(168,130,60,0.18)';
-      ctx.fillRect(VIEW_W / 2 - 118, rowTop, 236, 23);
+      ctx.fillRect(VIEW_W / 2 - 118, rowTop, 236, SHOP_ROW_H - 2);
       ctx.fillStyle = '#e8c860';
       ctx.fillRect(VIEW_W / 2 - 111, nameY - 4, 3, 3);
     }
     ctx.font = '9px "SimSun", "Songti SC", serif';
-    ctx.fillStyle = owned ? '#5a5468' : sel ? '#f0e0b0' : '#b8accc';
-    ctx.fillText(it.name, VIEW_W / 2 - 104, nameY);
+    ctx.fillStyle = maxed ? '#5a5468' : sel ? '#f0e0b0' : '#b8accc';
+    ctx.fillText(repeat ? `${it.name} ${level}/${repeat.max}` : it.name, VIEW_W / 2 - 104, nameY);
     ctx.font = F_SMALL;
-    ctx.fillStyle = owned ? '#4a4458' : '#8a7a98';
-    ctx.fillText(it.desc, VIEW_W / 2 - 104, nameY + 10);
+    ctx.fillStyle = maxed ? '#4a4458' : '#8a7a98';
+    ctx.fillText(it.desc, VIEW_W / 2 - 104, nameY + 9);
     ctx.textAlign = 'right';
-    ctx.fillStyle = owned ? '#5a5468' : world.dust >= it.cost ? '#ffe9a8' : '#a85a5c';
-    ctx.fillText(owned ? '已接入' : `${it.cost}`, VIEW_W / 2 + 110, nameY);
+    ctx.fillStyle = maxed ? '#5a5468' : world.dust >= cost ? '#ffe9a8' : '#a85a5c';
+    ctx.fillText(maxed ? (repeat ? '已满' : '已接入') : `${cost}`, VIEW_W / 2 + 110, nameY);
     ctx.textAlign = 'left';
   });
 
@@ -530,7 +600,7 @@ function drawShop(ctx: CanvasRenderingContext2D, view: OverlayView): void {
     `${actionLabel('up', view.device)}/${actionLabel('down', view.device)} 选择 · ` +
       `${actionLabel('interact', view.device)} 购买 · ${actionLabel('pause', view.device)} 关闭`,
     VIEW_W / 2,
-    208,
+    SHOP_LIST_TOP + SHOP_ITEMS.length * SHOP_ROW_H + 12,
   );
   ctx.restore();
 }

@@ -32,6 +32,7 @@ function makeState(tileAt: (col: number, row: number) => number = () => T_EMPTY)
     mapW: 480,
     mapH: 270,
     tileAt,
+    isIceAt: () => false, // 这些用例测的是普通地面手感
     sfx: () => undefined,
     shake: () => undefined,
     particles: {

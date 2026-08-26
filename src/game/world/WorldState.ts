@@ -3,7 +3,16 @@
 
 import type { CharId } from '../types';
 import { MAX_HP, MAX_STRING } from '../constants';
-import { progressionStats, START_ROOM, type Ability } from './world';
+import {
+  HIDDEN_CHIPS,
+  progressionStats,
+  ROOM_LIST,
+  SHOP_CHIPS,
+  SHORTCUT_IDS,
+  START_ROOM,
+  totalCrystals,
+  type Ability,
+} from './world';
 
 /** 存档的可序列化形状;来自 localStorage 时字段可能被手改过,尚不可信。 */
 export interface WorldSave {
@@ -19,6 +28,8 @@ export interface WorldSave {
   dust?: number;
   chips?: string[];
   shortcuts?: string[];
+  brokenWalls?: string[];
+  forgeLevel?: number;
   hpMax?: number;
 }
 
@@ -33,6 +44,36 @@ declare const validated: unique symbol;
 export type ValidWorldSave = Required<Omit<WorldSave, 'hpMax'>> & {
   readonly [validated]: true;
 };
+
+/** 通关结算屏的一行。 */
+export interface CompletionEntry {
+  label: string;
+  got: number;
+  total: number;
+}
+
+/** 四场 Boss 的旗标(结算屏与完成度都按这一份名单)。 */
+export const BOSS_FLAGS = ['boss:warden', 'boss:arbiter', 'boss:gambit', 'boss:guardian'] as const;
+
+/**
+ * 通关完成度。
+ * 总分取**各项比例的平均**而不是"总获得/总数量":后者会让弦晶(80 项)
+ * 淹没 Boss(4 项)与遗珍(4 项),把一次全收集跑和一次直冲通关显示成几乎一样的数字。
+ */
+export function completionReport(w: WorldState): { entries: CompletionEntry[]; percent: number } {
+  const owned = (ids: readonly string[]) => ids.filter((id) => w.chips.has(id)).length;
+  const entries: CompletionEntry[] = [
+    { label: '弦晶', got: w.crystals.size, total: totalCrystals() },
+    { label: '遗珍', got: owned(HIDDEN_CHIPS.map((c) => c.id)), total: HIDDEN_CHIPS.length },
+    { label: '芯片', got: owned(SHOP_CHIPS.map((c) => c.id)), total: SHOP_CHIPS.length },
+    { label: '捷径', got: w.shortcuts.size, total: SHORTCUT_IDS.size },
+    { label: '房间', got: w.visited.size, total: ROOM_LIST.length },
+    { label: '首领', got: BOSS_FLAGS.filter((f) => w.flags.has(f)).length, total: BOSS_FLAGS.length },
+  ];
+  const mean = entries.reduce((sum, e) => sum + (e.total > 0 ? Math.min(1, e.got / e.total) : 1), 0)
+    / entries.length;
+  return { entries, percent: Math.round(mean * 100) };
+}
 
 export class WorldState {
   abilities = new Set<Ability>();
@@ -54,6 +95,10 @@ export class WorldState {
   chips = new Set<string>();
   /** 已从远端开启的永久捷径 */
   shortcuts = new Set<string>();
+  /** 已击碎的可破坏墙(`房间:列:行`),与 crystals 同构 */
+  brokenWalls = new Set<string>();
+  /** 弦芯熔铸的已购次数(可重复商品) */
+  forgeLevel = 0;
   /** 生命上限(弦晶共鸣与强健弦芯可提升) */
   hpMax = MAX_HP;
   /** 弦能上限(弦晶共鸣可提升) */
@@ -77,8 +122,13 @@ export class WorldState {
     return `${room}:${col}:${row}`;
   }
 
+  /** 可破坏墙与弦晶同构:房间 + 格位唯一定位一处地形改动。 */
+  breakableId(room: string, col: number, row: number): string {
+    return `${room}:${col}:${row}`;
+  }
+
   recalculateStats(): void {
-    const stats = progressionStats(this.crystals.size, this.chips);
+    const stats = progressionStats(this.crystals.size, this.chips, this.forgeLevel);
     this.hpMax = stats.hpMax;
     this.energyMax = stats.energyMax;
     this.hp = Math.min(this.hp, this.hpMax);
@@ -99,6 +149,8 @@ export class WorldState {
       dust: this.dust,
       chips: [...this.chips],
       shortcuts: [...this.shortcuts],
+      brokenWalls: [...this.brokenWalls],
+      forgeLevel: this.forgeLevel,
       hpMax: this.hpMax,
     };
   }
@@ -117,6 +169,8 @@ export class WorldState {
     w.dust = d.dust;
     w.chips = new Set(d.chips);
     w.shortcuts = new Set(d.shortcuts);
+    w.brokenWalls = new Set(d.brokenWalls);
+    w.forgeLevel = d.forgeLevel;
     // hpMax/energyMax 只认弦晶与芯片推导出的结果,与运行时成长走同一条路径
     w.recalculateStats();
     return w;

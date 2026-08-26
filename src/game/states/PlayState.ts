@@ -1,4 +1,18 @@
-import { FLASH_CHARGE, FLASH_ENERGY_REFUND, FLASH_WINDOW, INVULN_TIME, TILE, VIEW_H, VIEW_W } from '../constants';
+import {
+  BREAKABLE_HITS,
+  BREAKABLE_MELEE_HITS,
+  CRUMBLE_DELAY,
+  CRUMBLE_RESPAWN,
+  FLASH_CHARGE,
+  FLASH_ENERGY_REFUND,
+  FLASH_WINDOW,
+  INVULN_TIME,
+  THORN_DMG,
+  THORN_SLOW_TIME,
+  TILE,
+  VIEW_H,
+  VIEW_W,
+} from '../constants';
 import { Boss } from '../entities/boss';
 import type { EnemyBullet, PlayerBullet } from '../entities/bullets';
 import { Enemy, type EnemyKind } from '../entities/enemies';
@@ -10,13 +24,17 @@ import { Gambit } from '../entities/gambit';
 import { Warden } from '../entities/warden';
 import {
   parseRows,
+  T_BREAKABLE,
+  T_CRUMBLE,
   T_EMPTY,
   T_HIDDEN,
+  T_ICE,
   T_MEMBRANE,
   T_ONEWAY,
   T_POLARITY,
   T_SOLID,
   T_SPIKE,
+  T_THORN,
   type LevelTheme,
   type ParsedRows,
 } from '../levels/levels';
@@ -41,6 +59,7 @@ import {
   CRYSTAL_MILESTONES,
   HIDDEN_CHIPS,
   HIDDEN_CHIP_MARKERS,
+  repeatableCost,
   ROOMS,
   ROOM_LIST,
   SHOP_ITEMS,
@@ -57,6 +76,9 @@ import type { WorldState } from '../world/WorldState';
 import { moverDisplacement, RegionMechanics, type MechanicsHost, type ShortcutRuntime } from './regionMechanics';
 
 export { moverDisplacement };
+
+/** 结算屏在这段时间内不收输入,免得通关瞬间的连打直接跳过结算。 */
+export const VICTORY_INPUT_DELAY = 1.4;
 
 export interface SceneContinuity {
   /** 出口门槛在旧画面中的位置,用于把新房间的对应门槛对齐。 */
@@ -159,6 +181,16 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   pickups: (Pickup & { id?: string; chipId?: string })[] = [];
   /** 区域机关(平台/气流/喷流/共鸣器/传送带/极性终端/捷径闸门) */
   mechanics = new RegionMechanics(this);
+  /** 可破坏墙的累计受击点数(tileIndex → 点数);碎裂结果写进 WorldState,这里只是过程 */
+  private breakHits = new Map<number, number>();
+  /** 碎裂平台的踩踏计时(tileIndex → 剩余秒数,正=还在塌、负=已塌落待重建) */
+  private crumbleT = new Map<number, number>();
+  /** 可破坏墙被声呐描边的剩余秒数 */
+  private breakableSonar = new Map<number, number>();
+  /** 近战对墙的去重(tileIndex → swingId),与 meleeHits 对实体的作用相同 */
+  private meleeTileHits = new Map<number, number>();
+  /** 结算屏光标:0 = 继续探索(默认),1 = 返回标题 */
+  victorySel = 0;
   turrets: CatTurret[] = [];
   darts: SonarDart[] = [];
   /** 显形中的隐藏平台:tile 索引 → 剩余秒数 */
@@ -496,12 +528,119 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     if (t === T_HIDDEN) {
       return (this.hiddenReveal.get(r * this.level.w + c) ?? 0) > 0 ? T_SOLID : T_EMPTY;
     }
+    // 新地形一律在这里折回基础碰撞类型,物理与碰撞代码因此完全不必知道它们存在。
+    if (t === T_BREAKABLE) {
+      return this.world.brokenWalls.has(this.world.breakableId(this.roomId, c, r)) ? T_EMPTY : T_SOLID;
+    }
+    if (t === T_CRUMBLE) {
+      // 计时为负 = 已塌落,重建前不承重
+      return (this.crumbleT.get(r * this.level.w + c) ?? 0) < 0 ? T_EMPTY : T_ONEWAY;
+    }
+    if (t === T_ICE) return T_SOLID; // 冰是实体地表,"滑"由 Player 单独查询
     return t;
+  }
+
+  /** 脚下这一格是否是冰面 —— Player 借此压低加减速。 */
+  isIceAt(c: number, r: number): boolean {
+    if (c < 0 || c >= this.level.w || r < 0 || r >= this.level.h) return false;
+    return this.level.tiles[r * this.level.w + c] === T_ICE;
   }
 
   /** MechanicsHost:共鸣器与声呐共用的隐藏平台显形入口。 */
   revealHiddenTile(tileIndex: number, seconds: number): void {
     this.hiddenReveal.set(tileIndex, seconds);
+  }
+
+  /**
+   * 碎裂平台的塌落/重建计时,以及可破坏墙的声呐描边衰减。
+   * crumbleT 语义:>0 正在塌(踩住计时)、<0 已塌落(重建倒计时)、缺席=完好。
+   * 全部是房间运行时状态,不进存档 —— 离房即重置。
+   */
+  private updateTerrain(dt: number): void {
+    // 玩家脚下若踩到完好的碎裂平台,开始塌落计时
+    const p = this.player;
+    if (!p.dead) {
+      const r = p.rect();
+      const row = Math.floor((r.y + r.h + 1) / TILE);
+      for (let c = Math.floor(r.x / TILE); c <= Math.floor((r.x + r.w - 0.001) / TILE); c++) {
+        if (c < 0 || c >= this.level.w || row < 0 || row >= this.level.h) continue;
+        const idx = row * this.level.w + c;
+        if (this.level.tiles[idx] !== T_CRUMBLE || this.crumbleT.has(idx)) continue;
+        this.crumbleT.set(idx, CRUMBLE_DELAY);
+        this.sfx('land');
+      }
+    }
+    for (const [idx, v] of this.crumbleT) {
+      if (v > 0) {
+        const nv = v - dt;
+        if (nv > 0) {
+          this.crumbleT.set(idx, nv);
+          continue;
+        }
+        // 塌落:落灰 + 抖动,随后进入重建倒计时
+        this.crumbleT.set(idx, -CRUMBLE_RESPAWN);
+        const c = idx % this.level.w;
+        const row = Math.floor(idx / this.level.w);
+        this.particles.burst(c * TILE + TILE / 2, row * TILE + TILE / 2, 10, this.theme.tileDark, 60, 0.5, 'square');
+        this.shake(1);
+        this.sfx('hurt');
+      } else {
+        const nv = v + dt;
+        if (nv >= 0) this.crumbleT.delete(idx);
+        else this.crumbleT.set(idx, nv);
+      }
+    }
+    for (const [k, v] of this.breakableSonar) {
+      const nv = v - dt;
+      if (nv <= 0) this.breakableSonar.delete(k);
+      else this.breakableSonar.set(k, nv);
+    }
+  }
+
+  /**
+   * 对一格可破坏墙累计伤害;够数即永久碎裂。
+   * 返回是否真的命中了一堵未碎的墙 —— 调用方借此决定子弹是否在此处消失。
+   */
+  private damageBreakable(c: number, r: number, points: number): boolean {
+    if (c < 0 || c >= this.level.w || r < 0 || r >= this.level.h) return false;
+    const idx = r * this.level.w + c;
+    if (this.level.tiles[idx] !== T_BREAKABLE) return false;
+    const id = this.world.breakableId(this.roomId, c, r);
+    if (this.world.brokenWalls.has(id)) return false;
+
+    const hits = (this.breakHits.get(idx) ?? 0) + points;
+    const x = c * TILE + TILE / 2;
+    const y = r * TILE + TILE / 2;
+    if (hits >= BREAKABLE_HITS) {
+      this.breakHits.delete(idx);
+      this.world.brokenWalls.add(id);
+      this.particles.burst(x, y, 16, this.theme.tileBase, 110, 0.6, 'square');
+      this.particles.burst(x, y, 8, this.theme.accent, 70, 0.45, 'spark');
+      this.shake(3);
+      this.sfx('meleeHit');
+    } else {
+      this.breakHits.set(idx, hits);
+      this.particles.burst(x, y, 4, this.theme.tileDark, 55, 0.3, 'square');
+      this.sfx('meleeHit');
+    }
+    return true;
+  }
+
+  /** 香奈美声呐扫过时,让附近尚未击碎的可破坏墙短暂描边 —— 侦察角色的定位优势。 */
+  private revealBreakablesNear(x: number, y: number, radius: number): void {
+    const c0 = Math.max(0, Math.floor((x - radius) / TILE));
+    const c1 = Math.min(this.level.w - 1, Math.floor((x + radius) / TILE));
+    const r0 = Math.max(0, Math.floor((y - radius) / TILE));
+    const r1 = Math.min(this.level.h - 1, Math.floor((y + radius) / TILE));
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const idx = r * this.level.w + c;
+        if (this.level.tiles[idx] !== T_BREAKABLE) continue;
+        if (this.world.brokenWalls.has(this.world.breakableId(this.roomId, c, r))) continue;
+        if (Math.hypot(c * TILE + TILE / 2 - x, r * TILE + TILE / 2 - y) > radius) continue;
+        this.breakableSonar.set(idx, 2.2);
+      }
+    }
   }
 
   /** MechanicsHost:捷径闸门是否已由玩家从远端开启。 */
@@ -732,10 +871,22 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       return;
     }
     if (this.overlay === 'victory') {
+      // 结算屏不再自动弹回标题:通关后仍有大量世界没走完(弦晶总数 80,末档里程碑 68),
+      // 强制踢出等于告诉玩家"到此为止"。这里给出选择,默认停在「继续探索」。
       this.overlayT -= dt;
-      const canSkip = this.overlayT < 3.2;
-      if ((canSkip && (input.pressed('confirm') || input.pressed('shoot'))) || this.overlayT <= 0) {
-        this.engine.showTitle();
+      if (this.overlayT > VICTORY_INPUT_DELAY) return;
+      if (input.pressed('up') || input.pressed('down')) {
+        this.victorySel = this.victorySel === 0 ? 1 : 0;
+        this.sfx('ui');
+      }
+      if (input.pressed('confirm') || input.pressed('interact')) {
+        this.sfx('ui');
+        if (this.victorySel === 0) {
+          this.overlay = 'none';
+          this.engine.audio.playSong(this.zone.song, 1.2);
+        } else {
+          this.engine.showTitle();
+        }
       }
       return;
     }
@@ -795,6 +946,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       if (nv <= 0) this.hiddenReveal.delete(k);
       else this.hiddenReveal.set(k, nv);
     }
+    this.updateTerrain(dt);
 
     this.updateBullets(dt);
     this.resolveCombat();
@@ -1147,18 +1299,21 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     const item = SHOP_ITEMS.find((i) => i.id === id);
     if (!item) return;
     const w = this.world;
-    if (w.chips.has(id)) {
-      this.toast('已持有此记忆芯片');
+    const repeat = item.repeatable;
+    if (repeat ? w.forgeLevel >= repeat.max : w.chips.has(id)) {
+      this.toast(repeat ? '熔铸已达上限' : '已持有此记忆芯片');
       return;
     }
-    if (w.dust < item.cost) {
+    const cost = repeat ? repeatableCost(item, w.forgeLevel) : item.cost;
+    if (w.dust < cost) {
       this.toast('晶尘不足……');
       this.sfx('hurt');
       return;
     }
-    w.dust -= item.cost;
+    w.dust -= cost;
     const previousHpMax = w.hpMax;
-    w.chips.add(id);
+    if (repeat) w.forgeLevel++;
+    else w.chips.add(id);
     w.recalculateStats();
     const hpGain = w.hpMax - previousHpMax;
     if (hpGain > 0) this.player.hp = Math.min(w.hpMax, this.player.hp + hpGain);
@@ -1166,7 +1321,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     this.engine.persistWorld();
     this.sfx('crystal');
     this.sfx('checkpoint');
-    this.toast(`${item.name} 已接入`);
+    this.toast(repeat ? `${item.name} ${w.forgeLevel}/${repeat.max}` : `${item.name} 已接入`);
   }
 
   /** 敌人死亡时散落晶尘 */
@@ -1197,6 +1352,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
 
   /** 声呐脉冲:标记+微伤敌人、显形隐藏平台;heal 时为附近的玩家回复(歌声治愈) */
   sonarPulse(x: number, y: number, radius: number, heal = false): void {
+    this.revealBreakablesNear(x, y, radius);
     for (let i = 0; i < 14; i++) {
       const a = (i / 14) * Math.PI * 2;
       this.particles.spawn({
@@ -1290,6 +1446,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         this.toast('回路已点亮');
       }
       const hitTile = this.rectHitsSolid({ x: b.x - 2, y: b.y - 2, w: 4, h: 4 });
+      if (hitTile) this.damageBreakable(Math.floor(b.x / TILE), Math.floor(b.y / TILE), 1);
       if (b.life <= 0 || hitTile) {
         if (hitTile) {
           this.particles.burst(b.x, b.y, 4, b.kind === 'ice' ? '#7ef0ff' : '#ffb0d8', 50, 0.25, 'spark');
@@ -1395,6 +1552,19 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       const bladeMul = this.world.chips.has('chip_blade') ? 1.3 : 1;
       const wasDown = p.downSlash;
       let pogoHit = false;
+      // 挥击扫过的可破坏墙:按 swingId 去重,否则一次挥砍会在多帧里反复计数
+      for (let c = Math.floor(melee.x / TILE); c <= Math.floor((melee.x + melee.w - 0.001) / TILE); c++) {
+        for (let r = Math.floor(melee.y / TILE); r <= Math.floor((melee.y + melee.h - 0.001) / TILE); r++) {
+          const idx = r * this.level.w + c;
+          if (this.meleeTileHits.get(idx) === p.swingId) continue;
+          // 裂石之握:近战拆墙效率翻倍(一刀一格)
+          const quarry = this.world.chips.has('chip_quarry') ? 2 : 1;
+          if (this.damageBreakable(c, r, BREAKABLE_MELEE_HITS * quarry)) {
+            this.meleeTileHits.set(idx, p.swingId);
+            this.shake(1);
+          }
+        }
+      }
       for (const e of this.enemies) {
         if (e.dead || e.intangible) continue;
         if (this.meleeHits.get(e) === p.swingId) continue;
@@ -1521,6 +1691,18 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
             break outer;
           }
         }
+      }
+    }
+    // 荆棘:疼且慢,但不击退不弹起 —— 与尖刺的"疼一下弹开"刻意区分,
+    // 让"硬闯"成为一个成本可控的选项,而不是必须绕路。
+    thorns: for (let c = c0; c <= c1; c++) {
+      for (let rr = r0; rr <= r1; rr++) {
+        if (this.tileAt(c, rr) !== T_THORN) continue;
+        if (p.hurt(THORN_DMG, p.x, this, false)) {
+          p.slowT = Math.max(p.slowT, THORN_SLOW_TIME);
+          this.particles.burst(p.x, p.y, 5, '#7fbf6a', 45, 0.3, 'spark');
+        }
+        break thorns;
       }
     }
     // 坠落出界(不在向下出口范围内时)
@@ -2086,6 +2268,132 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
             ctx.globalAlpha = 1;
             break;
           }
+          case T_BREAKABLE: {
+            const idx = r * this.level.w + c;
+            if (this.world.brokenWalls.has(this.world.breakableId(this.roomId, c, r))) {
+              // 已击碎:只留边框残迹,让回访时一眼看出"这里被打通过"
+              ctx.globalAlpha = 0.5;
+              ctx.fillStyle = theme.tileDark;
+              ctx.fillRect(x, y, 2, 2);
+              ctx.fillRect(x + TILE - 2, y, 2, 2);
+              ctx.fillRect(x, y + TILE - 2, 2, 2);
+              ctx.fillRect(x + TILE - 2, y + TILE - 2, 2, 2);
+              ctx.globalAlpha = 1;
+              break;
+            }
+            // 未破坏:石色与实体砖一致(它得像墙的一部分),但嵌一圈"补砌"描边 +
+            // 一道亮色裂缝。**必须在没有声呐时也认得出** —— 米雪儿没有声呐,
+            // 若只靠香奈美才能发现,墙后的奖励对半个游戏等于不存在。
+            ctx.fillStyle = theme.tileBase;
+            ctx.fillRect(x, y, TILE, TILE);
+            // 补砌边框:上/左提亮、下/右压暗,读起来像一块后填进墙里的砖
+            ctx.fillStyle = 'rgba(255,255,255,0.16)';
+            ctx.fillRect(x + 1, y + 1, TILE - 2, 1);
+            ctx.fillRect(x + 1, y + 1, 1, TILE - 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.38)';
+            ctx.fillRect(x + 1, y + TILE - 2, TILE - 2, 1);
+            ctx.fillRect(x + TILE - 2, y + 1, 1, TILE - 2);
+
+            const hits = this.breakHits.get(idx) ?? 0;
+            const stage = hits / BREAKABLE_HITS;
+            // 主裂缝:一道自上而下游走的亮线(深色主题下亮色才看得见)
+            ctx.fillStyle = 'rgba(228,222,244,0.45)';
+            let fx = x + 5 + ((c * 7 + r * 3) % 4);
+            for (let fy = y + 3; fy <= y + TILE - 4; fy++) {
+              ctx.fillRect(fx, fy, 1, 1);
+              fx += (((c * 13 + r * 5 + fy) % 3) | 0) - 1;
+              fx = Math.max(x + 2, Math.min(x + TILE - 3, fx));
+            }
+            // 支裂缝:随受击数生长,给出"还差几下"的读数
+            const branches = Math.round(stage * 4);
+            ctx.fillStyle = 'rgba(228,222,244,0.34)';
+            for (let k = 0; k < branches; k++) {
+              const h = (c * 37 + r * 19 + k * 53) & 255;
+              const by = y + 4 + ((h >> 2) % (TILE - 8));
+              const dir = k % 2 === 0 ? 1 : -1;
+              for (let s = 1; s <= 2 + (h % 3); s++) {
+                ctx.fillRect(x + 7 + dir * s + (h % 3), by + Math.floor(s / 2) * dir, 1, 1);
+              }
+            }
+            if (hits > 0) {
+              // 受击后透出内里的光,提示"再打几下就开"
+              ctx.globalAlpha = Math.min(0.5, 0.1 + stage * 0.45);
+              ctx.fillStyle = theme.accent;
+              ctx.fillRect(x + 3, y + 3, TILE - 6, TILE - 6);
+              ctx.globalAlpha = 1;
+            }
+            const sonar = this.breakableSonar.get(idx) ?? 0;
+            if (sonar > 0) {
+              // 声呐描边:香奈美扫过后短暂高亮,不改变任何碰撞
+              ctx.globalAlpha = Math.min(1, sonar) * 0.85;
+              ctx.strokeStyle = '#ffb0d8';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+              ctx.globalAlpha = 1;
+            }
+            break;
+          }
+          case T_CRUMBLE: {
+            const timer = this.crumbleT.get(r * this.level.w + c) ?? 0;
+            if (timer < 0) {
+              // 已塌落:留虚影,让玩家读得出它会回来
+              ctx.globalAlpha = 0.18 + Math.max(0, 1 + timer / CRUMBLE_RESPAWN) * 0.2;
+              ctx.fillStyle = theme.tileEdge;
+              ctx.fillRect(x + 1, y, TILE - 2, 1);
+              ctx.globalAlpha = 1;
+              break;
+            }
+            // 完好或塌落中:踩住后抖动幅度随倒计时加大
+            const shakeAmp = timer > 0 ? (1 - timer / CRUMBLE_DELAY) * 2 : 0;
+            const ox = shakeAmp > 0 ? Math.round(Math.sin(this.time * 42) * shakeAmp) : 0;
+            ctx.fillStyle = theme.tileEdge;
+            ctx.fillRect(x + ox, y, TILE, 2);
+            ctx.fillStyle = theme.tileDark;
+            ctx.fillRect(x + ox, y + 2, TILE, 3);
+            ctx.fillStyle = 'rgba(0,0,0,0.35)';
+            for (let k = 0; k < 3; k++) {
+              const h = (c * 23 + r * 11 + k * 41) & 15;
+              ctx.fillRect(x + ox + 1 + h, y + 1, 1, 3);
+            }
+            if (timer > 0) {
+              ctx.globalAlpha = 0.5;
+              ctx.fillStyle = theme.tileDark;
+              ctx.fillRect(x + ox + 3, y + 5, 2, 1 + Math.round(shakeAmp));
+              ctx.fillRect(x + ox + 10, y + 5, 2, 1 + Math.round(shakeAmp));
+              ctx.globalAlpha = 1;
+            }
+            break;
+          }
+          case T_THORN: {
+            ctx.fillStyle = '#2c3a24';
+            ctx.fillRect(x, y + TILE - 3, TILE, 3);
+            for (let k = 0; k < 5; k++) {
+              const h = (c * 29 + r * 13 + k * 37) & 15;
+              const sx = x + k * 3 + (h & 1);
+              const sway = Math.sin(this.time * 1.4 + (c + r + k) * 0.7) * 1;
+              ctx.fillStyle = k % 2 === 0 ? '#4f7a3e' : '#3d6130';
+              ctx.fillRect(sx, y + 6, 1, TILE - 8);
+              ctx.fillRect(sx + Math.round(sway), y + 4, 1, 3);
+              ctx.fillStyle = '#8fbf72';
+              ctx.fillRect(sx + Math.round(sway), y + 3, 1, 1);
+            }
+            break;
+          }
+          case T_ICE: {
+            ctx.fillStyle = '#5e7f96';
+            ctx.fillRect(x, y, TILE, TILE);
+            ctx.fillStyle = '#8fc0d8';
+            ctx.fillRect(x, y, TILE, 3);
+            ctx.fillStyle = '#cfeaf6';
+            ctx.fillRect(x, y, TILE, 1);
+            ctx.fillStyle = 'rgba(255,255,255,0.22)';
+            const h = (c * 31 + r * 17) & 15;
+            ctx.fillRect(x + h % 10, y + 4, 3, 1);
+            ctx.fillRect(x + (h + 5) % 11, y + 8, 2, 1);
+            ctx.fillStyle = 'rgba(0,0,0,0.28)';
+            ctx.fillRect(x, y + TILE - 2, TILE, 2);
+            break;
+          }
           default:
             break;
         }
@@ -2109,6 +2417,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       fastTravelIndex: this.fastTravelIndex,
       totalCrystals: TOTAL_CRYSTALS,
       toasts: this.toasts,
+      victorySel: this.victorySel,
       promptAnchor: this.interactionPromptAnchor(),
       promptLabel: this.interactionPromptLabel(),
       benches: this.getVisitedBenches(),

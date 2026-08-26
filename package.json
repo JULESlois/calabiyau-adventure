@@ -7,9 +7,10 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/input.test.ts tests/player-string.test.ts tests/player-animation.test.ts tests/save.test.ts tests/display.test.ts tests/audio.test.ts tests/world-mechanics.test.ts tests/room-transition.test.ts",
+    "test": "tsx --test tests/input.test.ts tests/player-string.test.ts tests/player-animation.test.ts tests/save.test.ts tests/display.test.ts tests/audio.test.ts tests/world-mechanics.test.ts tests/room-transition.test.ts tests/terrain.test.ts tests/progression.test.ts",
     "check:maps": "tsx scripts/check-maps.ts",
     "check:dist": "tsx scripts/check-dist.ts",
+    "qa:tiles": "tsx scripts/qa-tiles.ts",
     "stats": "tsx scripts/world-stats.ts",
     "slots": "tsx scripts/find-slots.ts",
     "build": "npm run typecheck && vite build",

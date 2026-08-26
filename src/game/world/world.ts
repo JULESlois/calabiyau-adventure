@@ -5,6 +5,8 @@
 // 图例(与旧版一致,新增几种):
 //   #  实体砖块      =  单向平台      ^  尖刺        %  弦膜(纸片形态可穿过)
 //   H  隐藏平台(香奈美声呐显形后短暂实体化)      &  极性弦膜(I 终端切换)
+//   @  可破坏墙(打碎后永久记录)  !  碎裂平台(踩住即塌,2.5 秒重建)
+//   ;  荆棘(掉血+减速,不击退)   :  冰面(低摩擦地表)
 //   P  新游戏出生点  T  信标(休息点/重生锚)        E  终局传送门(Boss 房)
 //   F  能力·弦化     W  能力·矩阵适配(蹬墙跳)      J  能力·弦翼(二段跳)
 //   D  能力·相位突进(冲刺)      S  引航者商人(记忆芯片商店)
@@ -221,6 +223,13 @@ const R: RoomDef[] = [];
   set(g, 13, 16, '1');
   set(g, 13, 50, '1');
   set(g, 13, 58, 'h');
+  // 可破坏墙:长廊高处的封存龛。地面通路完全不受影响,纯属探索奖励;
+  // 香奈美的声呐扫过时会先把它描出来 —— 侦察角色第一次有了"找墙"的用处。
+  rect(g, 12, 12, 47, 50, '='); // 落脚台
+  rect(g, 7, 11, 51, 56, '#'); // 龛体
+  rect(g, 9, 10, 52, 55, '.'); // 内腔
+  rect(g, 9, 10, 51, 51, '@'); // 可破坏的左面
+  set(g, 10, 53, 'e');
   R.push({
     id: 'coast_walk', zone: 'coast', name: '海滨 · 长廊', rows: rows(g),
     mapX: 3, mapY: 2,
@@ -250,6 +259,7 @@ const R: RoomDef[] = [];
   rect(g, 10, 10, 33, 36, '#');
   set(g, 9, 34, '*');
   set(g, 13, 46, '8'); // 迫击晶:海崖回访时的新威胁
+  rect(g, 13, 13, 52, 54, ';'); // 荆棘:巡逻机与刺镰之间的减速带,硬闯要付代价但不会被弹飞
   R.push({
     id: 'coast_cliff', zone: 'coast', name: '海滨 · 断崖', rows: rows(g),
     mapX: 4, mapY: 2,
@@ -275,6 +285,7 @@ const R: RoomDef[] = [];
   rect(g, 10, 13, 33, 33, '%');
   rect(g, 11, 13, 39, 39, '%'); // 未取得弦化时不能绕过祭坛离开
   set(g, 13, 37, '*');
+  set(g, 13, 27, '8'); // 迫击晶
   R.push({
     id: 'coast_shrine', zone: 'coast', name: '海滨 · 弦之祭坛', rows: rows(g),
     mapX: 5, mapY: 2,
@@ -299,6 +310,8 @@ const R: RoomDef[] = [];
   set(g, 13, 35, '5');
   set(g, 13, 49, '3');
   set(g, 13, 53, 'e');
+  set(g, 13, 30, '1'); // 平衡巡检:巡逻机原仅 8 处
+  set(g, 13, 45, '9'); // 逆弦犬
   R.push({
     id: 'coast_underpier', zone: 'coast', name: '海滨 · 潮下廊桥', rows: rows(g),
     mapX: 6, mapY: 2,
@@ -368,6 +381,7 @@ const R: RoomDef[] = [];
   set(g, 13, 25, '3');
   set(g, 13, 48, '4');
   set(g, 8, 38, '*');
+  rect(g, 14, 14, 44, 52, ':'); // 冰面:浪沫在堤面结冰,推不动也刹不住
   R.push({
     id: 'coast_stormwall', zone: 'coast', name: '海滨 · 风暴防波堤', rows: rows(g),
     mapX: 3, mapY: 5,
@@ -397,6 +411,7 @@ const R: RoomDef[] = [];
   set(g, 10, 32, 'a');
   set(g, 30, 14, '2');
   set(g, 30, 25, 'e');
+  set(g, 8, 30, '7'); // 弦蛭:吊在捷径封顶下的伏击
   R.push({
     id: 'coast_beacon', zone: 'coast', name: '海滨 · 旧灯芯室', rows: rows(g),
     mapX: 2, mapY: 5, mapH: 2,
@@ -428,6 +443,7 @@ const R: RoomDef[] = [];
   set(g, 13, 27, '>');
   set(g, 13, 38, '1');
   set(g, 13, 45, '5');
+  set(g, 13, 41, '9'); // 逆弦犬
   R.push({
     id: 'tide_entry', zone: 'tide', name: '沉潮 · 褪色门楼', rows: rows(g),
     mapX: 7, mapY: 7,
@@ -507,6 +523,7 @@ const R: RoomDef[] = [];
   set(g, 30, 36, '6');
   set(g, 18, 28, '*');
   set(g, 30, 48, 'h');
+  set(g, 30, 40, '8'); // 迫击晶
   R.push({
     id: 'tide_pumps', zone: 'tide', name: '沉潮 · 三阀泵房', rows: rows(g),
     mapX: 5, mapY: 6, mapH: 2,
@@ -567,6 +584,15 @@ const R: RoomDef[] = [];
   set(g, 30, 38, '3');
   set(g, 30, 44, '9'); // 逆弦犬:纸片形态也会被嗅到
   set(g, 30, 48, 'h');
+  // 可破坏墙:回廊西壁的封死骨龛(不在任何出口行上)
+  rect(g, 22, 26, 0, 6, '#');
+  rect(g, 24, 25, 1, 5, '.');
+  rect(g, 24, 25, 6, 6, '@');
+  set(g, 25, 3, 'h');
+  // 碎裂平台:踩上就开始塌,塌完 2.5 秒重建 —— 逼出"别站着想"的节奏
+  rect(g, 28, 28, 33, 36, '!');
+  set(g, 15, 45, '7'); // 弦蛭:吊在东侧顶板下
+  rect(g, 24, 24, 8, 12, '!');
   R.push({
     id: 'tide_gallery', zone: 'tide', name: '沉潮 · 沉没回廊', rows: rows(g),
     mapX: 6, mapY: 8, mapH: 2,
@@ -726,6 +752,8 @@ const R: RoomDef[] = [];
   set(g, 13, 20, '5'); // 爆裂魔怪
   set(g, 13, 46, '9'); // 逆弦犬:研究区正是逆弦化的源头
   rect(g, 12, 13, 41, 42, '#'); // 登牢台阶
+  set(g, 13, 34, 'R'); // 镜弦猎兵:精英原仅 3 处
+  set(g, 13, 51, '8'); // 迫击晶
   R.push({
     id: 'lab_cells', zone: 'lab', name: '研究区 · 拘留舱', rows: rows(g),
     mapX: 4, mapY: 3,
@@ -750,6 +778,8 @@ const R: RoomDef[] = [];
   set(g, 13, 31, '5');
   set(g, 13, 45, '3');
   set(g, 13, 49, 'e');
+  set(g, 13, 25, '1'); // 巡逻机
+  set(g, 13, 40, '9'); // 逆弦犬
   R.push({
     id: 'lab_resonance', zone: 'lab', name: '研究区 · 谐振档案库', rows: rows(g),
     mapX: 5, mapY: 4,
@@ -829,6 +859,13 @@ const R: RoomDef[] = [];
   set(g, 9, 27, '*');
   set(g, 13, 57, 'h');
   set(g, 13, 26, '9'); // 检疫区的逆弦犬
+  rect(g, 14, 14, 17, 23, ':'); // 冰面:冷却剂泄漏冻住的地板
+  rect(g, 13, 13, 48, 50, ';'); // 荆棘:晶源体侵蚀出的软刺带
+  // 可破坏墙:封存柜,从中层平台横向击碎
+  rect(g, 5, 9, 32, 37, '#');
+  rect(g, 7, 8, 33, 36, '.');
+  rect(g, 7, 8, 32, 32, '@');
+  set(g, 8, 34, 'h');
   R.push({
     id: 'lab_quarantine', zone: 'lab', name: '研究区 · 失控隔离场', rows: rows(g),
     mapX: 8, mapY: 5,
@@ -912,6 +949,9 @@ const R: RoomDef[] = [];
   set(g, 13, 34, '4');
   set(g, 13, 48, '6');
   set(g, 13, 43, '8'); // 迫击晶封锁中殿远端
+  set(g, 13, 36, '1'); // 巡逻机
+  set(g, 13, 24, '9'); // 逆弦犬
+  set(g, 13, 45, 'R'); // 镜弦猎兵
   R.push({
     id: 'choir_nave', zone: 'choir', name: '圣堂 · 失声中殿', rows: rows(g),
     mapX: 3, mapY: 0,
@@ -1053,11 +1093,14 @@ const R: RoomDef[] = [];
   set(g, 13, 45, 'T'); // 管风琴环信标(原在巨管风琴,给审判庭让位)
   set(g, 7, 26, '*');
   set(g, 8, 38, '7'); // 抄经室顶的弦蛭
+  set(g, 8, 41, '7'); // 第二只弦蛭
   set(g, 9, 36, '*');
   set(g, 13, 21, '*');
   set(g, 13, 10, '5');
   set(g, 13, 31, '6');
   set(g, 13, 43, '3');
+  rect(g, 13, 13, 33, 36, ';'); // 荆棘:抄经席之间的藤刺
+  rect(g, 11, 11, 24, 28, '!'); // 碎裂平台:节拍平台之外的另一种"不能久留"
   R.push({
     id: 'choir_scriptorium', zone: 'choir', name: '圣堂 · 无字抄经室', rows: rows(g),
     mapX: 2, mapY: 1,
@@ -1143,6 +1186,9 @@ const R: RoomDef[] = [];
   set(g, 13, 48, '3');
   set(g, 13, 56, 'h');
   set(g, 13, 44, '9'); // 天穹竖廊的逆弦犬
+  set(g, 13, 33, '1'); // 巡逻机
+  set(g, 13, 51, '9'); // 逆弦犬
+  set(g, 13, 58, 'R'); // 镜弦猎兵
   R.push({
     id: 'sky_corridor', zone: 'sky', name: '天穹 · 回廊', rows: rows(g),
     mapX: 8, mapY: 1,
@@ -1170,6 +1216,9 @@ const R: RoomDef[] = [];
   set(g, 13, 34, '3');
   set(g, 13, 52, '6');
   set(g, 13, 56, 'e');
+  rect(g, 13, 13, 22, 25, ';'); // 荆棘:高空风口结的霜刺
+  rect(g, 10, 10, 22, 25, '!'); // 碎裂平台:正压在荆棘上方,塌了就要吃刺
+  rect(g, 14, 14, 29, 36, ':'); // 冰面:背风面结的薄冰
   R.push({
     id: 'sky_windworks', zone: 'sky', name: '天穹 · 风箱庭', rows: rows(g),
     mapX: 9, mapY: 1,
@@ -1265,6 +1314,7 @@ const R: RoomDef[] = [];
   set(g, 13, 11, '2');
   set(g, 14, 11, '*');
   set(g, 30, 29, 'e');
+  set(g, 30, 22, '8'); // 迫击晶
   R.push({
     id: 'sky_belltower', zone: 'sky', name: '天穹 · 钟摆塔', rows: rows(g),
     mapX: 10, mapY: 3, mapH: 2,
@@ -1344,6 +1394,8 @@ const R: RoomDef[] = [];
   set(g, 13, 38, '4');
   set(g, 13, 51, '5');
   set(g, 13, 58, '2');
+  set(g, 13, 41, '1'); // 巡逻机
+  set(g, 13, 54, 'R'); // 镜弦猎兵
   R.push({
     id: 'hangar_assembly', zone: 'hangar', name: '机库 · 悬吊装配线', rows: rows(g),
     mapX: 13, mapY: 0,
@@ -1399,6 +1451,7 @@ const R: RoomDef[] = [];
   set(g, 30, 24, 'h');
   set(g, 30, 27, 'e');
   set(g, 30, 33, 'K');
+  set(g, 30, 29, '8'); // 迫击晶
   R.push({
     id: 'hangar_gate', zone: 'hangar', name: '机库 · 前厅', rows: rows(g),
     mapX: 14, mapY: 0, mapH: 2,
@@ -1511,6 +1564,12 @@ const R: RoomDef[] = [];
   set(g, 13, 26, '4');
   set(g, 13, 34, '6');
   set(g, 13, 44, '3');
+  // 可破坏墙:弹药舱的封存格,从西侧平台横向击碎
+  rect(g, 7, 11, 14, 20, '#');
+  rect(g, 9, 10, 15, 19, '.');
+  rect(g, 9, 10, 14, 14, '@');
+  set(g, 10, 17, 'e');
+  set(g, 9, 40, '7'); // 弦蛭:吊在弹药架顶板下
   R.push({
     id: 'hangar_hold', zone: 'hangar', name: '机库 · 弹药舱', rows: rows(g),
     mapX: 15, mapY: 3,
@@ -1775,6 +1834,17 @@ export interface ShopItem {
   name: string;
   desc: string;
   cost: number;
+  /**
+   * 可重复购买的条目。晶尘是**可再生**资源(敌人随房间重入刷新),
+   * 而一次性商品的总价是有限的 —— 只有一次性商品时,晶尘必然在中盘变成纯噪音。
+   * 递增价格给它一个永远填不满的去处。
+   */
+  repeatable?: { hpBonus: number; costStep: number; max: number };
+}
+
+/** 第 n 次(从 0 起)购买该可重复条目的价格。 */
+export function repeatableCost(item: ShopItem, owned: number): number {
+  return item.cost + (item.repeatable?.costStep ?? 0) * owned;
 }
 
 export interface HiddenChip {
@@ -1799,12 +1869,27 @@ export const HIDDEN_CHIP_MARKERS: Readonly<Record<string, string>> = {
 };
 
 /** 引航者商店:记忆芯片(购入后永久生效) */
+// 单程晶尘产出约 780(133 敌人 + 4 Boss),而原先全店只要 260 —— 三倍供过于求,
+// 且敌人随房间重入刷新,实际供给无上限。下面把一次性商品补到 460,
+// 再加一个价格递增的可重复条目(6 次共 720),让晶尘在全程都还有去处。
 export const SHOP_ITEMS: ShopItem[] = [
   { id: 'chip_hp', name: '记忆芯片·强健弦芯', desc: '生命上限 +25(购入时立即回复)', cost: 80 },
   { id: 'chip_blade', name: '记忆芯片·利刃回响', desc: '近战伤害 +30%', cost: 70 },
   { id: 'chip_regen', name: '记忆芯片·快弦回路', desc: '弦能回复速度 +40%', cost: 60 },
   { id: 'chip_magnet', name: '记忆芯片·晶尘磁石', desc: '晶尘吸取范围大幅扩大', cost: 50 },
+  { id: 'chip_quarry', name: '记忆芯片·裂石之握', desc: '近战拆可破坏墙的效率翻倍', cost: 90 },
+  { id: 'chip_guard', name: '记忆芯片·潮汐外壳', desc: '受击后的无敌时间 +25%', cost: 110 },
+  {
+    id: 'forge_core',
+    name: '弦芯熔铸',
+    desc: '生命上限 +4(可重复,价格递增)',
+    cost: 45,
+    repeatable: { hpBonus: 4, costStep: 30, max: 6 },
+  },
 ];
+
+/** 一次性芯片(不含可重复条目)—— 完成度统计与存档白名单都只认这一批。 */
+export const SHOP_CHIPS: ShopItem[] = SHOP_ITEMS.filter((item) => !item.repeatable);
 
 export interface CrystalMilestone {
   count: number;
@@ -1815,21 +1900,33 @@ export interface CrystalMilestone {
 }
 
 /** 弦晶不再只是计数:四段共鸣提供可感知的永久成长。 */
+// 里程碑必须覆盖弦晶总量的绝大部分。原先最后一档停在 42,而世界里有 80 枚 ——
+// 也就是说后半程 47.5% 的收集品在机制上毫无作用,探索到一半奖励曲线就断了。
+// 末档定在 68/80(85%)而不是 80:最后一档不该要求完美收集,留 12 枚容错。
+// check-maps 会校验末档确实落在总量的 80%–90% 区间,防止世界扩张后这条曲线再次断掉。
 export const CRYSTAL_MILESTONES: CrystalMilestone[] = [
   { count: 8, name: '微光共鸣', desc: '弦能上限 +10', energyBonus: 10 },
   { count: 18, name: '稳固共鸣', desc: '生命上限 +10', hpBonus: 10 },
   { count: 30, name: '潮汐共鸣', desc: '弦能上限 +15', energyBonus: 15 },
   { count: 42, name: '弦界共鸣', desc: '生命上限 +15', hpBonus: 15 },
+  { count: 54, name: '涌流共鸣', desc: '弦能上限 +15', energyBonus: 15 },
+  { count: 68, name: '万弦共鸣', desc: '生命上限 +20', hpBonus: 20 },
 ];
+
+export const FORGE_ITEM = SHOP_ITEMS.find((item) => item.id === 'forge_core')!;
+/** 弦芯熔铸的合法层数上限 —— 存档校验与购买逻辑共用这一个来源。 */
+export const FORGE_MAX = FORGE_ITEM.repeatable?.max ?? 0;
 
 export function progressionStats(
   crystalCount: number,
   chips: ReadonlySet<string>,
+  forgeLevel = 0,
 ): { hpMax: number; energyMax: number } {
   let hpMax = MAX_HP;
   let energyMax = MAX_STRING;
   if (chips.has('chip_hp')) hpMax += 25;
   if (chips.has('relic_beacon')) hpMax += 10;
+  hpMax += Math.max(0, Math.min(FORGE_MAX, forgeLevel)) * (FORGE_ITEM.repeatable?.hpBonus ?? 0);
   for (const milestone of CRYSTAL_MILESTONES) {
     if (crystalCount < milestone.count) continue;
     hpMax += milestone.hpBonus ?? 0;

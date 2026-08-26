@@ -55,6 +55,20 @@ export const FLASH_CHARGE = 4.0; // 强化窗口持续秒数
 export const FLASH_MULT = 1.8; // 下一击伤害倍率
 export const FLASH_ENERGY_REFUND = 10; // 触发时返还弦能,鼓励继续弦化节奏
 
+// ---- 地形词汇(Phase 1)----
+// 可破坏墙(tile @):近战一击顶数发子弹,鼓励贴脸拆墙而不是站远处点射
+export const BREAKABLE_HITS = 6; // 累计"点数"达到即碎
+export const BREAKABLE_MELEE_HITS = 3; // 一次近战计 3 点 → 两刀拆一格
+// 碎裂平台(tile !):塌落后必定重建,否则单块平台过河会造成不可逆卡关
+export const CRUMBLE_DELAY = 0.45; // 踩住多久开始塌
+export const CRUMBLE_RESPAWN = 2.5; // 塌落后多久重建
+// 荆棘(tile ;):非致死减速带 —— 疼且慢,但不击退不弹起,给"硬闯"留成本可控的选项
+export const THORN_DMG = 4;
+export const THORN_SLOW_TIME = 0.6;
+export const THORN_SLOW_MULT = 0.6; // 减速 40%
+// 冰面(tile :):加速与减速共用同一个 accel 项,所以压低它即可同时得到"推不动"与"刹不住"
+export const ICE_ACCEL_MULT = 0.35;
+
 export const COLORS = {
   hud: '#e8ecff',
   hp: '#ff5d7e',

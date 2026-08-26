@@ -50,6 +50,8 @@ export interface PlayerHost extends WorldApi {
   readonly world: WorldState;
   readonly playerBullets: PlayerBullet[];
   tileAt(c: number, r: number): number;
+  /** 冰面在 tileAt() 里已折回 T_SOLID,所以"滑不滑"必须单独问一次。 */
+  isIceAt(c: number, r: number): boolean;
   deployTurret(x: number, y: number): void;
   throwSonarDart(x: number, y: number, dir: number): void;
 }

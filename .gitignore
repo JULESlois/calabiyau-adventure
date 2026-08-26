@@ -5,3 +5,5 @@ dist
 
 .issues-dump.txt
 gui-test-screenshots/
+
+.qa/

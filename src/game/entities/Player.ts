@@ -28,6 +28,8 @@ import {
   STRING_DRAIN,
   STRING_REGEN,
   SWITCH_CD,
+  THORN_SLOW_MULT,
+  ICE_ACCEL_MULT,
   TILE,
   WALL_STRING_DRAIN,
   WALL_JUMP_VX,
@@ -75,6 +77,8 @@ export class Player {
   takeoffAnimT = 0;
   landingAnimT = 0;
   turnAnimT = 0;
+  /** 荆棘减速剩余秒数 */
+  slowT = 0;
   dead = false;
   shootFlashT = 0;
   /** 进入纸片形态以来的秒数;弦闪据此判定"精准" */
@@ -242,6 +246,7 @@ export class Player {
     this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
     this.dropTimer = Math.max(0, this.dropTimer - dt);
     this.invuln = Math.max(0, this.invuln - dt);
+    this.slowT = Math.max(0, this.slowT - dt);
     this.shootCd = Math.max(0, this.shootCd - dt);
     this.switchCd = Math.max(0, this.switchCd - dt);
     this.comboWindow = Math.max(0, this.comboWindow - dt);
@@ -402,8 +407,12 @@ export class Player {
     const left = input.down('left');
     const right = input.down('right');
     const moveDir = (right ? 1 : 0) - (left ? 1 : 0);
-    const maxSpeed = RUN_SPEED * (this.paper ? PAPER_SPEED_MULT : this.charging ? 0.6 : 1);
-    const accel = this.onGround ? RUN_ACCEL : AIR_ACCEL;
+    const slowMul = this.slowT > 0 ? THORN_SLOW_MULT : 1;
+    const maxSpeed = RUN_SPEED * slowMul * (this.paper ? PAPER_SPEED_MULT : this.charging ? 0.6 : 1);
+    // 冰面:加速与减速共用这一个 accel 项(见下方 approach 的两个分支),
+    // 所以压低它同时得到"推不动"和"刹不住" —— 这正是冰的手感,不需要单独的摩擦系数。
+    const onIce = this.onGround && this.standingOnIce(ps);
+    const accel = (this.onGround ? RUN_ACCEL : AIR_ACCEL) * (onIce ? ICE_ACCEL_MULT : 1);
     if (this.stringMode === 'wall') {
       this.vx = 0;
     } else if (moveDir !== 0) {
@@ -636,14 +645,21 @@ export class Player {
   }
 
   /** 受伤。返回是否实际受伤 */
-  hurt(dmg: number, fromX: number, ps: PlayerHost): boolean {
+  /**
+   * knockback=false 供荆棘一类的"减速带"使用:掉血但不打断走位。
+   * 击退是尖刺/敌人的语言,荆棘刻意不说这门语言 —— 否则它就只是一种更弱的尖刺。
+   */
+  hurt(dmg: number, fromX: number, ps: PlayerHost, knockback = true): boolean {
     if (this.invuln > 0 || this.dead) return false;
     this.hp -= dmg;
-    this.invuln = INVULN_TIME;
-    const dir = this.x < fromX ? -1 : 1;
-    this.vx = dir * 150;
-    this.vy = -170;
-    this.setStringMode('normal', ps);
+    // 潮汐外壳:受击后的无敌时间 +25%
+    this.invuln = INVULN_TIME * (ps.world.chips.has('chip_guard') ? 1.25 : 1);
+    if (knockback) {
+      const dir = this.x < fromX ? -1 : 1;
+      this.vx = dir * 150;
+      this.vy = -170;
+      this.setStringMode('normal', ps);
+    }
     ps.sfx('hurt');
     ps.shake(4);
     ps.particles.burst(this.x, this.centerY(), 10, '#ff5d7e', 100, 0.5);
@@ -652,6 +668,16 @@ export class Player {
       this.dead = true;
     }
     return true;
+  }
+
+  /** 脚下任意一格是冰即算站在冰上 —— 半只脚踩冰也滑,过渡处才不会有硬边界。 */
+  private standingOnIce(ps: PlayerHost): boolean {
+    const r = this.rect();
+    const row = Math.floor((this.y + 1) / TILE);
+    for (let c = Math.floor(r.x / TILE); c <= Math.floor((r.x + r.w - 0.01) / TILE); c++) {
+      if (ps.isIceAt(c, row)) return true;
+    }
+    return false;
   }
 
   private standingOnOneway(ps: PlayerHost): boolean {

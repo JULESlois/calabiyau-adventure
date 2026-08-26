@@ -2,10 +2,30 @@
 // 运行: npm run check:maps
 import { readFileSync } from 'node:fs';
 import { DT, TILE } from '../src/game/constants';
-import { parseRows, T_EMPTY, T_MEMBRANE, T_ONEWAY, T_SOLID } from '../src/game/levels/levels';
+import {
+  parseRows,
+  T_BREAKABLE,
+  T_CRUMBLE,
+  T_EMPTY,
+  T_ICE,
+  T_MEMBRANE,
+  T_ONEWAY,
+  T_SOLID,
+  T_SPIKE,
+  T_THORN,
+} from '../src/game/levels/levels';
 import { PlayState } from '../src/game/states/PlayState';
 import type { Engine } from '../src/game/Engine';
-import { ROOMS, ROOM_LIST, START_ROOM, ZONES, type Ability } from '../src/game/world/world';
+import {
+  CRYSTAL_MILESTONES,
+  ROOMS,
+  ROOM_LIST,
+  SHOP_ITEMS,
+  START_ROOM,
+  totalCrystals,
+  ZONES,
+  type Ability,
+} from '../src/game/world/world';
 import { WorldState } from '../src/game/world/WorldState';
 
 declare const process: { exit(code: number): void };
@@ -18,10 +38,34 @@ const err = (msg: string) => {
 };
 const supportsFloor = (tile: number) => tile === T_SOLID || tile === T_ONEWAY || tile === T_MEMBRANE;
 
+/**
+ * Phase 1 地形对静态校验而言只是基础类型的别名:
+ * 可破坏墙/冰面按实体、碎裂平台按单向、荆棘按尖刺(都是"不该站人的接触伤害")。
+ * 在这里折一次,下面所有既有规则都不必逐条改写 —— 与运行时 tileAt() 的做法一致。
+ */
+const STATIC_TILE_ALIAS = new Map<number, number>([
+  [T_BREAKABLE, T_SOLID],
+  [T_ICE, T_SOLID],
+  [T_CRUMBLE, T_ONEWAY],
+  [T_THORN, T_SPIKE],
+]);
+
+function parseForChecks(rows: string[]): ReturnType<typeof parseRows> {
+  const lvl = parseRows(rows);
+  for (let i = 0; i < lvl.tiles.length; i++) {
+    const alias = STATIC_TILE_ALIAS.get(lvl.tiles[i]);
+    if (alias !== undefined) lvl.tiles[i] = alias;
+  }
+  return lvl;
+}
+
 const parsed = new Map<string, ReturnType<typeof parseRows>>();
+/** 未折叠的原始 tile,供 Phase 1 地形的专属规则使用。 */
+const rawParsed = new Map<string, ReturnType<typeof parseRows>>();
 for (const room of ROOM_LIST) {
   if (parsed.has(room.id)) err(`房间 id 重复: ${room.id}`);
-  parsed.set(room.id, parseRows(room.rows));
+  parsed.set(room.id, parseForChecks(room.rows));
+  rawParsed.set(room.id, parseRows(room.rows));
 }
 if (!ROOMS[START_ROOM]) err(`起始房间不存在: ${START_ROOM}`);
 
@@ -216,6 +260,169 @@ for (const z of Object.values(ZONES)) {
   if (benches.length === 0) err(`场景 ${z.name} 没有信标`);
 }
 
+// ---------------- Phase 1 地形规则 ----------------
+// 可破坏墙的设计契约:打碎它必须有回报。装饰性假墙会训练玩家"墙都能打",
+// 之后每一堵真墙都变成猜谜 —— 所以这条不是风格建议,是构建失败。
+const REWARD_SPAWNS = new Set('*heabcd'.split(''));
+let breakableCount = 0;
+let crumbleCount = 0;
+let thornCount = 0;
+let iceCount = 0;
+
+for (const room of ROOM_LIST) {
+  const raw = rawParsed.get(room.id)!;
+  const { w, h, tiles } = raw;
+  const at = (c: number, r: number) => (c < 0 || c >= w || r < 0 || r >= h ? T_SOLID : tiles[r * w + c]);
+  const blocks = (t: number) => t === T_SOLID || t === T_MEMBRANE || t === T_BREAKABLE || t === T_ICE;
+
+  for (const t of tiles) {
+    if (t === T_BREAKABLE) breakableCount++;
+    else if (t === T_CRUMBLE) crumbleCount++;
+    else if (t === T_THORN) thornCount++;
+    else if (t === T_ICE) iceCount++;
+  }
+
+  // 把开放空间(把未击碎的 @ 当作实体)分成连通区域
+  const region = new Int32Array(w * h).fill(-1);
+  const regionSize: number[] = [];
+  const regionReward: boolean[] = [];
+  const rewardAt = new Set(raw.spawns.filter((s) => REWARD_SPAWNS.has(s.char)).map((s) => s.row * w + s.col));
+  let nextRegion = 0;
+  for (let start = 0; start < w * h; start++) {
+    if (region[start] !== -1 || blocks(tiles[start])) continue;
+    const id = nextRegion++;
+    let size = 0;
+    let reward = false;
+    const stack = [start];
+    region[start] = id;
+    while (stack.length) {
+      const cur = stack.pop()!;
+      size++;
+      if (rewardAt.has(cur)) reward = true;
+      const c = cur % w;
+      const r = (cur - c) / w;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nc = c + dc;
+        const nr = r + dr;
+        if (nc < 0 || nc >= w || nr < 0 || nr >= h) continue;
+        const ni = nr * w + nc;
+        if (region[ni] !== -1 || blocks(tiles[ni])) continue;
+        region[ni] = id;
+        stack.push(ni);
+      }
+    }
+    regionSize.push(size);
+    regionReward.push(reward);
+  }
+
+  // 逐个 @ 连通簇判定
+  const seen = new Uint8Array(w * h);
+  for (let start = 0; start < w * h; start++) {
+    if (seen[start] || tiles[start] !== T_BREAKABLE) continue;
+    const cluster: number[] = [];
+    const neighbours = new Set<number>();
+    const stack = [start];
+    seen[start] = 1;
+    while (stack.length) {
+      const cur = stack.pop()!;
+      cluster.push(cur);
+      const c = cur % w;
+      const r = (cur - c) / w;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nc = c + dc;
+        const nr = r + dr;
+        if (nc < 0 || nc >= w || nr < 0 || nr >= h) continue;
+        const ni = nr * w + nc;
+        if (tiles[ni] === T_BREAKABLE) {
+          if (!seen[ni]) {
+            seen[ni] = 1;
+            stack.push(ni);
+          }
+        } else if (region[ni] >= 0) {
+          neighbours.add(region[ni]);
+        }
+      }
+    }
+    const where = `${room.id} 的可破坏墙 @ (col ${cluster[0] % w}, row ${Math.floor(cluster[0] / w)})`;
+    if (neighbours.size === 0) {
+      err(`${where} 四周全是实体,玩家永远打不到它`);
+      continue;
+    }
+    if (neighbours.size === 1) {
+      // 两侧本就连通:只有当它护着奖励时才算"藏了东西"
+      if (![...neighbours].some((id) => regionReward[id])) {
+        err(`${where} 没有隔开任何空间,后面也没有奖励 —— 装饰性假墙`);
+      }
+      continue;
+    }
+    // 隔开了两个区域:若较小的一侧是个死胡同小腔,它必须真的装着东西
+    const smallest = [...neighbours].reduce((a, b) => (regionSize[a] <= regionSize[b] ? a : b));
+    if (regionSize[smallest] <= 12 && !regionReward[smallest]) {
+      err(`${where} 后面是 ${regionSize[smallest]} 格空腔且没有奖励 —— 空腔必须装着东西`);
+    }
+  }
+
+  // 碎裂平台底下必须是空的,否则塌不塌都一样,机关等于没上线
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      if (at(c, r) !== T_CRUMBLE) continue;
+      if (blocks(at(c, r + 1)) || at(c, r + 1) === T_ONEWAY) {
+        err(`${room.id} 的碎裂平台 ! (col ${c}, row ${r}) 正下方就是落脚点,塌落没有意义`);
+      }
+    }
+  }
+}
+
+if (breakableCount === 0) err('世界里没有任何可破坏墙 @,Phase 1 地形词汇未铺设');
+console.log(
+  `  [通过] Phase 1 地形铺设 ${breakableCount} 可破坏墙 / ${crumbleCount} 碎裂平台 / ` +
+    `${thornCount} 荆棘 / ${iceCount} 冰面`,
+);
+
+// ---------------- 奖励曲线不得中途断掉 ----------------
+// 世界一扩张,收集品数量就涨,而里程碑与商店价格是写死的常量 —— 于是奖励曲线
+// 会静默地在半程结束。这里把"探索到最后仍有回报"变成一条会失败的构建规则。
+{
+  const crystals = totalCrystals();
+  const counts = CRYSTAL_MILESTONES.map((m) => m.count);
+  for (let i = 1; i < counts.length; i++) {
+    if (counts[i] <= counts[i - 1]) err(`弦晶里程碑未递增: ${counts[i - 1]} → ${counts[i]}`);
+  }
+  const last = counts[counts.length - 1];
+  const ratio = last / crystals;
+  // 下限 80%:再低就意味着后段收集毫无作用;上限 92%:末档不该要求接近完美收集
+  if (ratio < 0.8 || ratio > 0.92) {
+    err(
+      `弦晶末档里程碑 ${last} 占总量 ${crystals} 的 ${(ratio * 100).toFixed(0)}%,`
+        + '应落在 80%–92%(过低=后半程收集无回报,过高=强迫完美收集)',
+    );
+  } else {
+    console.log(`  [通过] 弦晶奖励曲线覆盖到 ${last}/${crystals}(${(ratio * 100).toFixed(0)}%)`);
+  }
+
+  // 晶尘是可再生资源(敌人随房间重入刷新),因此必须存在一个价格递增的无限去处,
+  // 否则一次性商品买完后,晶尘的掉落/音效/动画全部退化成噪音。
+  if (!SHOP_ITEMS.some((item) => item.repeatable)) {
+    err('商店没有可重复购买的条目 —— 晶尘在买完一次性商品后会变成纯噪音');
+  }
+  // 一次性商品的总价不该被单程产出轻易淹没
+  const enemyChars = allSpawns.filter((s) => '123456789R'.includes(s.char));
+  const richKinds = new Set(['5', '6']); // 爆裂魔怪 / 刺镰魔怪掉落更多
+  const dustSupply = enemyChars.reduce((sum, s) => sum + (richKinds.has(s.char) ? 5 : 2.5), 0)
+    + 60 + 80 + 70 + 120; // 四场 Boss
+  const oneOffCost = SHOP_ITEMS.filter((i) => !i.repeatable).reduce((sum, i) => sum + i.cost, 0);
+  if (oneOffCost < dustSupply * 0.5) {
+    err(
+      `一次性商品总价 ${oneOffCost} 不足单程晶尘产出 ${Math.round(dustSupply)} 的一半,`
+        + '中盘就会买空',
+    );
+  } else {
+    console.log(
+      `  [通过] 晶尘经济 单程产出约 ${Math.round(dustSupply)} / 一次性商品 ${oneOffCost} + 可重复条目`,
+    );
+  }
+}
+
 const shortcutIds = new Set<string>();
 for (const room of ROOM_LIST) {
   for (const shortcut of room.shortcuts ?? []) {
@@ -377,10 +584,12 @@ console.log(
   `  [通过] 世界规模 ${ROOM_LIST.length} 房间 / ${Object.keys(ZONES).length} 区域 / ${edges.size} 连接 / ${cycleRank} 环路 / ${junctions} 枢纽`,
 );
 
-// ---------------- README 拓扑数字防漂移 ----------------
-// 上面的预算只是下限,世界扩张时 README 里写死的规模数字会静默过期。
-// 这里把 README 的说法与实际计算值对账,让文档跟着数据一起失败。
-const README_CLAIMS: { label: string; pattern: RegExp; actual: number }[] = [
+// ---------------- 面向读者的文档:拓扑数字防漂移 ----------------
+// 上面的预算只是下限,世界扩张时文档里写死的规模数字会静默过期。
+// 这里把文档的说法与实际计算值对账,让文档跟着数据一起失败。
+// 每份对外描述世界规模的文件都必须列在这里 —— 没被对账的文档一定会腐烂,
+// intro.html 就是先例:它停在"四十八个互联房间"整整十个房间没人发现。
+const TOPOLOGY_CLAIMS: { label: string; pattern: RegExp; actual: number }[] = [
   { label: '区域数', pattern: /(\d+)\s*个区域/, actual: Object.keys(ZONES).length },
   { label: '房间数', pattern: /(\d+)\s*个互联房间/, actual: ROOM_LIST.length },
   { label: '连接数', pattern: /(\d+)\s*条连接/, actual: edges.size },
@@ -388,28 +597,35 @@ const README_CLAIMS: { label: string; pattern: RegExp; actual: number }[] = [
   { label: '三向以上枢纽数', pattern: /(\d+)\s*个三向以上枢纽/, actual: junctions },
   { label: '永久捷径数', pattern: /(\d+)\s*道升降闸/, actual: shortcutIds.size },
 ];
-let readme = '';
-try {
-  readme = readFileSync('README.md', 'utf8');
-} catch {
-  err('无法读取 README.md,拓扑数字无法对账');
-}
-if (readme) {
-  let drifted = 0;
-  for (const claim of README_CLAIMS) {
-    const match = readme.match(claim.pattern);
+/** 第二个字段是该文件必须对账的项;着陆页只讲区域与房间,不必背下全部拓扑。 */
+const CLAIM_FILES: { file: string; labels: string[] }[] = [
+  { file: 'README.md', labels: TOPOLOGY_CLAIMS.map((c) => c.label) },
+  { file: 'intro.html', labels: ['区域数', '房间数'] },
+];
+
+let checkedClaims = 0;
+for (const { file, labels } of CLAIM_FILES) {
+  let text = '';
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    err(`无法读取 ${file},拓扑数字无法对账`);
+    continue;
+  }
+  for (const claim of TOPOLOGY_CLAIMS.filter((c) => labels.includes(c.label))) {
+    checkedClaims++;
+    const match = text.match(claim.pattern);
     if (!match) {
-      err(`README 中找不到${claim.label}的说明(应为「${claim.actual}」),模式 ${claim.pattern}`);
-      drifted++;
+      err(`${file} 中找不到${claim.label}的说明(应为「${claim.actual}」),模式 ${claim.pattern}`);
       continue;
     }
-    const claimed = Number(match[1]);
-    if (claimed !== claim.actual) {
-      err(`README ${claim.label}写作 ${claimed},实际为 ${claim.actual};请同步 README`);
-      drifted++;
+    if (Number(match[1]) !== claim.actual) {
+      err(`${file} ${claim.label}写作 ${match[1]},实际为 ${claim.actual};请同步该文件`);
     }
   }
-  if (drifted === 0) console.log(`  [通过] README 的 ${README_CLAIMS.length} 项拓扑数字与世界数据一致`);
+}
+if (errors === 0) {
+  console.log(`  [通过] ${CLAIM_FILES.length} 份文档的 ${checkedClaims} 项拓扑数字与世界数据一致`);
 }
 
 // ---------------- 能力推进拓扑可达性(BFS 到不动点) ----------------

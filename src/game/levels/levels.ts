@@ -2,7 +2,11 @@
 // 图例:
 //   #  实体砖块        =  单向平台        ^  尖刺        %  弦膜(纸片形态可穿过)
 //   H  隐藏平台(香奈美的声呐显形后短暂实体化)  &  极性弦膜(I 终端切换)
+//   @  可破坏墙(击打若干次后永久碎裂)      !  碎裂平台(踩上后塌落,离房重置)
+//   ;  荆棘(非致死减速带)                 :  冰面(低摩擦地表)
 //   其余字符视为实体生成点(spawns),由 PlayState 解释。
+//
+// 地形 tile 一律用标点,生成符一律用字母数字 —— 见 docs/ROADMAP.md 的字符命名空间。
 
 export interface LevelTheme {
   skyTop: string;
@@ -27,6 +31,10 @@ export const T_SPIKE = 3;
 export const T_MEMBRANE = 4;
 export const T_HIDDEN = 5; // 隐藏平台:被声呐显形后短暂实体化
 export const T_POLARITY = 6; // 研究区极性弦膜:由房间终端切换
+export const T_BREAKABLE = 7; // 可破坏墙:未碎时等同实体,碎裂永久写入存档
+export const T_CRUMBLE = 8; // 碎裂平台:踩住片刻后塌落,过一会儿重建
+export const T_THORN = 9; // 荆棘:不实体,接触掉血并减速(与尖刺的击退区分)
+export const T_ICE = 10; // 冰面:实体地表,加减速都被压低
 
 export interface SpawnPoint {
   char: string;
@@ -57,6 +65,10 @@ export function parseRows(rows: string[]): ParsedRows {
         case '%': tiles[r * w + c] = T_MEMBRANE; break;
         case 'H': tiles[r * w + c] = T_HIDDEN; break;
         case '&': tiles[r * w + c] = T_POLARITY; break;
+        case '@': tiles[r * w + c] = T_BREAKABLE; break;
+        case '!': tiles[r * w + c] = T_CRUMBLE; break;
+        case ';': tiles[r * w + c] = T_THORN; break;
+        case ':': tiles[r * w + c] = T_ICE; break;
         case '.': case ' ': break;
         default:
           spawns.push({ char: ch, col: c, row: r });
