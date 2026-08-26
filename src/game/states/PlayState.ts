@@ -48,7 +48,8 @@ import { Background } from '../render/background';
 import { drawCandle, drawExitGate, drawPickup } from '../render/sprites';
 import { drawSolidTile, roomSeedOf, tileNoise } from '../render/tileStyles';
 import { drawAbilityShrine, drawBench, drawCagedKanami, drawNavigator, drawVillager } from '../render/props';
-import { NPC_MARKERS, npcById, type NpcDef } from '../npc';
+import { havenLiveliness, NPC_MARKERS, npcById, type NpcDef } from '../npc';
+import { drawHavenDecor } from '../render/havenProps';
 import { drawDialogue, pageLength, type DialogueView } from '../render/dialogue';
 import { drawHUD } from '../render/hud';
 import { CONTROLS_PAGE_COUNT, drawControlsPanel } from '../render/controlsPanel';
@@ -2113,6 +2114,10 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     if (this.kanamiSpot) drawCagedKanami(ctx, this.kanamiSpot.x, this.kanamiSpot.y, this.time);
     if (this.shopSpot) {
       drawNavigator(ctx, this.shopSpot.x, this.shopSpot.y, this.time, false);
+    }
+    // 城镇装饰:热闹度全部由既有旗标推出,画在 NPC 之前(人站在摊子前面)
+    if (this.room.zone === 'haven') {
+      drawHavenDecor(ctx, this.roomId, havenLiveliness(this.world), this.theme, this.time);
     }
     for (const spot of this.npcSpots) drawVillager(ctx, spot.x, spot.y, this.time, spot.npc.color);
     if (this.gate.active) drawExitGate(ctx, this.gate.x, this.gate.y, this.time);

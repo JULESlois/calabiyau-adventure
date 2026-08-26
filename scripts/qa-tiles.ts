@@ -12,7 +12,8 @@ import { TILE, VIEW_H, VIEW_W } from '../src/game/constants';
 import type { Engine } from '../src/game/Engine';
 import { drawOverlays, type OverlayView } from '../src/game/render/overlays';
 import { drawDialogue, pageLength } from '../src/game/render/dialogue';
-import { npcById } from '../src/game/npc';
+import { havenLiveliness, npcById } from '../src/game/npc';
+import { drawHavenDecor } from '../src/game/render/havenProps';
 import { PlayState } from '../src/game/states/PlayState';
 import { HIDDEN_CHIPS, ROOM_LIST, SHOP_CHIPS, SHORTCUT_IDS, ZONES } from '../src/game/world/world';
 import { BOSS_FLAGS, WorldState } from '../src/game/world/WorldState';
@@ -277,6 +278,30 @@ const ZONE_SHOTS: [string, string][] = [
   ['coast', '20-zone-coast'], ['tide', '21-zone-tide'], ['lab', '22-zone-lab'],
   ['choir', '23-zone-choir'], ['sky', '24-zone-sky'], ['hangar', '25-zone-hangar'],
 ];
+// 城镇成长:同一条街,热闹度 0 与 3 的对比
+function shootTown(name: string, roomId: string, flags: string[], colFrom: number, cols: number) {
+  const world = new WorldState();
+  for (const f of flags) world.flags.add(f);
+  const engine = {
+    world,
+    input: { pressed: () => false, down: () => false, lastDevice: 'keyboard' as const },
+    audio: { sfx() {}, playSong() {}, playStinger() {}, setMusicState() {} },
+    persistWorld() {}, startRoom() {}, respawnAtBench() {}, showTitle() {},
+  } as unknown as Engine;
+  const state = new PlayState(engine, roomId, { kind: 'start' });
+  const ctx = new MiniCtx(cols * TILE * SCALE, 9 * TILE * SCALE);
+  const cx = colFrom * TILE;
+  const cy = 7 * TILE;
+  ctx.translate(-cx, -cy);
+  const priv = state as unknown as { renderTiles(c: unknown, x: number, y: number): void };
+  priv.renderTiles(ctx as unknown as CanvasRenderingContext2D, cx, cy);
+  drawHavenDecor(ctx as unknown as CanvasRenderingContext2D, roomId, havenLiveliness(world), state.theme, 2.4);
+  writePNG(`.qa/${name}.png`, ctx.w, ctx.h, ctx.buf);
+  console.log(`  ${name}.png  热闹度 ${havenLiveliness(world)}`);
+}
+shootTown('28-town-lv0', 'haven_lane', [], 10, 22);
+shootTown('29-town-lv3', 'haven_lane', ['rescue:kanami', 'boss:warden', 'boss:gambit'], 10, 22);
+
 shoot('26-haven-gate', 'haven_gate', 6, 8, 16, 8);
 shoot('27-haven-lane', 'haven_lane', 14, 8, 16, 8);
 shoot('20-zone-coast', 'coast_walk', 20, 8, 14, 8);

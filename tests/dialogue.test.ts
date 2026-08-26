@@ -15,6 +15,7 @@ import {
   presentNpcs,
 } from '../src/game/npc';
 import { pageLength } from '../src/game/render/dialogue';
+import { havenDecorCount, havenDecorFor } from '../src/game/render/havenProps';
 import { PlayState, type Interactable } from '../src/game/states/PlayState';
 import { CRYSTAL_MILESTONES, ROOM_LIST, totalCrystals } from '../src/game/world/world';
 import { WorldState } from '../src/game/world/WorldState';
@@ -220,4 +221,78 @@ test('NPCs are placed on real ground in real rooms', () => {
     });
   }
   assert.ok(placed >= NPCS.length, `世界里只放了 ${placed} 个 NPC,少于名册 ${NPCS.length} 人`);
+});
+
+// ---------------- 城镇成长必须看得见(2.3 的另一半) ----------------
+// 逻辑早就有了,但如果画面上什么都不变,那个设计就只是一个返回数字的函数。
+
+test('the town gains visible decoration at every liveliness tier', () => {
+  const rooms = ['haven_gate', 'haven_lane', 'haven_view'];
+  const total = (lv: number) => rooms.reduce((n, id) => n + havenDecorCount(id, lv), 0);
+  let previous = total(0);
+  assert.ok(previous > 0, 'Lv0 也该有长椅之类的东西,空城不是城');
+  for (let lv = 1; lv <= 3; lv++) {
+    const now = total(lv);
+    assert.ok(now > previous, `热闹度 ${lv} 相比 ${lv - 1} 没有任何新装饰出现`);
+    previous = now;
+  }
+});
+
+test('each tier introduces the thing the roadmap promised', () => {
+  const kinds = (lv: number) =>
+    new Set(['haven_gate', 'haven_lane', 'haven_view'].flatMap((id) => havenDecorFor(id, lv).map((d) => d.kind)));
+  assert.ok(kinds(0).has('bench'), 'Lv0:长椅');
+  assert.ok(!kinds(0).has('teastall'), 'Lv0 不该有茶摊');
+  assert.ok(kinds(1).has('teastall'), 'Lv1:茶摊开张');
+  assert.ok(kinds(2).has('windmill'), 'Lv2:风车转起来');
+  assert.ok(kinds(2).has('child'), 'Lv2:孩子出现');
+  assert.ok(kinds(3).has('market'), 'Lv3:夜市摊位');
+});
+
+test('decoration never regresses as the adventure advances', () => {
+  for (const id of ['haven_gate', 'haven_lane', 'haven_view']) {
+    for (let lv = 1; lv <= 4; lv++) {
+      assert.ok(
+        havenDecorCount(id, lv) >= havenDecorCount(id, lv - 1),
+        `${id} 在热闹度 ${lv} 反而变少了`,
+      );
+    }
+  }
+});
+
+test('every NPC carries three to five reachable conversations', () => {
+  // 路线图 2.4:每人 3-5 组分支对话。少于 3 组,"随进度改口"就立不住。
+  const build = (opts: { paper?: boolean; flags?: string[]; crystals?: number; rooms?: number }) => {
+    const w = new WorldState();
+    if (opts.paper) w.grant('paper');
+    for (const f of opts.flags ?? []) w.flags.add(f);
+    for (let i = 0; i < (opts.crystals ?? 0); i++) w.crystals.add(`r:${i}:0`);
+    ROOM_LIST.slice(0, opts.rooms ?? 0).forEach((r) => w.visited.add(r.id));
+    return w;
+  };
+  const states = [
+    build({}), build({ paper: true }), build({ paper: true, rooms: 50 }),
+    build({ paper: true, flags: ['rescue:kanami'] }),
+    build({ paper: true, flags: ['boss:warden'] }),
+    build({ paper: true, flags: ['boss:warden', 'boss:arbiter'] }),
+    build({ paper: true, flags: ['boss:guardian'] }),
+    build({ paper: true, crystals: 1 }),
+    build({ paper: true, crystals: 7, flags: ['rescue:kanami'] }),
+    build({ paper: true, crystals: 79, flags: ['rescue:kanami'] }),
+  ];
+  for (const npc of NPCS) {
+    const branches = new Set(states.map((w) => JSON.stringify(npc.lines(w))));
+    assert.ok(branches.size >= 3, `${npc.name} 只有 ${branches.size} 组对话,少于 3`);
+    assert.ok(branches.size <= 6, `${npc.name} 有 ${branches.size} 组对话,超出计划的 3-5`);
+  }
+});
+
+test('the town is where the NPCs actually live', () => {
+  const havenRooms = ROOM_LIST.filter((r) => r.zone === 'haven');
+  const markers = new Set(Object.keys(NPC_MARKERS));
+  const placed = havenRooms.reduce(
+    (n, r) => n + r.rows.join('').split('').filter((c) => markers.has(c)).length,
+    0,
+  );
+  assert.equal(placed, NPCS.length, '名册上的人应当全部住在城镇里');
 });

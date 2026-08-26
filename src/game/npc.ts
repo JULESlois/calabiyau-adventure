@@ -63,6 +63,13 @@ export const NPCS: NpcDef[] = [
           ['灯还亮着。', '想再走走就去走走吧 —— 灯会一直亮着。'],
         ];
       }
+      if (world.flags.has('boss:warden') && !world.flags.has('boss:guardian')) {
+        return [
+          ['天穹上那阵嗡声停了 —— 是你干的吧。'],
+          ['我年轻时也想过爬上去看看。', '现在只想守好这盏灯。'],
+          ['灯是给回来的人点的,', '不是给出去的人点的。'],
+        ];
+      }
       const report = completionReport(world);
       const rooms = report.entries.find((entry) => entry.label === '房间')!;
       if (rooms.got * 2 < rooms.total) {
@@ -96,6 +103,12 @@ export const NPCS: NpcDef[] = [
           ['那些石头在你身上一起响的时候,', '是不是很好听?'],
         ];
       }
+      if (left <= 2) {
+        return [
+          [`只差 ${left} 枚了!`, '就差一点点!'],
+          ['你听 —— 它们已经开始嗡嗡了。', '快去快去!'],
+        ];
+      }
       return [
         [`我看看 —— ${world.crystals.size} / ${totalCrystals()} 枚。`],
         [`再找 ${left} 枚,`, '它们就会一起响一次。', '那种响法我只听过一回。'],
@@ -112,6 +125,13 @@ export const NPCS: NpcDef[] = [
         return [
           ['我男人今早把船开出去了。', '大灾变以后头一回。'],
           ['他说海面上没有那种嗡嗡声了。', '……谢谢你,姑娘。'],
+        ];
+      }
+      if (world.flags.has('boss:arbiter') || world.flags.has('boss:gambit')) {
+        return [
+          ['夜市又摆起来了。', '我都快忘了灯全亮着是什么样子。'],
+          ['三方还在为那些晶体争。', '争什么呢 —— 海又不认谁的旗。'],
+          ['你要是往圣堂去,', '替我看看那口钟还在不在。'],
         ];
       }
       return [
