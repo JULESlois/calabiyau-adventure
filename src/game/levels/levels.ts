@@ -11,12 +11,40 @@ import type { TileStyle } from '../render/tileStyles';
 //
 // 地形 tile 一律用标点,生成符一律用字母数字 —— 见 docs/ROADMAP.md 的字符命名空间。
 
+/**
+ * 区域大气。
+ * 在此之前六个区域共用同一套雾霭/微粒处理,只差颜色 ——
+ * 而"空气的浓稠程度"比色相更能把地方区分开:机库该是呛人的,天穹该是稀薄的。
+ */
+export interface ZoneAtmosphere {
+  /** 层间雾带的浓度倍率(1 = 原样) */
+  fogDensity: number;
+  /** 雾带高度(px) */
+  fogBand: number;
+  /** 环境微粒 */
+  drift: {
+    /** 只影响观感命名与绘制细节 */
+    kind: 'ember' | 'bubble' | 'dust' | 'mote' | 'snow' | 'soot';
+    count: number;
+    /** 边长(px) */
+    size: number;
+    /** 纵向速度基数:正=下沉,负=上升,0=悬浮 */
+    speed: number;
+    /** 横向摆幅 */
+    sway: number;
+  };
+  /** 斜向光束 */
+  rays: 'none' | 'warm' | 'cold';
+}
+
 export interface LevelTheme {
   /**
    * 地形材质(砌法)。颜色之外的第二个区域身份维度 ——
    * 在此之前六区共用同一种砖,只换颜色,而地面占满每一帧的下半屏。
    */
   tileStyle: TileStyle;
+  /** 大气(雾浓度、微粒、光束)——区域身份的第三个维度,在颜色与材质之外。 */
+  atmosphere: ZoneAtmosphere;
   skyTop: string;
   skyBottom: string;
   far: string;

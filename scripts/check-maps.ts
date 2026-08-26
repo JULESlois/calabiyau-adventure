@@ -463,6 +463,28 @@ console.log(
     console.log(`  [通过] 六区地形/背景亮度分离最小 ${worst.toFixed(1)}(下限 ${MIN_SEPARATION})`);
   }
 
+  // 大气必须互不相同:六区共用一套雾霭与微粒时,空气不参与区分地方
+  const airs = Object.entries(ZONES).map(([id, z]) => {
+    const a = z.theme.atmosphere;
+    return [id, `${a.fogDensity}|${a.fogBand}|${a.drift.kind}|${a.drift.speed}|${a.rays}`] as const;
+  });
+  const airSeen = new Map<string, string>();
+  let airDup = 0;
+  for (const [id, sig] of airs) {
+    const clash = airSeen.get(sig);
+    if (clash) {
+      err(`区域 ${id} 与 ${clash} 的大气完全相同 —— 雾浓度/微粒/光束应各不相同`);
+      airDup++;
+    }
+    airSeen.set(sig, id);
+  }
+  if (airDup === 0) {
+    const densities = Object.values(ZONES).map((z) => z.theme.atmosphere.fogDensity);
+    console.log(
+      `  [通过] 六区大气各不相同(雾浓度 ${Math.min(...densities)}–${Math.max(...densities)})`,
+    );
+  }
+
   // 材质必须互不相同:六个区域共用一种砌法,等于只有配色区别
   const styles = Object.values(ZONES).map((z) => z.theme.tileStyle);
   if (new Set(styles).size !== styles.length) {

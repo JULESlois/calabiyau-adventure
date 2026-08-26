@@ -1,9 +1,14 @@
 // 地形材质与图底分离。
 //
-// 这一组守的是两个**只有看像素才会发现、但可以量化**的缺陷:
+// 这一组守的是三个**只有看像素才会发现、但可以量化**的缺陷:
 //   1. 六个区域共用同一种砖,只换四个主题色 —— 地面占满每一帧的下半屏,却毫无区域身份;
-//   2. 天穹区地形与近景层的感知亮度只差 0.2,玩家看不清自己站在哪里。
-//      按 HSL 明度看这两者差 3 个点,完全看不出问题 —— HSL 的 L 不是感知亮度。
+//   2. 天穹区地形与近景层几乎同亮(实测分离 0.2),玩家看不清自己站在哪里;
+//   3. 六区共用同一套雾霭与微粒,空气的浓稠程度不参与区分地方。
+//
+// 关于 2 有一个必须记下的教训:**调色板里的底色不等于画出来的样子**。
+// 一格 = 底色 + 勾缝 + 孔洞 + 阴影,后三者会把分离度吃掉最多一半
+// (乱石砌 0.49、细琢条石 0.45,金属板几乎不掉)。
+// 所以静态检查只是下限,权威数值来自 `npm run qa:tiles` 对渲染结果的实测。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { TILE } from '../src/game/constants';
@@ -41,7 +46,7 @@ test('every zone has its own terrain material, not just its own colours', () => 
 });
 
 test('terrain separates from the backdrop by perceptual luminance in every zone', () => {
-  // 下限 8:低于此值时地形会融进近景层。天穹区曾经是 0.2。
+  // 下限 8:这是**调色板**上的分离,画出来还会被材质侵蚀。天穹区曾经实测只有 0.2。
   for (const [id, zone] of Object.entries(ZONES)) {
     const gap = Math.abs(lum(zone.theme.tileBase) - lum(zone.theme.near));
     assert.ok(gap >= 8, `${id} 地形与背景亮度只差 ${gap.toFixed(1)}`);
@@ -178,4 +183,61 @@ test('blending still interpolates colours and never emits a style as a colour', 
   const mid = blendLevelThemes(ZONES.coast.theme, ZONES.hangar.theme, 0.5);
   assert.match(mid.tileBase, /^rgba\(/, '颜色应插值为 rgba');
   assert.ok(STYLES.includes(mid.tileStyle), 'tileStyle 应仍是合法材质而不是被当成颜色混掉');
+});
+
+// ---------------- 区域大气 ----------------
+// 颜色与材质之外的第三个身份维度。原先六区共用同一套雾霭/微粒处理,只差颜色。
+
+test('no two zones breathe the same air', () => {
+  const sigs = Object.entries(ZONES).map(([id, z]) => {
+    const a = z.theme.atmosphere;
+    return [id, `${a.fogDensity}|${a.fogBand}|${a.drift.kind}|${a.drift.count}|${a.drift.size}|${a.drift.speed}|${a.rays}`] as const;
+  });
+  const seen = new Map<string, string>();
+  for (const [id, sig] of sigs) {
+    const clash = seen.get(sig);
+    assert.equal(clash, undefined, `${id} 与 ${clash} 的大气完全相同`);
+    seen.set(sig, id);
+  }
+});
+
+test('atmosphere spans a real range rather than nudging one number', () => {
+  const d = Object.values(ZONES).map((z) => z.theme.atmosphere.fogDensity);
+  assert.ok(Math.max(...d) / Math.min(...d) >= 3, `雾浓度跨度只有 ${Math.min(...d)}–${Math.max(...d)},区分不出来`);
+  const kinds = new Set(Object.values(ZONES).map((z) => z.theme.atmosphere.drift.kind));
+  assert.equal(kinds.size, 6, '每个区域应有自己的微粒种类');
+});
+
+test('particle drift directions actually differ — rising, hovering and falling all occur', () => {
+  const speeds = Object.values(ZONES).map((z) => z.theme.atmosphere.drift.speed);
+  assert.ok(speeds.some((s) => s < 0), '应有上升的微粒(余烬/气泡/煤灰)');
+  assert.ok(speeds.some((s) => s === 0), '应有悬浮的微粒(实验室浮尘)');
+  assert.ok(speeds.some((s) => s > 0), '应有下沉的微粒(天穹落雪)');
+});
+
+test('light shafts are declared by atmosphere, not hardcoded to two zones', () => {
+  const rays = Object.values(ZONES).map((z) => z.theme.atmosphere.rays);
+  assert.ok(rays.includes('warm'), '应有暖色光束(海滨落日)');
+  assert.ok(rays.includes('cold'), '应有冷色光束(圣堂/天穹)');
+  assert.ok(rays.includes('none'), '并非所有区域都该有光束');
+  assert.ok(rays.filter((r) => r !== 'none').length >= 3, '光束原本只有两区写死,现在应更广');
+});
+
+test('atmosphere snaps at a transition midpoint like material does', () => {
+  const from = ZONES.tide.theme;
+  const to = ZONES.sky.theme;
+  assert.equal(blendLevelThemes(from, to, 0.3).atmosphere.drift.kind, from.atmosphere.drift.kind);
+  assert.equal(blendLevelThemes(from, to, 0.7).atmosphere.drift.kind, to.atmosphere.drift.kind);
+  // 大气不能被当成颜色混掉
+  const mid = blendLevelThemes(from, to, 0.5);
+  assert.equal(typeof mid.atmosphere.fogDensity, 'number');
+  assert.ok(mid.atmosphere.drift.count > 0);
+});
+
+test('particle counts stay within a sane budget', () => {
+  // 微粒是每帧全量绘制的,数量失控会直接吃掉帧时间
+  for (const [id, z] of Object.entries(ZONES)) {
+    const c = z.theme.atmosphere.drift.count;
+    assert.ok(c > 0 && c <= 64, `${id} 微粒数 ${c} 超出预算`);
+  }
 });

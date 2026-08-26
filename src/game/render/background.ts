@@ -12,7 +12,7 @@ type DecoKind =
   | 'chain'
   | 'tank'
   | 'conduit'
-  | 'gantry';
+  | 'gantry' | 'rack' | 'dish' | 'tower';
 
 interface Deco {
   x: number;
@@ -87,8 +87,8 @@ export class Background {
       for (let x = 0; x < span; x += 18 + rng() * 26) {
         this.decos.push({ x, y: 206 + rng() * 40, w: 8 + rng() * 18, h: 1, layer: 2, kind: 'wave', seed: rng(), lit: [] });
       }
-    } else if (levelId === 2 || levelId === 5) {
-      // 大厅:中层哥特拱窗 + 近层石柱
+    } else if (levelId === 2) {
+      // 圣堂:中层哥特拱窗 + 近层石柱 + 垂链
       for (let x = 0; x < span; x += 90 + rng() * 60) {
         this.decos.push({ x, y: 46 + rng() * 26, w: 26, h: 62, layer: 1, kind: 'window', seed: rng(), lit: [] });
       }
@@ -98,14 +98,24 @@ export class Background {
       for (let x = 40; x < span; x += 70 + rng() * 90) {
         this.decos.push({ x, y: 0, w: 2, h: 60 + rng() * 80, layer: 1, kind: 'chain', seed: rng(), lit: [] });
       }
-      if (levelId === 5) {
-        // 研究区沿用原本建筑骨架,只叠加少量培养仓与输能管线。
-        for (let x = 55; x < span; x += 190 + rng() * 130) {
-          this.decos.push({ x, y: 72 + rng() * 22, w: 22 + rng() * 8, h: 44 + rng() * 16, layer: 1, kind: 'tank', seed: rng(), lit: [] });
-        }
-        for (let x = 20; x < span; x += 150 + rng() * 120) {
-          this.decos.push({ x, y: 24 + rng() * 62, w: 70 + rng() * 50, h: 3, layer: 2, kind: 'conduit', seed: rng(), lit: [] });
-        }
+    } else if (levelId === 5) {
+      // 研究区:自己的天际线。原先借用圣堂的拱窗+石柱骨架,只加了培养仓 ——
+      // 于是两个区域从背景看几乎是同一栋建筑。现在换成机柜阵列与传感器天线。
+      for (let x = 0; x < span; x += 46 + rng() * 40) {
+        const layer = rng() < 0.55 ? 0 : 1;
+        this.decos.push({
+          x, y: 84 + rng() * 46, w: 14 + rng() * 12, h: 52 + rng() * 60,
+          layer, kind: 'rack', seed: rng(), lit: [],
+        });
+      }
+      for (let x = 30; x < span; x += 150 + rng() * 110) {
+        this.decos.push({ x, y: 34 + rng() * 30, w: 22 + rng() * 12, h: 22 + rng() * 8, layer: 0, kind: 'dish', seed: rng(), lit: [] });
+      }
+      for (let x = 55; x < span; x += 190 + rng() * 130) {
+        this.decos.push({ x, y: 72 + rng() * 22, w: 22 + rng() * 8, h: 44 + rng() * 16, layer: 1, kind: 'tank', seed: rng(), lit: [] });
+      }
+      for (let x = 20; x < span; x += 150 + rng() * 120) {
+        this.decos.push({ x, y: 24 + rng() * 62, w: 70 + rng() * 50, h: 3, layer: 2, kind: 'conduit', seed: rng(), lit: [] });
       }
     } else if (levelId === 3) {
       // 云海 + 塔尖从云中探出
@@ -122,7 +132,13 @@ export class Background {
         this.decos.push({ x, y: 0, w: 18 + rng() * 8, h: VIEW_H, layer: rng() < 0.5 ? 1 : 2, kind: 'pillar', seed: rng(), lit: [] });
       }
       if (levelId === 6) {
-        // 机库保留高大立柱,以吊轨和粗管线替换部分礼堂装饰。
+        // 机库:发射塔桁架取代礼堂立柱,天际线从"宫殿"变成"工地"。
+        for (let x = 20; x < span; x += 130 + rng() * 90) {
+          this.decos.push({
+            x, y: 0, w: 26 + rng() * 16, h: 110 + rng() * 80,
+            layer: rng() < 0.6 ? 0 : 1, kind: 'tower', seed: rng(), lit: [rng()],
+          });
+        }
         for (let x = 30; x < span; x += 170 + rng() * 120) {
           this.decos.push({ x, y: 24 + rng() * 28, w: 90 + rng() * 60, h: 26 + rng() * 18, layer: 1, kind: 'gantry', seed: rng(), lit: [] });
         }
@@ -188,17 +204,27 @@ export class Background {
         if (sx + d.w < -30 || sx > VIEW_W + 30) continue;
         this.renderDeco(ctx, d, sx, py, layerColor[layer], time);
       }
-      // 层间雾霭
+      // 层间雾霭:浓度与厚度按区域大气 —— 机库呛人、天穹稀薄
+      const atm = t.atmosphere;
+      ctx.globalAlpha = Math.min(1, atm.fogDensity);
       ctx.fillStyle = t.fog;
       const fogY = 120 + layer * 55 - py * 0.5;
-      ctx.fillRect(0, fogY, VIEW_W, 34);
+      ctx.fillRect(0, fogY, VIEW_W, atm.fogBand);
+      // 浓雾再补一层,做出"看不透"的厚度
+      if (atm.fogDensity > 1.3) {
+        ctx.globalAlpha = (atm.fogDensity - 1.3) * 0.8;
+        ctx.fillRect(0, fogY - atm.fogBand * 0.4, VIEW_W, atm.fogBand);
+      }
+      ctx.globalAlpha = 1;
     }
 
     // ---- 神光(斜向光束)----
-    if (this.levelId === 1 || this.levelId === 3) {
+    if (t.atmosphere.rays !== 'none') {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      const rayC = this.levelId === 1 ? 'rgba(255,170,90,0.05)' : 'rgba(235,240,255,0.06)';
+      const rayC = t.atmosphere.rays === 'warm'
+        ? 'rgba(255,170,90,0.05)'
+        : 'rgba(235,240,255,0.06)';
       ctx.fillStyle = rayC;
       for (let i = 0; i < 3; i++) {
         const sway = Math.sin(time * 0.3 + i * 2.1) * 8;
@@ -685,6 +711,70 @@ export class Background {
         ctx.fillStyle = hot ? 'rgba(255,116,78,0.34)' : 'rgba(126,240,255,0.26)';
         ctx.fillRect(sx, cy, d.w, 1);
         for (let xx = 12; xx < d.w; xx += 22) ctx.fillRect(sx + xx, cy - 2, 2, d.h + 4);
+        break;
+      }
+      case 'rack': {
+        // 机柜阵列:一列列带指示灯的深色柜体,是研究区自己的天际线
+        const ry = VIEW_H - d.h - py * 0.3;
+        ctx.fillStyle = color;
+        ctx.fillRect(sx, ry, d.w, d.h);
+        ctx.fillStyle = 'rgba(0,0,0,0.30)';
+        ctx.fillRect(sx, ry, d.w, 2);
+        // 横向分格
+        for (let yy = 6; yy < d.h - 4; yy += 9) {
+          ctx.fillStyle = 'rgba(0,0,0,0.24)';
+          ctx.fillRect(sx + 1, ry + yy, d.w - 2, 1);
+        }
+        // 指示灯:按柜位缓慢闪
+        for (let yy = 9; yy < d.h - 6; yy += 18) {
+          const on = Math.sin(time * 1.7 + d.seed * 9 + yy) > -0.2;
+          ctx.globalAlpha = on ? 0.75 : 0.18;
+          ctx.fillStyle = '#7ef0ff';
+          ctx.fillRect(sx + 2, ry + yy + 2, 2, 1);
+          ctx.globalAlpha = 1;
+        }
+        break;
+      }
+      case 'dish': {
+        // 传感器天线:一只缓慢摆动的抛物面
+        const dy = d.y - py * 0.25;
+        const tilt = Math.sin(time * 0.35 + d.seed * 5) * 2;
+        ctx.fillStyle = color;
+        ctx.fillRect(sx + d.w / 2 - 1, dy + d.h * 0.5, 2, d.h * 0.5);
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        for (let i = 0; i < d.h * 0.5; i++) {
+          const half = Math.round((d.w / 2) * Math.sqrt(1 - (i / (d.h * 0.5)) ** 2));
+          ctx.fillRect(sx + d.w / 2 - half, dy + i + tilt, half * 2, 1);
+        }
+        ctx.fillStyle = color;
+        ctx.fillRect(sx + d.w / 2 - 1, dy + 2 + tilt, 2, 2);
+        break;
+      }
+      case 'tower': {
+        // 发射塔桁架:交叉斜撑 + 顶部航警灯。机库的天际线是工地,不是宫殿。
+        const ty = VIEW_H - d.h - py * 0.3;
+        ctx.fillStyle = 'rgba(14,6,12,0.9)';
+        ctx.fillRect(sx, ty, 3, d.h);
+        ctx.fillRect(sx + d.w - 3, ty, 3, d.h);
+        // 横撑
+        for (let yy = 0; yy < d.h; yy += 14) {
+          ctx.fillRect(sx, ty + yy, d.w, 2);
+        }
+        // 斜撑:交替方向,读起来才像桁架而不是梯子
+        ctx.fillStyle = 'rgba(14,6,12,0.6)';
+        for (let yy = 0; yy < d.h - 14; yy += 14) {
+          const flip = ((yy / 14) | 0) % 2 === 0;
+          for (let k = 0; k < 12; k++) {
+            const fx = flip ? sx + 3 + (k * (d.w - 6)) / 12 : sx + d.w - 3 - (k * (d.w - 6)) / 12;
+            ctx.fillRect(Math.round(fx), ty + yy + Math.round((k * 14) / 12), 1, 1);
+          }
+        }
+        // 航警灯
+        const blink = Math.sin(time * 2.2 + d.seed * 11) > 0.4;
+        ctx.globalAlpha = blink ? 0.9 : 0.2;
+        ctx.fillStyle = '#ff6a5c';
+        ctx.fillRect(sx + d.w / 2 - 1, ty - 2, 2, 2);
+        ctx.globalAlpha = 1;
         break;
       }
       case 'gantry': {

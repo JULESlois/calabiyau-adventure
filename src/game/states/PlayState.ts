@@ -485,15 +485,14 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       );
     }
 
-    // 环境微粒
-    const zi = ZONE_INDEX[this.room.zone];
-    for (let i = 0; i < 42; i++) {
-      const falling = zi === 3;
+    // 环境微粒:数量、大小、速度、摆幅全部来自区域大气描述
+    const drift = this.theme.atmosphere.drift;
+    for (let i = 0; i < drift.count; i++) {
       this.embers.push({
         x: Math.random() * VIEW_W,
         y: Math.random() * VIEW_H,
-        vx: (Math.random() - 0.5) * 10,
-        vy: falling ? 10 + Math.random() * 16 : zi === 2 ? 0 : -(6 + Math.random() * 14),
+        vx: (Math.random() - 0.5) * drift.sway,
+        vy: drift.speed === 0 ? 0 : drift.speed * (0.6 + Math.random() * 0.8),
         ph: Math.random() * Math.PI * 2,
       });
     }
@@ -1557,11 +1556,12 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   // ---------------- 战斗与拾取 ----------------
 
   private updateEmbers(dt: number): void {
-    const zi = ZONE_INDEX[this.room.zone];
+    const drift = this.theme.atmosphere.drift;
     for (const e of this.embers) {
       e.ph += dt;
-      e.x += (e.vx + Math.sin(e.ph * 1.4) * 6) * dt;
-      e.y += (zi === 2 ? Math.sin(e.ph) * 8 : e.vy) * dt;
+      e.x += (e.vx + Math.sin(e.ph * 1.4) * drift.sway * 0.6) * dt;
+      // 悬浮型(实验室浮尘)靠正弦上下游移,而不是匀速漂移
+      e.y += (drift.speed === 0 ? Math.sin(e.ph) * 8 : e.vy) * dt;
       if (e.y < -4) e.y = VIEW_H + 4;
       if (e.y > VIEW_H + 4) e.y = -4;
       if (e.x < -4) e.x = VIEW_W + 4;
@@ -2166,11 +2166,19 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     this.renderBackgroundFront(ctx, backdropX, backdropY, backgroundMix);
 
     // 环境微粒(屏幕空间)
+    const driftDraw = this.theme.atmosphere.drift;
     ctx.fillStyle = this.theme.ember;
     for (const e of this.embers) {
-      const tw = 0.25 + 0.3 * Math.abs(Math.sin(e.ph * 2));
-      ctx.globalAlpha = tw;
-      ctx.fillRect(Math.round(e.x), Math.round(e.y), 1, 1);
+      ctx.globalAlpha = 0.25 + 0.3 * Math.abs(Math.sin(e.ph * 2));
+      if (driftDraw.kind === 'bubble') {
+        // 气泡:空心,才不会读成"水里飘着的灰"
+        ctx.fillRect(Math.round(e.x), Math.round(e.y), driftDraw.size, 1);
+        ctx.fillRect(Math.round(e.x), Math.round(e.y) + driftDraw.size - 1, driftDraw.size, 1);
+        ctx.fillRect(Math.round(e.x), Math.round(e.y), 1, driftDraw.size);
+        ctx.fillRect(Math.round(e.x) + driftDraw.size - 1, Math.round(e.y), 1, driftDraw.size);
+      } else {
+        ctx.fillRect(Math.round(e.x), Math.round(e.y), driftDraw.size, driftDraw.size);
+      }
     }
     ctx.globalAlpha = 1;
 
@@ -2684,9 +2692,13 @@ export function blendLevelThemes(from: LevelTheme, to: LevelTheme, mix: number):
   const t = clamp(mix, 0, 1);
   // 材质不能插值(砌法之间没有"中间态"),因此在过渡房正中一次换过去 ——
   // 颜色连续渐变、砌法在中线突变,反而给了跨区一个明确的"已经过界"的节拍。
-  const result = { tileStyle: t < 0.5 ? from.tileStyle : to.tileStyle } as LevelTheme;
+  // 材质与大气都不是颜色,同样在中线一次切换 —— 空气的浓稠程度没有"中间态"。
+  const result = {
+    tileStyle: t < 0.5 ? from.tileStyle : to.tileStyle,
+    atmosphere: t < 0.5 ? from.atmosphere : to.atmosphere,
+  } as LevelTheme;
   for (const key of Object.keys(from) as (keyof LevelTheme)[]) {
-    if (key === 'tileStyle') continue;
+    if (key === 'tileStyle' || key === 'atmosphere') continue;
     result[key] = blendThemeColor(from[key] as string, to[key] as string, t);
   }
   return result;
