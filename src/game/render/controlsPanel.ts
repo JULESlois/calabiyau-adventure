@@ -49,6 +49,7 @@ const ROWS: readonly Row[] = [
   { label: '角色技能', binding: 'skill' },
   { label: '场景交互', binding: 'interact' },
   { label: '弦化 / 飘飞', binding: 'paper', needs: 'paper', note: '按住不放' },
+  { label: '弦闪(擦弹反击)', binding: 'paper', needs: 'flash', note: '弹至瞬按' },
   { label: '贴墙吸附 / 蹬墙', binding: 'wall', needs: 'cling' },
   { label: '相位突进', binding: 'dash', needs: 'dash' },
   { label: '切换角色', binding: 'switch', needs: 'kanami' },
@@ -163,7 +164,7 @@ function drawLoadout(ctx: CanvasRenderingContext2D, view: ControlsPanelView): vo
   ctx.fillStyle = '#6a6080';
   ctx.fillText('能力', x, y);
   y += 13;
-  for (const key of ['paper', 'cling', 'djump', 'dash', 'kanami'] as Ability[]) {
+  for (const key of ['paper', 'cling', 'djump', 'dash', 'flash', 'kanami'] as Ability[]) {
     const owned = view.abilities.has(key);
     const info = ABILITY_INFO[key];
     ctx.font = F_ROW;

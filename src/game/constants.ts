@@ -40,6 +40,12 @@ export const POGO_VEL = 290; // 下劈反弹
 export const INVULN_TIME = 1.0; // 受击无敌
 export const SWITCH_CD = 0.6;
 
+// 弦闪(能力 flash):敌弹临身的瞬间弦化 → 擦弹 → 强化下一击
+export const FLASH_WINDOW = 0.14; // 进入纸片后多久内算"精准"
+export const FLASH_CHARGE = 4.0; // 强化窗口持续秒数
+export const FLASH_MULT = 1.8; // 下一击伤害倍率
+export const FLASH_ENERGY_REFUND = 10; // 触发时返还弦能,鼓励继续弦化节奏
+
 export const COLORS = {
   hud: '#e8ecff',
   hp: '#ff5d7e',

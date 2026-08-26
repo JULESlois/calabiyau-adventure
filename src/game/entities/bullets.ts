@@ -24,6 +24,8 @@ export interface EnemyBullet {
   color: string;
   /** 发射者(米雪儿「猫踪喵迹」被动反向标记用) */
   owner?: object;
+  /** 已被弦闪擦过,同一颗子弹不重复触发 */
+  flashed?: boolean;
 }
 
 /** 米雪儿·警探:速射步枪弹(命中短暂冰凝减速) */

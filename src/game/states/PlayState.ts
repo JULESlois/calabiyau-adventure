@@ -1,4 +1,4 @@
-import { INVULN_TIME, TILE, VIEW_H, VIEW_W } from '../constants';
+import { FLASH_CHARGE, FLASH_ENERGY_REFUND, FLASH_WINDOW, INVULN_TIME, TILE, VIEW_H, VIEW_W } from '../constants';
 import { Boss } from '../entities/boss';
 import type { EnemyBullet, PlayerBullet } from '../entities/bullets';
 import { Enemy, type EnemyKind } from '../entities/enemies';
@@ -254,6 +254,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
           break;
         case 'D':
           if (!world.has('dash')) this.abilitySpots.push({ x: cx, y: bottom, kind: 'dash' });
+          break;
+        case 'X':
+          if (!world.has('flash')) this.abilitySpots.push({ x: cx, y: bottom, kind: 'flash' });
           break;
         case 'G':
           if (!world.has('kanami')) this.kanamiSpot = { x: cx, y: bottom };
@@ -1394,8 +1397,27 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         }
       }
     } else if (p.paper) {
+      const canFlash = this.world.has('flash') && p.paperEnterT <= FLASH_WINDOW;
       for (const b of this.enemyBullets) {
-        if (Math.abs(b.x - this.playerX) < 10 && Math.abs(b.y - this.playerY) < 14 && Math.random() < 0.2) {
+        const grazing = Math.abs(b.x - this.playerX) < 10 && Math.abs(b.y - this.playerY) < 14;
+        if (!grazing) continue;
+        // 弦闪:子弹将至的一瞬弦化 —— 擦弹成功,强化下一击并返还少量弦能。
+        // 子弹本身不消失(原作语义是"擦过纸片"),但同一颗只触发一次。
+        if (canFlash && !b.flashed) {
+          b.flashed = true;
+          p.flashChargeT = FLASH_CHARGE;
+          p.energy = Math.min(this.world.energyMax, p.energy + FLASH_ENERGY_REFUND);
+          this.sfx('crystal');
+          this.shake(1);
+          for (let i = 0; i < 10; i++) {
+            const a = (i / 10) * Math.PI * 2;
+            this.particles.spawn({
+              x: this.playerX, y: this.playerY,
+              vx: Math.cos(a) * 130, vy: Math.sin(a) * 130,
+              life: 0.28, color: '#e8fbff', shape: 'spark', size: 1,
+            });
+          }
+        } else if (Math.random() < 0.2) {
           this.particles.spawn({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.2, color: '#aef4ff', shape: 'spark' });
         }
       }

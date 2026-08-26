@@ -11,7 +11,7 @@ import { WorldState } from '../src/game/world/WorldState';
 declare const process: { exit(code: number): void };
 
 let errors = 0;
-const knownSpawns = new Set('PTFWJGDS*heabcd123456789MNUBZ><IOKk'.split(''));
+const knownSpawns = new Set('PTFWJGDSX*heabcd123456789MNUBZ><IOKk'.split(''));
 const err = (msg: string) => {
   errors++;
   console.error(`  [错误] ${msg}`);
@@ -37,7 +37,7 @@ for (const room of ROOM_LIST) {
 
   // 地面实体下方必须有支撑('2' 浮游炮除外)
   for (const s of lvl.spawns) {
-    if (!'PTFWJGDSabcd1345689BZIOKk><'.includes(s.char)) continue;
+    if (!'PTFWJGDSXabcd1345689BZIOKk><'.includes(s.char)) continue;
     let supported = false;
     for (let r = s.row + 1; r < lvl.h; r++) {
       const t = tileAt(s.col, r);
@@ -193,7 +193,7 @@ const globalCount = (c: string) => allSpawns.filter((s) => s.char === c).length;
 if (globalCount('P') !== 1) err(`P 出生点数量 = ${globalCount('P')},应为 1`);
 if (globalCount('B') !== 1) err(`Boss B 数量 = ${globalCount('B')},应为 1`);
 if (globalCount('Z') !== 1) err(`中 Boss Z 数量 = ${globalCount('Z')},应为 1`);
-for (const ch of ['F', 'W', 'J', 'G', 'D']) {
+for (const ch of ['F', 'W', 'J', 'G', 'D', 'X']) {
   if (globalCount(ch) !== 1) err(`能力 ${ch} 数量 = ${globalCount(ch)},应为 1`);
 }
 for (const ch of ['a', 'b', 'c', 'd']) {
@@ -402,7 +402,7 @@ if (readme) {
 }
 
 // ---------------- 能力推进拓扑可达性(BFS 到不动点) ----------------
-const abilityOf: Record<string, Ability> = { F: 'paper', W: 'cling', J: 'djump', D: 'dash', G: 'kanami' };
+const abilityOf: Record<string, Ability> = { F: 'paper', W: 'cling', J: 'djump', D: 'dash', G: 'kanami', X: 'flash' };
 const owned = new Set<Ability>();
 let reachable = new Set<string>([START_ROOM]);
 let changed = true;

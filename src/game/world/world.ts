@@ -19,7 +19,7 @@ import type { LevelTheme } from '../levels/levels';
 import { MAX_HP, MAX_STRING } from '../constants';
 import type { MusicCue } from '../music';
 
-export type Ability = 'paper' | 'cling' | 'djump' | 'dash' | 'kanami';
+export type Ability = 'paper' | 'cling' | 'djump' | 'dash' | 'flash' | 'kanami';
 export type ZoneId = 'coast' | 'tide' | 'lab' | 'choir' | 'sky' | 'hangar';
 export type ExitSide = 'left' | 'right' | 'down';
 
@@ -477,6 +477,7 @@ const R: RoomDef[] = [];
   rect(g, 6, 6, 33, 38, '#');
   set(g, 5, 35, '*');
   set(g, 5, 37, 'b');
+  set(g, 13, 24, 'X'); // 弦闪祭坛:纸片坠入者的奖励
   set(g, 13, 18, '5');
   set(g, 13, 30, '6');
   set(g, 13, 41, '*');
@@ -1692,6 +1693,11 @@ export const START_ROOM = 'coast_start';
 export const SHORTCUT_IDS = new Set(ROOM_LIST.flatMap((room) => room.shortcuts?.map((s) => s.id) ?? []));
 
 export const ABILITY_INFO: Record<Ability, { name: string; desc: string; hint: string }> = {
+  flash: {
+    name: '弦闪',
+    desc: '敌弹临身的瞬间弦化,可擦开子弹并强化下一次攻击',
+    hint: '子弹将至的一瞬 按住Shift',
+  },
   paper: {
     name: '弦 化',
     desc: '身体展开为二维纸片。地面弦化可穿弦膜,空中弦化会随风飘飞。',

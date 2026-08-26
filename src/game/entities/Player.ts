@@ -1,4 +1,5 @@
 import {
+  FLASH_MULT,
   AIR_ACCEL,
   COYOTE_TIME,
   DASH_CD,
@@ -72,6 +73,10 @@ export class Player {
   turnAnimT = 0;
   dead = false;
   shootFlashT = 0;
+  /** 进入纸片形态以来的秒数;弦闪据此判定"精准" */
+  paperEnterT = 999;
+  /** 弦闪强化窗口剩余秒数(>0 时下一击伤害翻倍) */
+  flashChargeT = 0;
   /** 香奈美·谢幕曲蓄力(秒,满蓄 0.7) */
   chargeT = 0;
   charging = false;
@@ -140,7 +145,19 @@ export class Player {
   }
 
   meleeDamage(): number {
-    return this.meleeStep === 2 ? 20 : 12;
+    const base = this.meleeStep === 2 ? 20 : 12;
+    return this.flashSwing ? Math.round(base * FLASH_MULT) : base;
+  }
+
+  /** 本次挥击是否吃到弦闪强化(起手时锁定,免得窗口在连段中间过期) */
+  private flashSwing = false;
+
+  /** 取走弦闪强化;返回伤害倍率。发射与挥击谁先发生谁消费。 */
+  private consumeFlash(ps: PlayerHost): number {
+    if (this.flashChargeT <= 0) return 1;
+    this.flashChargeT = 0;
+    ps.particles.burst(this.x, this.centerY(), 10, '#aef4ff', 90, 0.4, 'spark');
+    return FLASH_MULT;
   }
 
   private setStringMode(mode: StringMode, ps: PlayerHost): void {
@@ -167,6 +184,7 @@ export class Player {
     }
     if (mode !== 'wall') this.clingDir = 0;
     if (wasPaper === this.paper) return;
+    if (this.paper) this.paperEnterT = 0;
     ps.sfx(this.paper ? 'paperOn' : 'paperOff');
     if (this.paper) {
       ps.particles.burst(this.x, this.centerY(), 10, '#aef4ff', 70, 0.4, 'paper');
@@ -228,6 +246,23 @@ export class Player {
     this.dashCdT = Math.max(0, this.dashCdT - dt);
     if (this.meleeT > 0) this.meleeT -= dt;
     this.shootFlashT = Math.max(0, this.shootFlashT - dt);
+    this.paperEnterT += dt;
+    if (this.flashChargeT > 0) {
+      this.flashChargeT = Math.max(0, this.flashChargeT - dt);
+      // 充能余辉:让玩家看得见"下一击是强化的"
+      if (Math.random() < 0.3) {
+        ps.particles.spawn({
+          x: this.x + (Math.random() - 0.5) * 10,
+          y: this.centerY() + (Math.random() - 0.5) * 14,
+          vx: (Math.random() - 0.5) * 15,
+          vy: -22,
+          life: 0.3,
+          color: '#aef4ff',
+          shape: 'spark',
+          size: 1,
+        });
+      }
+    }
 
     // 弦化残影
     for (let i = this.ghosts.length - 1; i >= 0; i--) {
@@ -457,6 +492,7 @@ export class Player {
         }
       }
       if (input.pressed('melee') && this.meleeT <= 0) {
+        this.flashSwing = this.consumeFlash(ps) > 1;
         if (!this.onGround && input.down('down')) {
           // 下劈(pogo)
           this.downSlash = true;
@@ -505,7 +541,9 @@ export class Player {
   /** 米雪儿·警探速射 */
   private shoot(ps: PlayerHost): void {
     const gy = this.y - 11;
-    ps.playerBullets.push(makeRifleShot(this.x + this.facing * 8, gy, this.facing));
+    const shot = makeRifleShot(this.x + this.facing * 8, gy, this.facing);
+    shot.dmg = Math.round(shot.dmg * this.consumeFlash(ps));
+    ps.playerBullets.push(shot);
     this.shootCd = 0.14;
     ps.sfx('shootIce');
     this.shootFlashT = 0.09;
@@ -516,12 +554,16 @@ export class Player {
   private fireSnipe(ps: PlayerHost): void {
     const gy = this.y - 11;
     if (this.chargeT < 0.15) {
-      ps.playerBullets.push(makeQuickNote(this.x + this.facing * 7, gy, this.facing));
+      const note = makeQuickNote(this.x + this.facing * 7, gy, this.facing);
+      note.dmg = Math.round(note.dmg * this.consumeFlash(ps));
+      ps.playerBullets.push(note);
       this.shootCd = 0.28;
       ps.sfx('shootNote');
     } else {
       const charge = this.chargeT / 0.7;
-      ps.playerBullets.push(makeSnipe(this.x + this.facing * 8, gy, this.facing, charge));
+      const snipe = makeSnipe(this.x + this.facing * 8, gy, this.facing, charge);
+      snipe.dmg = Math.round(snipe.dmg * this.consumeFlash(ps));
+      ps.playerBullets.push(snipe);
       this.shootCd = 0.45;
       ps.sfx('shootNote');
       ps.sfx('melee');

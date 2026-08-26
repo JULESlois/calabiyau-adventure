@@ -159,6 +159,7 @@ test('every newly granted ability creates a concise in-world key hint', () => {
     cling: 'E',
     djump: '空格',
     dash: 'U',
+    flash: 'Shift',
     kanami: 'Q',
   };
 
@@ -384,4 +385,71 @@ test('pause can back out of a confirmation without losing progress', () => {
   assert.equal(state.pauseConfirm, null);
   assert.equal(state.overlay, 'pause');
   assert.equal(respawned, 0);
+});
+
+// ---------------- 弦闪(能力 flash) ----------------
+
+test('a last-instant paper entry flashes the bullet and charges the next attack', () => {
+  const state = makePlayState('coast_start');
+  state.world.grant('paper');
+  state.world.grant('flash');
+  const p = state.player;
+  p.energy = 50;
+  (p as unknown as { stringMode: string }).stringMode = 'ground';
+  p.paperEnterT = 0.05;
+  state.enemyBullets.push({
+    x: p.centerX(), y: p.centerY(), vx: 0, vy: 0, r: 2.5, dmg: 8, life: 1, color: '#fff',
+  });
+
+  (state as unknown as { resolveCombat(): void }).resolveCombat();
+
+  assert.ok(p.flashChargeT > 0, '精准弦化应触发弦闪充能');
+  assert.equal(state.enemyBullets[0].flashed, true, '子弹应被标记,不能重复触发');
+  assert.ok(p.energy > 50, '触发时应返还弦能');
+
+  // 同一颗子弹第二次结算不再触发
+  p.flashChargeT = 0;
+  (state as unknown as { resolveCombat(): void }).resolveCombat();
+  assert.equal(p.flashChargeT, 0);
+});
+
+test('flash does not trigger without the ability or outside the window', () => {
+  const noAbility = makePlayState('coast_start');
+  noAbility.world.grant('paper');
+  const p1 = noAbility.player;
+  (p1 as unknown as { stringMode: string }).stringMode = 'ground';
+  p1.paperEnterT = 0.05;
+  noAbility.enemyBullets.push({ x: p1.centerX(), y: p1.centerY(), vx: 0, vy: 0, r: 2.5, dmg: 8, life: 1, color: '#fff' });
+  (noAbility as unknown as { resolveCombat(): void }).resolveCombat();
+  assert.equal(p1.flashChargeT, 0, '未取得弦闪时不该触发');
+
+  // 长按弦化挂机不算精准:窗口已过
+  const late = makePlayState('coast_start');
+  late.world.grant('paper');
+  late.world.grant('flash');
+  const p2 = late.player;
+  (p2 as unknown as { stringMode: string }).stringMode = 'ground';
+  p2.paperEnterT = 0.5;
+  late.enemyBullets.push({ x: p2.centerX(), y: p2.centerY(), vx: 0, vy: 0, r: 2.5, dmg: 8, life: 1, color: '#fff' });
+  (late as unknown as { resolveCombat(): void }).resolveCombat();
+  assert.equal(p2.flashChargeT, 0, '窗口过期不该触发');
+});
+
+test('the flash charge empowers exactly one attack', () => {
+  const state = makePlayState('coast_start');
+  state.world.grant('paper');
+  state.world.grant('flash');
+  const p = state.player;
+  p.flashChargeT = 3;
+
+  const before = state.playerBullets.length;
+  (p as unknown as { shoot(ps: unknown): void }).shoot(state);
+  assert.equal(state.playerBullets.length, before + 1);
+  const boosted = state.playerBullets[state.playerBullets.length - 1];
+  assert.ok(boosted.dmg > 7, `强化弹伤害应高于基础 7,实际 ${boosted.dmg}`);
+  assert.equal(p.flashChargeT, 0, '强化应在发射时被消费');
+
+  (p as unknown as { shoot(ps: unknown): void }).shoot(state);
+  const normal = state.playerBullets[state.playerBullets.length - 1];
+  assert.equal(normal.dmg, 7);
 });

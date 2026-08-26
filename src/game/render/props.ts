@@ -58,6 +58,7 @@ const ABILITY_GLYPH: Record<Ability, { color: string; hi: string }> = {
   cling: { color: '#c47eff', hi: '#e8d0ff' },
   djump: { color: '#ffd75e', hi: '#fff2c0' },
   dash: { color: '#7ae0c8', hi: '#d0fff0' },
+  flash: { color: '#e8fbff', hi: '#ffffff' },
   kanami: { color: '#ff9fd0', hi: '#ffe0ef' },
 };
 

@@ -11,7 +11,7 @@ import {
 import type { ValidWorldSave, WorldSave } from './world/WorldState';
 
 const KEY = 'calabiyau_stringbound_save_v2';
-const ABILITIES = new Set<Ability>(['paper', 'cling', 'djump', 'dash', 'kanami']);
+const ABILITIES = new Set<Ability>(['paper', 'cling', 'djump', 'dash', 'flash', 'kanami']);
 const CHIPS = new Set([...SHOP_ITEMS, ...HIDDEN_CHIPS].map((item) => item.id));
 const MAX_LIST_LENGTH = 4096;
 const MAX_VALUE_LENGTH = 256;
