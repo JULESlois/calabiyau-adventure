@@ -12,7 +12,7 @@ type DecoKind =
   | 'chain'
   | 'tank'
   | 'conduit'
-  | 'gantry' | 'rack' | 'dish' | 'tower';
+  | 'gantry' | 'rack' | 'dish' | 'tower' | 'wheel' | 'garland';
 
 interface Deco {
   x: number;
@@ -116,6 +116,17 @@ export class Background {
       }
       for (let x = 20; x < span; x += 150 + rng() * 120) {
         this.decos.push({ x, y: 24 + rng() * 62, w: 70 + rng() * 50, h: 3, layer: 2, kind: 'conduit', seed: rng(), lit: [] });
+      }
+    } else if (levelId === 7) {
+      // 潮汐游园:旧摩天轮 + 灯串。天际线要一眼看出"这里有人住"。
+      for (let x = 60; x < span; x += 240 + rng() * 160) {
+        this.decos.push({ x, y: 52 + rng() * 20, w: 54 + rng() * 20, h: 54, layer: 0, kind: 'wheel', seed: rng(), lit: [] });
+      }
+      for (let x = 0; x < span; x += 64 + rng() * 40) {
+        this.decos.push({ x, y: 40 + rng() * 34, w: 64 + rng() * 36, h: 14, layer: 1, kind: 'garland', seed: rng(), lit: [] });
+      }
+      for (let x = 0; x < span; x += 22 + rng() * 30) {
+        this.decos.push({ x, y: 210 + rng() * 36, w: 8 + rng() * 18, h: 1, layer: 2, kind: 'wave', seed: rng(), lit: [] });
       }
     } else if (levelId === 3) {
       // 云海 + 塔尖从云中探出
@@ -711,6 +722,54 @@ export class Background {
         ctx.fillStyle = hot ? 'rgba(255,116,78,0.34)' : 'rgba(126,240,255,0.26)';
         ctx.fillRect(sx, cy, d.w, 1);
         for (let xx = 12; xx < d.w; xx += 22) ctx.fillRect(sx + xx, cy - 2, 2, d.h + 4);
+        break;
+      }
+      case 'wheel': {
+        // 旧摩天轮:缓慢转动的辐条 + 吊舱
+        const wy = d.y - py * 0.3;
+        const cxw = sx + d.w / 2;
+        const cyw = wy + d.h / 2;
+        const rad = d.h / 2;
+        const spin = time * 0.16 + d.seed * 6;
+        ctx.fillStyle = color;
+        // 轮辋:按角度点出一圈
+        for (let a = 0; a < 40; a++) {
+          const ang = (a / 40) * Math.PI * 2;
+          ctx.fillRect(Math.round(cxw + Math.cos(ang) * rad), Math.round(cyw + Math.sin(ang) * rad), 1, 1);
+        }
+        // 辐条与吊舱
+        for (let k = 0; k < 8; k++) {
+          const ang = spin + (k / 8) * Math.PI * 2;
+          for (let rr = 2; rr < rad; rr += 3) {
+            ctx.fillRect(Math.round(cxw + Math.cos(ang) * rr), Math.round(cyw + Math.sin(ang) * rr), 1, 1);
+          }
+          const gx = Math.round(cxw + Math.cos(ang) * rad);
+          const gy = Math.round(cyw + Math.sin(ang) * rad);
+          ctx.fillStyle = 'rgba(255,209,138,0.55)';
+          ctx.fillRect(gx - 1, gy, 3, 2);
+          ctx.fillStyle = color;
+        }
+        // 支架
+        ctx.fillRect(cxw - 1, cyw, 2, VIEW_H - cyw);
+        break;
+      }
+      case 'garland': {
+        // 灯串:一道下垂的悬链,灯珠交替明灭
+        const gy0 = d.y - py * 0.35;
+        for (let i = 0; i <= d.w; i += 2) {
+          const t2 = i / d.w;
+          const sag = Math.sin(t2 * Math.PI) * 9;
+          const yy = Math.round(gy0 + sag);
+          ctx.fillStyle = 'rgba(0,0,0,0.45)';
+          ctx.fillRect(sx + i, yy, 1, 1);
+          if (i % 10 === 0) {
+            const on = Math.sin(time * 1.4 + i * 0.7 + d.seed * 9) > -0.35;
+            ctx.globalAlpha = on ? 0.85 : 0.25;
+            ctx.fillStyle = '#ffd18a';
+            ctx.fillRect(sx + i, yy + 1, 2, 2);
+            ctx.globalAlpha = 1;
+          }
+        }
         break;
       }
       case 'rack': {

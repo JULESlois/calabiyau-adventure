@@ -47,6 +47,9 @@ type Probe = {
 };
 const probe = (s: PlayState) => s as unknown as Probe;
 
+/** 灯塔守所在的房间(2.2 落地后迁入潮汐游园园门)。 */
+const KEEPER_ROOM = 'haven_gate';
+
 // ---------------- NPC 定义表 ----------------
 
 test('every NPC marker maps to a real NPC definition', () => {
@@ -156,9 +159,9 @@ test('absent NPCs are not spawned into the room at all', () => {
 // ---------------- 对话推进 ----------------
 
 test('talking to an NPC opens the dialogue overlay', () => {
-  const state = makePlayState('coast_start');
+  const state = makePlayState(KEEPER_ROOM);
   const npc = probe(state).collectInteractables().find((i) => i.id === 'npc:keeper');
-  assert.ok(npc, '灯塔下应当站着灯塔守');
+  assert.ok(npc, '园门应当站着灯塔守');
   assert.equal(npc!.label, '交谈');
   npc!.interact();
   assert.equal(state.overlay, 'dialogue');
@@ -167,7 +170,7 @@ test('talking to an NPC opens the dialogue overlay', () => {
 
 test('the typewriter fills in over time, then confirm turns the page', () => {
   let press = false;
-  const state = makePlayState('coast_start', new WorldState(), () => press);
+  const state = makePlayState(KEEPER_ROOM, new WorldState(), () => press);
   probe(state).collectInteractables().find((i) => i.id === 'npc:keeper')!.interact();
   const d = probe(state).dialogue!;
   const total = pageLength(d.pages[0]);
@@ -189,7 +192,7 @@ test('the typewriter fills in over time, then confirm turns the page', () => {
 });
 
 test('confirming past the last page closes the dialogue and returns control', () => {
-  const state = makePlayState('coast_start', new WorldState(), () => true);
+  const state = makePlayState(KEEPER_ROOM, new WorldState(), () => true);
   probe(state).collectInteractables().find((i) => i.id === 'npc:keeper')!.interact();
   const pages = probe(state).dialogue!.pages.length;
 
@@ -201,7 +204,7 @@ test('confirming past the last page closes the dialogue and returns control', ()
 });
 
 test('the typewriter speed matches the configured characters per second', () => {
-  const state = makePlayState('coast_start');
+  const state = makePlayState(KEEPER_ROOM);
   probe(state).collectInteractables().find((i) => i.id === 'npc:keeper')!.interact();
   const d = probe(state).dialogue!;
   for (let i = 0; i < 6; i++) state.update(DT);

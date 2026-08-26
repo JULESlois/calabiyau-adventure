@@ -168,6 +168,7 @@ const ZONE_INDEX: Record<string, number> = {
   choir: 4,
   sky: 3,
   hangar: 6,
+  haven: 7,
 };
 
 const ZONE_MAP_ORIGIN = ROOM_LIST.reduce(

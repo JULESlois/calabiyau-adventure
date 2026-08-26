@@ -71,9 +71,17 @@ test('engine rejects inactive beacon destinations and fades activated transfers'
   assert.equal(transfer.next.introT, 0);
 });
 
-test('all nine cross-zone borders are routed through transition rooms', () => {
+test('every cross-zone border is routed through a transition room', () => {
   const passages = ROOM_LIST.filter((room) => room.transition);
-  assert.equal(passages.length, 9);
+  // 边界数从房间图推导:加一个区域不该需要改这个常数
+  const borders = new Set<string>();
+  for (const room of ROOM_LIST) {
+    for (const exit of room.exits) {
+      const target = ROOMS[exit.target];
+      if (target.zone !== room.zone) borders.add([room.zone, target.zone].sort().join('|'));
+    }
+  }
+  assert.ok(passages.length >= borders.size, `${borders.size} 条区域边界,只有 ${passages.length} 个过渡房`);
 
   for (const room of ROOM_LIST) {
     for (const exit of room.exits) {

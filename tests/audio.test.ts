@@ -4,11 +4,11 @@ import { AudioSys } from '../src/game/Audio';
 import { MUSIC_LIBRARY, musicLoopSeconds, type MusicCue } from '../src/game/music';
 import { ZONES } from '../src/game/world/world';
 
-test('all six regions have distinct music identities', () => {
+test('every region has its own music identity', () => {
+  // 从数据推导,不写死区域数 —— 加一个区域不该需要改这条用例
   const cues = Object.values(ZONES).map((zone) => zone.song);
-  assert.equal(new Set(cues).size, 6);
-  assert.deepEqual(cues, ['coast', 'tide', 'lab', 'choir', 'sky', 'hangar']);
-  for (const cue of cues) assert.ok(MUSIC_LIBRARY[cue]);
+  assert.equal(new Set(cues).size, cues.length, `配乐重复:${cues.join(', ')}`);
+  for (const cue of cues) assert.ok(MUSIC_LIBRARY[cue], `${cue} 没有曲目定义`);
 });
 
 test('exploration themes run for at least fifty seconds before their full phrase cycle repeats', () => {

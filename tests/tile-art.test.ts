@@ -5,10 +5,13 @@
 //   2. 天穹区地形与近景层几乎同亮(实测分离 0.2),玩家看不清自己站在哪里;
 //   3. 六区共用同一套雾霭与微粒,空气的浓稠程度不参与区分地方。
 //
-// 关于 2 有一个必须记下的教训:**调色板里的底色不等于画出来的样子**。
-// 一格 = 底色 + 勾缝 + 孔洞 + 阴影,后三者会把分离度吃掉最多一半
-// (乱石砌 0.49、细琢条石 0.45,金属板几乎不掉)。
-// 所以静态检查只是下限,权威数值来自 `npm run qa:tiles` 对渲染结果的实测。
+// 关于 2 有一个必须记下的教训:**调色板里的底色不完全等于画出来的样子**,
+// 所以静态检查只是下限,权威数值来自 `npm run qa:tiles` 对渲染结果的实测(实测比值 0.85–1.11)。
+//
+// 更该记下的是量测本身出过错:先前报告的「材质最多吃掉一半」来自 qa 工具的 bug ——
+// MiniCtx 的 save/restore 只快照了平移,没快照 globalAlpha,
+// 于是烛火(内部 save→压低 alpha→restore)之后画的一切都被压暗。
+// **量测工具也要被怀疑一次。**
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { TILE } from '../src/game/constants';
@@ -46,7 +49,7 @@ test('every zone has its own terrain material, not just its own colours', () => 
 });
 
 test('terrain separates from the backdrop by perceptual luminance in every zone', () => {
-  // 下限 8:这是**调色板**上的分离,画出来还会被材质侵蚀。天穹区曾经实测只有 0.2。
+  // 下限 8:这是**调色板**上的分离。天穹区曾经实测只有 0.2。
   for (const [id, zone] of Object.entries(ZONES)) {
     const gap = Math.abs(lum(zone.theme.tileBase) - lum(zone.theme.near));
     assert.ok(gap >= 8, `${id} 地形与背景亮度只差 ${gap.toFixed(1)}`);
@@ -54,11 +57,8 @@ test('terrain separates from the backdrop by perceptual luminance in every zone'
 });
 
 test('no material may erode more than half of its own base tile', () => {
-  // 这条用例守的是**调色板检查为什么只是下限**。
-  // 一格画出来 = 底色 + 勾缝 + 孔洞 + 阴影,后三者会把图底分离度吃掉一部分。
-  // 实测各材质的侵蚀比例在 0.45–1.03 之间(乱石砌与细琢条石最狠) ——
-  // 也就是说调色板差 12 的区域,画出来可能只剩 5.5。
-  // 若某种材质压得比这更狠,check-maps 的下限就会失去意义,必须在这里拦下。
+  // 这条用例守的是**调色板检查为什么只是下限**:材质叠的勾缝与阴影会改变最终观感
+  // (实测比值 0.85–1.11)。若某种材质压得远超此列,静态下限就会失去意义,必须在这里拦下。
   const theme = ZONES.coast.theme;
   for (const style of STYLES) {
     const { ctx, ops } = recordingCtx();
@@ -205,7 +205,7 @@ test('atmosphere spans a real range rather than nudging one number', () => {
   const d = Object.values(ZONES).map((z) => z.theme.atmosphere.fogDensity);
   assert.ok(Math.max(...d) / Math.min(...d) >= 3, `雾浓度跨度只有 ${Math.min(...d)}–${Math.max(...d)},区分不出来`);
   const kinds = new Set(Object.values(ZONES).map((z) => z.theme.atmosphere.drift.kind));
-  assert.equal(kinds.size, 6, '每个区域应有自己的微粒种类');
+  assert.equal(kinds.size, Object.keys(ZONES).length, '每个区域应有自己的微粒种类');
 });
 
 test('particle drift directions actually differ — rising, hovering and falling all occur', () => {

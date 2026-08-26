@@ -22,7 +22,7 @@ import { MAX_HP, MAX_STRING } from '../constants';
 import type { MusicCue } from '../music';
 
 export type Ability = 'paper' | 'cling' | 'djump' | 'dash' | 'flash' | 'skystep' | 'kinetic' | 'kanami';
-export type ZoneId = 'coast' | 'tide' | 'lab' | 'choir' | 'sky' | 'hangar';
+export type ZoneId = 'coast' | 'tide' | 'lab' | 'choir' | 'sky' | 'hangar' | 'haven';
 export type ExitSide = 'left' | 'right' | 'down';
 
 export interface ZoneDef {
@@ -103,6 +103,23 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
       near: '#1c1024', tileBase: '#4a3f56', tileEdge: '#c08a5a', tileDark: '#231c2c',
       accent: '#e8b06a', fog: 'rgba(200,110,60,0.10)', ember: '#ffb066',
       ambient: 'rgba(200,110,60,0.06)',
+    },
+  },
+  // 潮汐游园:全游戏唯一的安全区,也是唯一的亮色调与唯一的暖色地面。
+  // 其余六区的色域是 189–265 蓝紫 + 300–323 品红,这里补上缺席的暖橙与青绿 ——
+  // 情绪对比是功能不是装饰:从任何一区走进来都应立刻感到"这里不用提防"。
+  haven: {
+    id: 'haven',
+    name: '潮汐游园',
+    subtitle: '灯串还亮着的海滨旧游园,这里没有需要提防的东西。',
+    song: 'haven',
+    theme: {
+      tileStyle: 'boardwalk',
+      atmosphere: { fogDensity: 0.6, fogBand: 30, drift: { kind: 'lantern', count: 26, size: 1, speed: -5, sway: 7 }, rays: 'warm' },
+      skyTop: '#2a2340', skyBottom: '#e0906a', far: '#7a5a68', mid: '#54424e',
+      near: '#33262f', tileBase: '#7a5238', tileEdge: '#f0c890', tileDark: '#4a3020',
+      accent: '#ffd18a', fog: 'rgba(235,170,110,0.10)', ember: '#ffd9a0',
+      ambient: 'rgba(235,175,115,0.07)',
     },
   },
   tide: {
@@ -229,7 +246,6 @@ const R: RoomDef[] = [];
   rect(g, 12, 12, 25, 28, '='); // 台阶
   rect(g, 10, 10, 30, 33, '='); // 观景台
   set(g, 9, 31, '*');
-  set(g, 13, 8, 's'); // 灯塔守:开场就有人说话,世界不该是空的
   R.push({
     id: 'coast_start', zone: 'coast', name: '海滨 · 灯塔下', rows: rows(g),
     mapX: 2, mapY: 2,
@@ -443,7 +459,7 @@ const R: RoomDef[] = [];
   set(g, 30, 25, 'e');
   set(g, 8, 30, '7'); // 弦蛭:吊在捷径封顶下的伏击
   set(g, 30, 12, 't'); // 拾贝童(救出香奈美后出现)
-  set(g, 30, 20, 'u'); // 归乡渔妇(击败回响守卫后出现)
+  rect(g, 22, 22, 0, 5, '='); // 通往潮汐游园的西侧门槛台
   R.push({
     id: 'coast_beacon', zone: 'coast', name: '海滨 · 旧灯芯室', rows: rows(g),
     mapX: 2, mapY: 5, mapH: 2,
@@ -454,7 +470,85 @@ const R: RoomDef[] = [];
     }],
     exits: [
       { side: 'left', from: 28, to: 30, target: 'coast_stormwall', ex: 56, ey: 13 },
+      { side: 'left', from: 19, to: 21, target: 'pass_coast_haven', ex: 46, ey: 13 },
       { side: 'right', from: 8, to: 10, target: 'pass_coast_lab_lower', ex: 3, ey: 13 },
+    ],
+  });
+}
+
+// ======== 潮汐游园 haven ========
+// 全游戏唯一的安全区:**没有任何敌人生成符**,由 check-maps 强制。
+
+{
+  // 边界:防波堤缺口。海滨与游园之间的专属过渡房。
+  const g = grid(50, 17);
+  rect(g, 14, 16, 0, 49, '#');
+  rect(g, 0, 8, 0, 1, '#');
+  rect(g, 11, 13, 22, 24, '=');
+  set(g, 13, 12, 'e');
+  set(g, 13, 34, 'h');
+  R.push({
+    id: 'pass_coast_haven', zone: 'coast', name: '边界 · 防波堤缺口', rows: rows(g),
+    mapX: 1, mapY: 5,
+    transition: { to: 'haven', toSide: 'left' },
+    exits: [
+      { side: 'right', from: 11, to: 13, target: 'coast_beacon', ex: 3, ey: 21 },
+      { side: 'left', from: 11, to: 13, target: 'haven_gate', ex: 42, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 园门:信标 + 灯塔守。玩家第一次走进来时,这里是全游戏第一处不必提防的地方。
+  const g = grid(46, 17);
+  rect(g, 14, 16, 0, 45, '#');
+  rect(g, 11, 13, 30, 32, '=');
+  set(g, 13, 10, 'T'); // 信标
+  set(g, 13, 18, 's'); // 灯塔守
+  set(g, 13, 26, 'h');
+  R.push({
+    id: 'haven_gate', zone: 'haven', name: '游园 · 园门', rows: rows(g),
+    mapX: 0, mapY: 5,
+    exits: [
+      { side: 'right', from: 11, to: 13, target: 'pass_coast_haven', ex: 3, ey: 13 },
+      { side: 'left', from: 11, to: 13, target: 'haven_lane', ex: 44, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 灯街:诺笛的主铺迁到这里(研究区门厅留一个同库存的外派货柜)。
+  const g = grid(48, 17);
+  rect(g, 14, 16, 0, 47, '#');
+  rect(g, 10, 13, 8, 9, '#');   // 灯柱
+  rect(g, 10, 13, 38, 39, '#'); // 灯柱
+  set(g, 13, 20, 'S'); // 引航者 · 诺笛
+  set(g, 13, 30, 't'); // 拾贝童
+  set(g, 13, 44, 'e');
+  R.push({
+    id: 'haven_lane', zone: 'haven', name: '游园 · 灯街', rows: rows(g),
+    mapX: -1, mapY: 5,
+    exits: [
+      { side: 'right', from: 11, to: 13, target: 'haven_gate', ex: 3, ey: 13 },
+      { side: 'left', from: 11, to: 13, target: 'haven_view', ex: 40, ey: 13 },
+    ],
+  });
+}
+
+{
+  // 望海台:游园尽头,面朝落日。一枚弦晶给愿意走到底的人。
+  const g = grid(44, 17);
+  rect(g, 14, 16, 0, 43, '#');
+  rect(g, 11, 11, 4, 12, '=');
+  rect(g, 8, 8, 14, 22, '=');
+  set(g, 13, 30, 'u'); // 归乡渔妇
+  set(g, 7, 18, '*');
+  set(g, 13, 6, 'h');
+  R.push({
+    id: 'haven_view', zone: 'haven', name: '游园 · 望海台', rows: rows(g),
+    mapX: -2, mapY: 5,
+    exits: [
+      { side: 'right', from: 11, to: 13, target: 'haven_lane', ex: 3, ey: 13 },
     ],
   });
 }

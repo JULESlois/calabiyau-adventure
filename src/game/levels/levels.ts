@@ -24,7 +24,7 @@ export interface ZoneAtmosphere {
   /** 环境微粒 */
   drift: {
     /** 只影响观感命名与绘制细节 */
-    kind: 'ember' | 'bubble' | 'dust' | 'mote' | 'snow' | 'soot';
+    kind: 'ember' | 'bubble' | 'dust' | 'mote' | 'snow' | 'soot' | 'lantern';
     count: number;
     /** 边长(px) */
     size: number;

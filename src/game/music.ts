@@ -6,6 +6,7 @@ export type MusicCue =
   | 'choir'
   | 'sky'
   | 'hangar'
+  | 'haven'
   | 'boss'
   | 'ending';
 
@@ -46,6 +47,19 @@ export const MUSIC_LIBRARY: Record<MusicCue, MusicDefinition> = {
     bass: [0, 0, 3, 1, 0, 4, 3, 1],
     leadWave: 'triangle', padWave: 'sine', bassWave: 'triangle',
     percussion: 'none', cutoff: 1850, resonance: 1.4,
+  },
+  // 潮汐游园:全游戏唯一的安全区。慢拍、大调、几乎没有打击乐 ——
+  // 情绪对比是功能不是装饰:玩家一进城就该从"戒备"切换到"喘口气"。
+  haven: {
+    bpm: 62,
+    root: 262,
+    scale: [0, 2, 4, 5, 7, 9, 11],
+    chords: [0, 5, 3, 7, 0, 5, 2, 7],
+    melodyA: [0, 2, 4, -1, 5, 4, 2, -1, 0, 2, 4, 5, 7, -1, 4, -1],
+    melodyB: [4, 5, 7, -1, 5, 4, 2, 0, 2, -1, 4, 2, 0, -1, -1, -1],
+    bass: [0, 0, 3, 3, 5, 5, 0, 0],
+    leadWave: 'sine', padWave: 'sine', bassWave: 'sine',
+    percussion: 'none', cutoff: 2000, resonance: 0.5,
   },
   coast: {
     bpm: 88,

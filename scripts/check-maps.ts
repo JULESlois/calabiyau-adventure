@@ -256,7 +256,13 @@ for (const ch of ['F', 'W', 'J', 'G', 'D', 'X', 'Y', 'L']) {
 for (const ch of ['a', 'b', 'c', 'd']) {
   if (globalCount(ch) !== 1) err(`隐藏遗珍 ${ch} 数量 = ${globalCount(ch)},应为 1`);
 }
-if (globalCount('S') !== 1) err(`商人 S 数量 = ${globalCount('S')},应为 1`);
+// 诺笛的主铺在城镇,研究区门厅留一个外派货柜 —— 同一套 SHOP_ITEMS,
+// 免得玩家为了买一枚芯片横穿半个世界。因此允许多处,但至少要有一处。
+if (globalCount('S') < 1) err('世界里没有商人 S');
+{
+  const havenShops = ROOM_LIST.filter((r) => r.zone === 'haven' && r.rows.some((row) => row.includes('S')));
+  if (havenShops.length === 0) err('主铺应在潮汐游园;研究区那处是外派货柜');
+}
 for (const z of Object.values(ZONES)) {
   const benches = ROOM_LIST.filter((r) => r.zone === z.id && r.rows.some((row) => row.includes('T')));
   if (benches.length === 0) err(`场景 ${z.name} 没有信标`);
@@ -431,14 +437,37 @@ console.log(
     `${thornCount} 荆棘 / ${iceCount} 冰面 / ${waterCount} 水体 / ${chainCount} 吊链 / ${darkRooms} 暗区`,
 );
 
+// ---------------- 安全区必须真的安全 ----------------
+// 潮汐游园的全部意义是"这里不用提防"。一旦有人往里放了敌人,那个意义就没了 ——
+// 所以这不是约定,是一条会失败的构建规则。
+{
+  const ENEMY_CHARS = '123456789R';
+  let havenRooms = 0;
+  for (const room of ROOM_LIST) {
+    if (room.zone !== 'haven') continue;
+    havenRooms++;
+    for (const s2 of parsed.get(room.id)!.spawns) {
+      if (ENEMY_CHARS.includes(s2.char)) {
+        err(`安全区 ${room.id} 出现敌人生成符 ${s2.char} @ (col ${s2.col}, row ${s2.row})`);
+      }
+    }
+    if (room.bossGate) err(`安全区 ${room.id} 不该有守卫屏障`);
+  }
+  if (havenRooms === 0) err('潮汐游园区域不存在');
+  else console.log(`  [通过] 安全区 ${havenRooms} 个房间零敌人`);
+}
+
 // ---------------- 地形必须与背景分得开 ----------------
 // 天穹区曾经出现过这个缺陷:地形与近景层几乎同亮,玩家看不清自己站在哪里。
 //
 // **这条静态检查只是下限,不是保证。** 它比较的是调色板里的底色,
-// 而真正画出来的一格还要叠上勾缝、孔洞与阴影 —— 实测各材质会把分离度侵蚀到
-// 原值的 0.45–1.03 倍(乱石砌与细琢条石最狠,金属板几乎不掉)。
-// 也就是说调色板差 12 的区域,画出来可能只剩 5.5。
+// 而真正画出来的一格还叠着勾缝、孔洞与阴影,分离度会有出入 ——
+// 实测比值 0.85–1.11(乱石砌略降,焊接钢板反而略升)。
 // 权威数值请跑 `npm run qa:tiles`,它会直接量渲染结果并打印每区的实测分离度。
+//
+// 注:先前这里写的是「0.45–1.03,材质最多吃掉一半」。那个数字是错的 ——
+// 它来自 qa 工具自身的一个 bug(MiniCtx 的 save/restore 只快照了平移,
+// 没有快照 globalAlpha,于是烛火之后画的一切都被压暗)。工具修好后重测才得到上面的区间。
 {
   const lum = (hex: string): number => {
     const m = hex.match(/#([0-9a-f]{6})/i);
@@ -447,7 +476,7 @@ console.log(
     const [r, g, b] = [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16));
     return ((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255) * 100;
   };
-  const MIN_SEPARATION = 11; // 留出材质侵蚀的余量(最狠的材质约减半)
+  const MIN_SEPARATION = 11; // 留出材质造成的出入(实测 0.85–1.11)
   let worst = Infinity;
   for (const [id, zone] of Object.entries(ZONES)) {
     const gap = Math.abs(lum(zone.theme.tileBase) - lum(zone.theme.near));

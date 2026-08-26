@@ -13,7 +13,8 @@ import { TILE } from '../constants';
 import type { LevelTheme } from '../levels/levels';
 
 /** 地形材质。新增区域时在 LevelTheme.tileStyle 指定其一。 */
-export type TileStyle = 'masonry' | 'wetblock' | 'panel' | 'ashlar' | 'cloudstone' | 'plate';
+export type TileStyle =
+  | 'masonry' | 'wetblock' | 'panel' | 'ashlar' | 'cloudstone' | 'plate' | 'boardwalk';
 
 export interface SolidTileCtx {
   theme: LevelTheme;
@@ -60,6 +61,7 @@ export function drawSolidTile(
     case 'ashlar': ashlar(ctx, x, y, s); break;
     case 'cloudstone': cloudstone(ctx, x, y, s); break;
     case 'plate': plate(ctx, x, y, s); break;
+    case 'boardwalk': boardwalk(ctx, x, y, s); break;
   }
 
   // ---- 公共的立体感:底部投影、左侧受光、右侧背光 ----
@@ -253,5 +255,35 @@ function plate(ctx: CanvasRenderingContext2D, x: number, y: number, s: SolidTile
     for (let i = 0; i < 4; i++) ctx.fillRect(x + i * 4 + ((s.h % 4)), y, 2, 3);
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.fillRect(x, y + 3, TILE, 1);
+  }
+}
+
+// ---------------- 潮汐游园:海边木栈道 ----------------
+// 全游戏唯一的木质地面。安全区在脚感上也该和别处不一样 ——
+// 石头是"要提防的地方",木板是"有人住的地方"。
+function boardwalk(ctx: CanvasRenderingContext2D, x: number, y: number, s: SolidTileCtx): void {
+  const t = s.theme;
+  // 横铺的板材:三条,板缝深
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  ctx.fillRect(x, y + 5, TILE, 1);
+  ctx.fillRect(x, y + 11, TILE, 1);
+  // 木纹
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  for (let i = 0; i < 3; i++) {
+    const p = (s.h + i * 41) & 255;
+    ctx.fillRect(x + 1 + (p % 10), y + 1 + i * 6, 3 + (p % 4), 1);
+  }
+  // 钉头
+  ctx.fillStyle = 'rgba(0,0,0,0.38)';
+  ctx.fillRect(x + 2, y + 2, 1, 1);
+  ctx.fillRect(x + TILE - 3, y + 8, 1, 1);
+  if (!s.up) {
+    // 顶面被踩得发亮,边缘一道磨圆的暖光
+    ctx.fillStyle = t.tileEdge;
+    ctx.fillRect(x, y, TILE, 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect(x + 1, y, TILE - 2, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.20)';
+    ctx.fillRect(x, y + 2, TILE, 1);
   }
 }

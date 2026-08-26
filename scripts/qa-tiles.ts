@@ -65,7 +65,11 @@ class MiniCtx {
   lineWidth = 1;
   private tx = 0;
   private ty = 0;
-  private stack: [number, number][] = [];
+  // save/restore 必须快照**全部**绘图状态,不能只存平移。
+  // 只存平移时,被调用方(如 drawCandle)在 save 后压低 globalAlpha 再 restore,
+  // alpha 不会被还原 —— 于是那之后画的一切都近乎全黑。
+  // 这个 bug 一度让整条地面看起来只有左边四格是亮的。
+  private stack: { tx: number; ty: number; alpha: number; fill: string; stroke: string; font: string; align: string }[] = [];
 
   constructor(w: number, h: number) {
     this.w = w;
@@ -76,8 +80,19 @@ class MiniCtx {
       this.buf[i * 4] = 11; this.buf[i * 4 + 1] = 14; this.buf[i * 4 + 2] = 26; this.buf[i * 4 + 3] = 255;
     }
   }
-  save() { this.stack.push([this.tx, this.ty]); }
-  restore() { const s = this.stack.pop(); if (s) { this.tx = s[0]; this.ty = s[1]; } }
+  save() {
+    this.stack.push({
+      tx: this.tx, ty: this.ty, alpha: this.globalAlpha,
+      fill: this.fillStyle, stroke: this.strokeStyle, font: this.font, align: this.textAlign,
+    });
+  }
+  restore() {
+    const s = this.stack.pop();
+    if (!s) return;
+    this.tx = s.tx; this.ty = s.ty; this.globalAlpha = s.alpha;
+    this.fillStyle = s.fill; this.strokeStyle = s.stroke; this.font = s.font;
+    this.textAlign = s.align as 'left' | 'center' | 'right';
+  }
   translate(x: number, y: number) { this.tx += x; this.ty += y; }
   beginPath() {} moveTo() {} lineTo() {} closePath() {} fill() {} stroke() {} arc() {}
   createLinearGradient() { return { addColorStop() {} }; }
@@ -262,6 +277,8 @@ const ZONE_SHOTS: [string, string][] = [
   ['coast', '20-zone-coast'], ['tide', '21-zone-tide'], ['lab', '22-zone-lab'],
   ['choir', '23-zone-choir'], ['sky', '24-zone-sky'], ['hangar', '25-zone-hangar'],
 ];
+shoot('26-haven-gate', 'haven_gate', 6, 8, 16, 8);
+shoot('27-haven-lane', 'haven_lane', 14, 8, 16, 8);
 shoot('20-zone-coast', 'coast_walk', 20, 8, 14, 8);
 shoot('21-zone-tide', 'tide_entry', 20, 8, 14, 8);
 shoot('22-zone-lab', 'lab_cells', 20, 8, 14, 8);
