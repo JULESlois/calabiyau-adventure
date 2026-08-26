@@ -59,6 +59,7 @@ const ABILITY_GLYPH: Record<Ability, { color: string; hi: string }> = {
   djump: { color: '#ffd75e', hi: '#fff2c0' },
   dash: { color: '#7ae0c8', hi: '#d0fff0' },
   flash: { color: '#e8fbff', hi: '#ffffff' },
+  skystep: { color: '#d8ccff', hi: '#f2eeff' },
   kanami: { color: '#ff9fd0', hi: '#ffe0ef' },
 };
 

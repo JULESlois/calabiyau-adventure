@@ -160,6 +160,7 @@ test('every newly granted ability creates a concise in-world key hint', () => {
     djump: '空格',
     dash: 'U',
     flash: 'Shift',
+    skystep: '跳跃',
     kanami: 'Q',
   };
 
@@ -452,4 +453,87 @@ test('the flash charge empowers exactly one attack', () => {
   (p as unknown as { shoot(ps: unknown): void }).shoot(state);
   const normal = state.playerBullets[state.playerBullets.length - 1];
   assert.equal(normal.dmg, 7);
+});
+
+// ---------------- 踏空蓄步(能力 skystep) ----------------
+
+test('skystep grants a third jump that consumes a timed charge', () => {
+  const pressed = new Set<string>();
+  const held = new Set<string>();
+  const engine = {
+    world: new WorldState(),
+    input: {
+      pressed: (a: string) => pressed.has(a),
+      down: (a: string) => held.has(a),
+      lastDevice: 'keyboard' as const,
+    },
+    audio: silentAudio(),
+    persistWorld: () => undefined,
+    startRoom: () => undefined,
+  } as unknown as Engine;
+  const state = new PlayState(engine, 'coast_start', { kind: 'start' });
+  state.enemies.length = 0;
+  const p = state.player;
+  state.world.grant('djump');
+  state.world.grant('skystep');
+
+  // 悬空并耗尽两段跳
+  p.onGround = false;
+  p.coyote = 0;
+  p.jumpsUsed = 2;
+  p.y = 120;
+  p.vy = 100;
+
+  pressed.add('jump');
+  state.update(1 / 60);
+  pressed.clear();
+
+  assert.ok(p.vy < 0, '第三跳应给出向上速度');
+  assert.ok(p.skystepCdT > 5, '虚步应进入约 6 秒充能');
+
+  // 充能未满:再按无效
+  p.vy = 100;
+  pressed.add('jump');
+  state.update(1 / 60);
+  pressed.clear();
+  assert.ok(p.vy > 0, '充能中不该再次触发');
+
+  // 先耗尽跳跃缓冲(0.12 秒),否则上一步按下的跳跃会在充能就绪的瞬间被兑现 ——
+  // 那是缓冲系统的正确行为,但这里要验证的是"计时归零"本身。
+  for (let i = 0; i < 10; i++) state.update(1 / 60);
+
+  // 充能按时间恢复(空中同样计时)
+  p.skystepCdT = 0.02;
+  state.update(1 / 60);
+  state.update(1 / 60);
+  assert.equal(p.skystepCdT, 0, '计时应归零就绪');
+});
+
+test('without the skystep ability the third jump never fires', () => {
+  const pressed = new Set<string>();
+  const engine = {
+    world: new WorldState(),
+    input: {
+      pressed: (a: string) => pressed.has(a),
+      down: () => false,
+      lastDevice: 'keyboard' as const,
+    },
+    audio: silentAudio(),
+    persistWorld: () => undefined,
+    startRoom: () => undefined,
+  } as unknown as Engine;
+  const state = new PlayState(engine, 'coast_start', { kind: 'start' });
+  state.enemies.length = 0;
+  const p = state.player;
+  state.world.grant('djump');
+  p.onGround = false;
+  p.coyote = 0;
+  p.jumpsUsed = 2;
+  p.y = 120;
+  p.vy = 100;
+
+  pressed.add('jump');
+  state.update(1 / 60);
+
+  assert.ok(p.vy > 0, '未取得踏空蓄步时两段跳耗尽后不该再跳');
 });

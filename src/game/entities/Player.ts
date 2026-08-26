@@ -1,5 +1,7 @@
 import {
   FLASH_MULT,
+  SKYSTEP_CD,
+  SKYSTEP_VEL,
   AIR_ACCEL,
   COYOTE_TIME,
   DASH_CD,
@@ -77,6 +79,8 @@ export class Player {
   paperEnterT = 999;
   /** 弦闪强化窗口剩余秒数(>0 时下一击伤害翻倍) */
   flashChargeT = 0;
+  /** 踏空蓄步:虚步充能剩余秒数(0 = 就绪);空中同样计时 */
+  skystepCdT = 0;
   /** 香奈美·谢幕曲蓄力(秒,满蓄 0.7) */
   chargeT = 0;
   charging = false;
@@ -247,6 +251,7 @@ export class Player {
     if (this.meleeT > 0) this.meleeT -= dt;
     this.shootFlashT = Math.max(0, this.shootFlashT - dt);
     this.paperEnterT += dt;
+    this.skystepCdT = Math.max(0, this.skystepCdT - dt);
     if (this.flashChargeT > 0) {
       this.flashChargeT = Math.max(0, this.flashChargeT - dt);
       // 充能余辉:让玩家看得见"下一击是强化的"
@@ -423,6 +428,24 @@ export class Player {
         this.jumpBuffer = 0;
         ps.sfx('doubleJump');
         ps.particles.burst(this.x, this.y, 6, this.char === 'michele' ? '#8fd7ff' : '#ffb0d8', 60, 0.3);
+      } else if (ps.world.has('skystep') && this.skystepCdT <= 0) {
+        // 踏空蓄步:两段跳耗尽后的虚步。充能按真实时间恢复,
+        // 因此靠飘飞/贴墙/pogo 把自己留在空中足够久,可以在不落地的情况下再跳一次。
+        // 刻意不做无限 Space Jump:6 秒的充能远长于任何单次滞空手段。
+        this.vy = -SKYSTEP_VEL;
+        this.takeoffAnimT = TAKEOFF_ANIM_TIME;
+        this.landingAnimT = 0;
+        this.jumpBuffer = 0;
+        this.skystepCdT = SKYSTEP_CD;
+        ps.sfx('doubleJump');
+        // 脚下碎开一圈弦阶,和二段跳的圆爆区分开
+        for (let i = -3; i <= 3; i++) {
+          ps.particles.spawn({
+            x: this.x + i * 4, y: this.y + 2,
+            vx: i * 18, vy: 25 + Math.abs(i) * 6,
+            life: 0.32, color: '#d8ccff', shape: 'paper', size: 1,
+          });
+        }
       }
     }
     // 松开跳跃键短跳

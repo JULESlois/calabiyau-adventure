@@ -19,7 +19,7 @@ import type { LevelTheme } from '../levels/levels';
 import { MAX_HP, MAX_STRING } from '../constants';
 import type { MusicCue } from '../music';
 
-export type Ability = 'paper' | 'cling' | 'djump' | 'dash' | 'flash' | 'kanami';
+export type Ability = 'paper' | 'cling' | 'djump' | 'dash' | 'flash' | 'skystep' | 'kanami';
 export type ZoneId = 'coast' | 'tide' | 'lab' | 'choir' | 'sky' | 'hangar';
 export type ExitSide = 'left' | 'right' | 'down';
 
@@ -1065,6 +1065,7 @@ const R: RoomDef[] = [];
   rect(g, 5, 7, 30, 37, '#');
   set(g, 10, 24, 'M');
   set(g, 13, 20, 'O');
+  set(g, 13, 34, 'Y'); // 踏空蓄步祭坛:管风琴环的最终奖励
   set(g, 13, 25, 'T');
   set(g, 7, 25, '*');
   set(g, 4, 33, '*');
@@ -1693,6 +1694,11 @@ export const START_ROOM = 'coast_start';
 export const SHORTCUT_IDS = new Set(ROOM_LIST.flatMap((room) => room.shortcuts?.map((s) => s.id) ?? []));
 
 export const ABILITY_INFO: Record<Ability, { name: string; desc: string; hint: string }> = {
+  skystep: {
+    name: '踏空蓄步',
+    desc: '获得按时间充能的第三跳,滞空时也会继续充能',
+    hint: '空中再按一次跳跃 · 虚步约6秒充能',
+  },
   flash: {
     name: '弦闪',
     desc: '敌弹临身的瞬间弦化,可擦开子弹并强化下一次攻击',

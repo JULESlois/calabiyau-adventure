@@ -81,7 +81,7 @@ export class Engine {
           this.world.dust += n;
         },
         grantAll: () => {
-          for (const a of ['paper', 'cling', 'djump', 'dash', 'flash', 'kanami'] as Ability[]) this.world.grant(a);
+          for (const a of ['paper', 'cling', 'djump', 'dash', 'flash', 'skystep', 'kanami'] as Ability[]) this.world.grant(a);
         },
         info: () => {
           const s = this.state instanceof RoomTransitionState || this.state instanceof BeaconTransferState

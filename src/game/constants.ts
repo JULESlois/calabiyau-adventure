@@ -40,6 +40,10 @@ export const POGO_VEL = 290; // 下劈反弹
 export const INVULN_TIME = 1.0; // 受击无敌
 export const SWITCH_CD = 0.6;
 
+// 踏空蓄步(能力 skystep):按时间再生的第三跳,空中也继续充能
+export const SKYSTEP_CD = 6.0; // 原作诺诺被动 2026-07 调整后的 6 秒
+export const SKYSTEP_VEL = 268; // 略低于二段跳,定位是"续一口",不是更高的跳
+
 // 弦闪(能力 flash):敌弹临身的瞬间弦化 → 擦弹 → 强化下一击
 export const FLASH_WINDOW = 0.14; // 进入纸片后多久内算"精准"
 export const FLASH_CHARGE = 4.0; // 强化窗口持续秒数

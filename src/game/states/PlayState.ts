@@ -258,6 +258,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         case 'X':
           if (!world.has('flash')) this.abilitySpots.push({ x: cx, y: bottom, kind: 'flash' });
           break;
+        case 'Y':
+          if (!world.has('skystep')) this.abilitySpots.push({ x: cx, y: bottom, kind: 'skystep' });
+          break;
         case 'G':
           if (!world.has('kanami')) this.kanamiSpot = { x: cx, y: bottom };
           break;
