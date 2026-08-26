@@ -55,6 +55,34 @@ export interface Conveyor {
   dir: -1 | 1;
 }
 
+/** 弦镜偏转:发射器 → (玩家在节点上弦化)折转 → 接收器。 */
+export interface BeamEmitter {
+  x: number;
+  y: number;
+}
+
+export interface MirrorSocket {
+  x: number;
+  y: number;
+  /** 本帧是否有纸片玩家站位(渲染发光用) */
+  active: boolean;
+}
+
+export interface BeamReceiver {
+  x: number;
+  y: number;
+  /** 充能 0..1;满则触发一次长显形 */
+  charge: number;
+  /** 触发后的点亮余辉(渲染) */
+  litT: number;
+}
+
+/** 当帧解算出的能束折线(渲染用) */
+export interface BeamPath {
+  segs: { x0: number; y0: number; x1: number; y1: number }[];
+  bent: boolean;
+}
+
 export interface ShortcutRuntime {
   def: ShortcutDef;
   gate: Rect;
@@ -69,6 +97,7 @@ export interface MechanicsHost {
   readonly particles: ParticleSystem;
   readonly playerX: number;
   readonly playerY: number;
+  readonly playerPaper: boolean;
   sfx(name: string): void;
   /** 让隐藏平台显形 seconds 秒(tile 线性索引)。 */
   revealHiddenTile(tileIndex: number, seconds: number): void;
@@ -95,6 +124,11 @@ export class RegionMechanics {
   shortcuts: ShortcutRuntime[] = [];
   /** Boss 死亡才解封的屏障(每房间至多一道) */
   bossGate: RoomDef['bossGate'] = undefined;
+  emitters: BeamEmitter[] = [];
+  mirrorSockets: MirrorSocket[] = [];
+  receivers: BeamReceiver[] = [];
+  /** 当帧能束(渲染缓存,updateBeams 重建) */
+  beams: BeamPath[] = [];
 
   constructor(private host: MechanicsHost) {}
 
@@ -142,6 +176,15 @@ export class RegionMechanics {
       case 'K':
       case 'k':
         this.conveyors.push({ x: cx - 32, y: bottom - 4, w: 64, dir: char === 'K' ? 1 : -1 });
+        return true;
+      case 'E':
+        this.emitters.push({ x: cx, y: bottom - 10 });
+        return true;
+      case 'C':
+        this.mirrorSockets.push({ x: cx, y: bottom, active: false });
+        return true;
+      case 'V':
+        this.receivers.push({ x: cx, y: bottom - 8, charge: 0, litT: 0 });
         return true;
       default:
         return false;
@@ -247,6 +290,117 @@ export class RegionMechanics {
         });
       }
       if (Math.hypot(host.playerX - resonator.x, host.playerY - resonator.y) < 240) host.sfx('switch');
+    }
+  }
+
+  /**
+   * 弦镜偏转(#43):校准能束沿直线传播;玩家在弦镜节点上弦化时,
+   * 自己的纸片身体成为弦面,把经过节点的能束折转 90° 射向接收器。
+   * 接收器充能约 1 秒后触发一次长显形(7 秒),点亮附近的隐藏平台路径。
+   * 能束不造成伤害 —— 它是纯解谜语言,考的是"站对位置 + 保持形态"。
+   */
+  updateBeams(dt: number): void {
+    this.beams.length = 0;
+    if (this.emitters.length === 0) return;
+    const host = this.host;
+    const level = host.level;
+    const solidAt = (x: number, y: number): boolean => {
+      const c = Math.floor(x / TILE);
+      const r = Math.floor(y / TILE);
+      if (c < 0 || c >= level.w) return true;
+      if (r < 0 || r >= level.h) return false;
+      return level.tiles[r * level.w + c] === 1; // T_SOLID
+    };
+
+    for (const socket of this.mirrorSockets) {
+      socket.active = host.playerPaper
+        && Math.abs(host.playerX - socket.x) < 14
+        && Math.abs(host.playerY - (socket.y - 12)) < 26;
+    }
+
+    const hitReceivers = new Set<BeamReceiver>();
+    for (const emitter of this.emitters) {
+      // 朝最近的弦镜节点方向发射;没有节点就朝右。
+      let nearest: MirrorSocket | null = null;
+      for (const socket of this.mirrorSockets) {
+        if (!nearest || Math.abs(socket.x - emitter.x) < Math.abs(nearest.x - emitter.x)) nearest = socket;
+      }
+      const dir = nearest && nearest.x < emitter.x ? -1 : 1;
+      const path: BeamPath = { segs: [], bent: false };
+
+      // 水平段:逐步推进到实体或地图边缘;途经激活节点则折转。
+      let x = emitter.x + dir * 8;
+      const y = emitter.y;
+      let bendAt: MirrorSocket | null = null;
+      while (x > 0 && x < level.w * TILE && !solidAt(x, y)) {
+        const socket = this.mirrorSockets.find(
+          (candidate) => candidate.active && Math.abs(candidate.x - x) < 4 && Math.abs((candidate.y - 12) - y) < 30,
+        );
+        if (socket) {
+          bendAt = socket;
+          break;
+        }
+        x += dir * 4;
+      }
+      path.segs.push({ x0: emitter.x + dir * 8, y0: y, x1: x, y1: y });
+
+      if (bendAt) {
+        path.bent = true;
+        // 垂直段:向上折转(接收器按设计放在上方)
+        let vy = y - 4;
+        let hit: BeamReceiver | null = null;
+        while (vy > 0 && !solidAt(bendAt.x, vy)) {
+          hit = this.receivers.find(
+            (candidate) => Math.abs(candidate.x - bendAt.x) < 10 && Math.abs(candidate.y - vy) < 8,
+          ) ?? null;
+          if (hit) break;
+          vy -= 4;
+        }
+        path.segs.push({ x0: bendAt.x, y0: y, x1: bendAt.x, y1: hit ? hit.y : vy });
+        if (hit) hitReceivers.add(hit);
+      }
+      this.beams.push(path);
+    }
+
+    for (const receiver of this.receivers) {
+      receiver.litT = Math.max(0, receiver.litT - dt);
+      if (hitReceivers.has(receiver)) {
+        receiver.charge = Math.min(1, receiver.charge + dt);
+        if (receiver.charge >= 1 && receiver.litT <= 0) {
+          // 满充:一次 7 秒长显形,足够玩家收束、恢复 3D 并爬上去。
+          receiver.litT = 7;
+          receiver.charge = 0;
+          host.sfx('crystal');
+          for (let i = 0; i < 14; i++) {
+            const a = (i / 14) * Math.PI * 2;
+            host.particles.spawn({
+              x: receiver.x + Math.cos(a) * 6, y: receiver.y + Math.sin(a) * 6,
+              vx: Math.cos(a) * 110, vy: Math.sin(a) * 110,
+              life: 0.4, color: '#8ee8f4', shape: 'spark', size: 1,
+            });
+          }
+        }
+      } else {
+        receiver.charge = Math.max(0, receiver.charge - dt * 0.6);
+      }
+      if (receiver.litT > 0) {
+        // 点亮期间持续刷新附近隐藏平台
+        const radius = 100;
+        const c0 = Math.max(0, Math.floor((receiver.x - radius) / TILE));
+        const c1 = Math.min(level.w - 1, Math.floor((receiver.x + radius) / TILE));
+        const r0 = Math.max(0, Math.floor((receiver.y - radius) / TILE));
+        const r1 = Math.min(level.h - 1, Math.floor((receiver.y + radius) / TILE));
+        for (let r = r0; r <= r1; r++) {
+          for (let c = c0; c <= c1; c++) {
+            if (level.tiles[r * level.w + c] !== T_HIDDEN) continue;
+            const hx = c * TILE + TILE / 2;
+            const hy = r * TILE + TILE / 2;
+            if (Math.hypot(hx - receiver.x, hy - receiver.y) <= radius) {
+              host.revealHiddenTile(r * level.w + c, Math.min(receiver.litT, 1.4));
+            }
+          }
+        }
+      }
     }
   }
 
@@ -410,6 +564,71 @@ export class RegionMechanics {
       ctx.fillStyle = open ? '#8de0c4' : '#d8a850';
       ctx.fillRect(lever.x - 2, lever.y - 13, 4, 4);
       ctx.fillRect(lever.x - (open ? 1 : 4), lever.y - 10, 2, 6);
+    }
+
+    // 弦镜偏转:能束、发射器、节点与接收器
+    for (const path of this.beams) {
+      ctx.save();
+      ctx.globalAlpha = 0.55 + 0.25 * Math.abs(Math.sin(time * 8));
+      ctx.strokeStyle = path.bent ? '#aef4ff' : '#5a9ab0';
+      ctx.lineWidth = path.bent ? 2 : 1;
+      for (const seg of path.segs) {
+        ctx.beginPath();
+        ctx.moveTo(Math.round(seg.x0), Math.round(seg.y0));
+        ctx.lineTo(Math.round(seg.x1), Math.round(seg.y1));
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    for (const emitter of this.emitters) {
+      ctx.fillStyle = '#18283a';
+      ctx.fillRect(emitter.x - 7, emitter.y - 6, 14, 16);
+      ctx.fillStyle = '#8ee8f4';
+      ctx.fillRect(emitter.x - 2, emitter.y - 3, 4, 6);
+      ctx.fillStyle = '#4a6a88';
+      ctx.fillRect(emitter.x - 7, emitter.y - 6, 14, 2);
+    }
+    for (const socket of this.mirrorSockets) {
+      // 菱形节点:玩家该在这里弦化。激活时亮起。
+      ctx.save();
+      ctx.translate(socket.x, socket.y - 12);
+      ctx.rotate(Math.PI / 4);
+      ctx.strokeStyle = socket.active ? '#aef4ff' : '#4a6a88';
+      ctx.globalAlpha = socket.active ? 0.95 : 0.5 + 0.2 * Math.abs(Math.sin(time * 3));
+      ctx.strokeRect(-7, -7, 14, 14);
+      if (socket.active) {
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = '#aef4ff';
+        ctx.fillRect(-7, -7, 14, 14);
+      }
+      ctx.restore();
+      // 地面刻痕提示站位
+      ctx.fillStyle = 'rgba(142,232,244,0.4)';
+      ctx.fillRect(socket.x - 8, socket.y - 1, 16, 1);
+    }
+    for (const receiver of this.receivers) {
+      const lit = receiver.litT > 0;
+      ctx.fillStyle = '#18283a';
+      ctx.fillRect(receiver.x - 6, receiver.y - 8, 12, 14);
+      ctx.strokeStyle = lit ? '#aef4ff' : '#4a6a88';
+      ctx.strokeRect(receiver.x - 5.5, receiver.y - 7.5, 11, 13);
+      // 充能柱:从下往上填
+      const fill = lit ? 1 : receiver.charge;
+      if (fill > 0) {
+        ctx.fillStyle = lit ? '#e8fbff' : '#8ee8f4';
+        const fh = Math.round(10 * fill);
+        ctx.fillRect(receiver.x - 3, receiver.y + 3 - fh, 6, fh);
+      }
+      if (lit) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.2 + 0.1 * Math.sin(time * 6);
+        ctx.fillStyle = '#8ee8f4';
+        ctx.beginPath();
+        ctx.arc(receiver.x, receiver.y, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     }
 
     // 守卫屏障:与捷径闸门刻意不同 —— 没有拉杆,只有封印纹样。

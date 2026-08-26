@@ -11,7 +11,7 @@ import { WorldState } from '../src/game/world/WorldState';
 declare const process: { exit(code: number): void };
 
 let errors = 0;
-const knownSpawns = new Set('PTFWJGDSXYA*heabcd123456789RMNUBZ><IOKk'.split(''));
+const knownSpawns = new Set('PTFWJGDSXYAECV*heabcd123456789RMNUBZ><IOKk'.split(''));
 const err = (msg: string) => {
   errors++;
   console.error(`  [错误] ${msg}`);
@@ -37,7 +37,7 @@ for (const room of ROOM_LIST) {
 
   // 地面实体下方必须有支撑('2' 浮游炮除外)
   for (const s of lvl.spawns) {
-    if (!'PTFWJGDSXYAabcd1345689RBZIOKk><'.includes(s.char)) continue;
+    if (!'PTFWJGDSXYAECVabcd1345689RBZIOKk><'.includes(s.char)) continue;
     let supported = false;
     for (let r = s.row + 1; r < lvl.h; r++) {
       const t = tileAt(s.col, r);
@@ -158,6 +158,11 @@ for (const room of ROOM_LIST) {
       }
     }
   }
+  // 弦镜机器完整性:有发射器就必须有节点与接收器,否则能束永远无处可折。
+  if (count('E') > 0 && (count('C') === 0 || count('V') === 0)) {
+    err(`${room.id} 有能束发射器但缺少弦镜节点(C)或接收器(V)`);
+  }
+
   const bossGate = room.bossGate;
   if (bossGate) {
     const g = bossGate.gate;

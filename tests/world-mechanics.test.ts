@@ -640,3 +640,46 @@ test('defeating the arbiter unseals the gate without ending the game', () => {
   assert.equal(state.world.cleared, false, '可选 Boss 不该判定通关');
   assert.equal(state.overlay, 'none');
 });
+
+// ---------------- 弦镜偏转(#43) ----------------
+
+test('a papered player on the mirror socket bends the beam and charges the receiver', () => {
+  const state = makePlayState('lab_observation');
+  state.world.grant('paper');
+  const p = state.player;
+  const socket = state.mechanics.mirrorSockets[0];
+  const receiver = state.mechanics.receivers[0];
+  assert.ok(socket && receiver, '观察廊应装有弦镜机器');
+
+  // 站上节点并弦化
+  p.x = socket.x;
+  p.y = socket.y;
+  (p as unknown as { stringMode: string }).stringMode = 'ground';
+
+  for (let i = 0; i < 30; i++) state.mechanics.updateBeams(1 / 60);
+  assert.ok(receiver.charge > 0.3, `接收器应在充能,实际 ${receiver.charge}`);
+  assert.ok(state.mechanics.beams.some((b) => b.bent), '能束应发生折转');
+
+  // 充满 → 点亮 → 隐藏平台显形
+  receiver.charge = 0.999;
+  state.mechanics.updateBeams(1 / 60);
+  assert.ok(receiver.litT > 0, '满充应点亮接收器');
+  state.mechanics.updateBeams(1 / 60);
+  assert.equal(state.tileAt(35, 4), T_SOLID, '点亮期间隐藏平台应显形');
+});
+
+test('the beam passes straight when the player is not papered on the socket', () => {
+  const state = makePlayState('lab_observation');
+  state.world.grant('paper');
+  const p = state.player;
+  const socket = state.mechanics.mirrorSockets[0];
+  const receiver = state.mechanics.receivers[0];
+
+  // 站在节点上但保持 3D:不折转
+  p.x = socket.x;
+  p.y = socket.y;
+  for (let i = 0; i < 30; i++) state.mechanics.updateBeams(1 / 60);
+  assert.equal(receiver.charge, 0, '普通形态不该折转能束');
+  assert.ok(state.mechanics.beams.every((b) => !b.bent));
+  assert.equal(state.tileAt(35, 4), T_EMPTY, '隐藏平台应保持隐藏');
+});

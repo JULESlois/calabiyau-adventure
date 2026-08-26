@@ -736,6 +736,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     // 移动平台
     this.mechanics.advanceMovers();
     this.mechanics.updateResonators();
+    this.mechanics.updateBeams(dt);
 
     // 玩家
     this.player.update(dt, this);
