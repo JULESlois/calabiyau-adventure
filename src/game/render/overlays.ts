@@ -26,7 +26,8 @@ export type Overlay =
   | 'victory'
   | 'map'
   | 'shop'
-  | 'fast_travel';
+  | 'fast_travel'
+  | 'dialogue';
 
 /** 暂停菜单项;破坏性操作需要二次确认。 */
 export type PauseAction = 'resume' | 'controls' | 'bench' | 'title';
@@ -179,6 +180,9 @@ function drawOverlay(ctx: CanvasRenderingContext2D, view: OverlayView): void {
     drawFastTravel(ctx, view);
     return;
   }
+  // 对话框由 PlayState 单独绘制:dialogue.ts 复用了本模块的 ornateFrame,
+  // 若这里反过来 import 它就会成环。
+  if (view.overlay === 'dialogue') return;
   ctx.fillStyle = 'rgba(4, 3, 10, 0.72)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   ctx.textAlign = 'center';

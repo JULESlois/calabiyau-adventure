@@ -83,6 +83,9 @@ export const CHAIN_RELEASE_VX = 96; // 松手蹬离链条的水平初速
 export const DARK_VISION_RADIUS = 90; // 玩家周围的可见半径
 export const DARK_SONAR_LIGHT = 1.6; // 声呐照亮全屏的持续秒数
 
+// 对话(NPC)
+export const DIALOGUE_CPS = 42; // 打字机速度:字/秒
+
 export const COLORS = {
   hud: '#e8ecff',
   hp: '#ff5d7e',

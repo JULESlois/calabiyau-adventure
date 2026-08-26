@@ -145,6 +145,50 @@ export function drawCagedKanami(
 }
 
 /** 引航者商人「诺笛」:兜帽斗篷 + 记忆芯片灯箱(x 中心,y 地面) */
+/**
+ * 镇民 NPC。
+ * 与商人(drawNavigator)刻意区分:没有兜帽、没有灯箱,是个会站在街上的普通人。
+ * 主色由 NpcDef.color 给,所以三个人一眼能分辨,而不是三个换色的商人。
+ */
+export function drawVillager(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  time: number,
+  color: string,
+): void {
+  const bx = Math.round(x);
+  const by = Math.round(y);
+  const bob = Math.sin(time * 1.3 + bx * 0.3) > 0.4 ? 1 : 0;
+  // 腿
+  ctx.fillStyle = '#2a2438';
+  ctx.fillRect(bx - 4, by - 6, 3, 6);
+  ctx.fillRect(bx + 1, by - 6, 3, 6);
+  // 衣身
+  ctx.fillStyle = color;
+  ctx.fillRect(bx - 5, by - 15 + bob, 10, 10);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(bx - 5, by - 8 + bob, 10, 2);
+  // 手臂
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.85;
+  ctx.fillRect(bx - 7, by - 14 + bob, 2, 7);
+  ctx.fillRect(bx + 5, by - 14 + bob, 2, 7);
+  ctx.globalAlpha = 1;
+  // 头
+  ctx.fillStyle = '#e8d8c8';
+  ctx.fillRect(bx - 4, by - 22 + bob, 8, 7);
+  // 发
+  ctx.fillStyle = color;
+  ctx.fillRect(bx - 5, by - 23 + bob, 10, 3);
+  ctx.fillRect(bx - 5, by - 21 + bob, 2, 3);
+  ctx.fillRect(bx + 3, by - 21 + bob, 2, 3);
+  // 眼
+  ctx.fillStyle = '#2a2438';
+  ctx.fillRect(bx - 2, by - 19 + bob, 1, 2);
+  ctx.fillRect(bx + 1, by - 19 + bob, 1, 2);
+}
+
 export function drawNavigator(
   ctx: CanvasRenderingContext2D,
   x: number,

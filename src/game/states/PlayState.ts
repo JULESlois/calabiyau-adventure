@@ -11,6 +11,7 @@ import {
   THORN_SLOW_TIME,
   DARK_VISION_RADIUS,
   DARK_SONAR_LIGHT,
+  DIALOGUE_CPS,
   TILE,
   VIEW_H,
   VIEW_W,
@@ -45,7 +46,9 @@ import {
 import { CatTurret, SonarDart } from '../entities/gadgets';
 import { Background } from '../render/background';
 import { drawCandle, drawExitGate, drawPickup } from '../render/sprites';
-import { drawAbilityShrine, drawBench, drawCagedKanami, drawNavigator } from '../render/props';
+import { drawAbilityShrine, drawBench, drawCagedKanami, drawNavigator, drawVillager } from '../render/props';
+import { NPC_MARKERS, npcById, type NpcDef } from '../npc';
+import { drawDialogue, pageLength, type DialogueView } from '../render/dialogue';
 import { drawHUD } from '../render/hud';
 import { CONTROLS_PAGE_COUNT, drawControlsPanel } from '../render/controlsPanel';
 import {
@@ -214,6 +217,8 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   private meleeTileHits = new Map<number, number>();
   /** 结算屏光标:0 = 继续探索(默认),1 = 返回标题 */
   victorySel = 0;
+  /** 当前对话:说话人、分页台词、打字机进度。对话是房间级瞬时状态,不入档。 */
+  private dialogue: { npc: NpcDef; pages: string[][]; page: number; revealed: number } | null = null;
   /** 暗区中被声呐照亮的剩余秒数 */
   private sonarLightT = 0;
   turrets: CatTurret[] = [];
@@ -236,6 +241,8 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
    * 它同时决定「按 F 会发生什么」与「提示显示什么」—— 这是把两者绑死在一起的那一个字段。
    */
   private activeInteractable: Interactable | null = null;
+  /** 本房间在场的 NPC(present() 为假的不生成 —— 城镇热闹度即由此体现) */
+  private npcSpots: { npc: NpcDef; x: number; y: number }[] = [];
   particles = new ParticleSystem();
   bg: Background;
   private transitionBg: Background | null = null;
@@ -355,6 +362,14 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         case 'S':
           this.shopSpot = { x: cx, y: bottom };
           break;
+        case 's':
+        case 't':
+        case 'u': {
+          const npc = npcById(NPC_MARKERS[s.char]);
+          // present() 为假 = 这个人现在还没来;城镇热闹度就是这么长出来的
+          if (npc && npc.present(world)) this.npcSpots.push({ npc, x: cx, y: bottom });
+          break;
+        }
         case '1':
           this.enemies.push(new Enemy('patrol', cx, bottom));
           break;
@@ -831,6 +846,11 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       return;
     }
 
+    if (this.overlay === 'dialogue') {
+      this.updateDialogue(dt);
+      return;
+    }
+
     if (this.overlay === 'shop') {
       this.time += dt * 0.2;
       const n = SHOP_ITEMS.length;
@@ -1195,6 +1215,58 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   }
 
   /**
+   * 对话推进。打字机未放完时,确认键先"全部显示"(不吞掉这一次输入的意图),
+   * 放完后再按才翻页 —— 这是文字冒险的通用手感,急性子和慢性子都不会难受。
+   */
+  /** 对话框的当帧只读快照 —— 与其它覆盖层同一约定:绘制层不持有状态。 */
+  private dialogueView(d: NonNullable<PlayState['dialogue']>): DialogueView {
+    return {
+      speaker: d.npc.name,
+      color: d.npc.color,
+      lines: d.pages[d.page],
+      revealed: d.revealed,
+      page: d.page,
+      pageCount: d.pages.length,
+      device: this.engine.input.lastDevice,
+      time: this.time,
+    };
+  }
+
+  private updateDialogue(dt: number): void {
+    const d = this.dialogue;
+    if (!d) {
+      this.overlay = 'none';
+      return;
+    }
+    this.time += dt * 0.2;
+    const total = pageLength(d.pages[d.page]);
+    d.revealed = Math.min(total, d.revealed + DIALOGUE_CPS * dt);
+    if (!this.input.pressed('confirm') && !this.input.pressed('interact')) return;
+
+    if (d.revealed < total) {
+      d.revealed = total; // 先补全本页
+      return;
+    }
+    if (d.page < d.pages.length - 1) {
+      d.page++;
+      d.revealed = 0;
+      this.sfx('ui');
+      return;
+    }
+    this.dialogue = null;
+    this.overlay = 'none';
+    this.sfx('ui');
+  }
+
+  private startDialogue(npc: NpcDef): void {
+    const pages = npc.lines(this.world).filter((page) => page.length > 0);
+    if (pages.length === 0) return;
+    this.dialogue = { npc, pages, page: 0, revealed: 0 };
+    this.overlay = 'dialogue';
+    this.sfx('ui');
+  }
+
+  /**
    * 收集本房间的可交互物,**顺序即优先级**。
    * 每条记录自带触发范围、提示文字、锚点与行为 —— 三者在同一个对象里,
    * 因此不可能再出现"提示说休息、按下去却开了闸门"这种分叉。
@@ -1301,6 +1373,18 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
           this.kanamiSpot = null;
           this.grantAbility('kanami', k.x, k.y);
         },
+      });
+    }
+
+    // NPC:2.0 的注册表在这里兑现 —— 加一个会说话的人就是加一条记录
+    for (const spot of this.npcSpots) {
+      const npc = spot.npc;
+      list.push({
+        id: `npc:${npc.id}`,
+        zone: { x: spot.x - 14, y: spot.y - 26, w: 28, h: 26 },
+        label: '交谈',
+        anchor: { x: spot.x, y: spot.y - 26 },
+        interact: () => this.startDialogue(npc),
       });
     }
 
@@ -2025,6 +2109,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     if (this.shopSpot) {
       drawNavigator(ctx, this.shopSpot.x, this.shopSpot.y, this.time, false);
     }
+    for (const spot of this.npcSpots) drawVillager(ctx, spot.x, spot.y, this.time, spot.npc.color);
     if (this.gate.active) drawExitGate(ctx, this.gate.x, this.gate.y, this.time);
 
     // 拾取物
@@ -2165,6 +2250,11 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     }
 
     if (transient) drawOverlays(ctx, this.overlayView());
+    // 对话框单独绘制:dialogue.ts 复用了 overlays.ts 的 ornateFrame,
+    // 若 overlays.ts 反过来 import 它就会成环。
+    if (transient && this.overlay === 'dialogue' && this.dialogue) {
+      drawDialogue(ctx, this.dialogueView(this.dialogue));
+    }
     if (transient && this.overlay === 'controls') {
       drawControlsPanel(ctx, {
         abilities: this.world.abilities,

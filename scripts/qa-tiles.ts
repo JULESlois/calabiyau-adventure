@@ -11,6 +11,8 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { TILE, VIEW_H, VIEW_W } from '../src/game/constants';
 import type { Engine } from '../src/game/Engine';
 import { drawOverlays, type OverlayView } from '../src/game/render/overlays';
+import { drawDialogue, pageLength } from '../src/game/render/dialogue';
+import { npcById } from '../src/game/npc';
 import { PlayState } from '../src/game/states/PlayState';
 import { HIDDEN_CHIPS, ROOM_LIST, SHOP_CHIPS, SHORTCUT_IDS } from '../src/game/world/world';
 import { BOSS_FLAGS, WorldState } from '../src/game/world/WorldState';
@@ -253,6 +255,32 @@ shoot('09-crumble-collapsed', 'tide_gallery', 30, 25, 12, 8, (s) => {
 // 1.5 水体:水面波纹 + 池底;1.6 吊链:必须一眼看出"这条能爬"
 shoot('13-water', 'tide_cistern', 4, 26, 16, 8);
 shoot('14-chain', 'tide_cistern', 29, 8, 10, 10);
+
+// 对话框版面(2.1)。汉字在这里画成占位盒 —— 无法验证字形,
+// 但**能验证版面**:框体是否溢出 480×270、正文行距是否与头像/名牌打架、
+// 打字机中途的断字位置是否合理。
+function shootDialogue(name: string, npcId: string, revealed: number, page = 0) {
+  const world = new WorldState();
+  world.flags.add('rescue:kanami');
+  const npc = npcById(npcId)!;
+  const pages = npc.lines(world);
+  const ctx = new MiniCtx(VIEW_W * SCALE, VIEW_H * SCALE);
+  drawDialogue(ctx as unknown as CanvasRenderingContext2D, {
+    speaker: npc.name,
+    color: npc.color,
+    lines: pages[page],
+    revealed: revealed < 0 ? pageLength(pages[page]) : revealed,
+    page,
+    pageCount: pages.length,
+    device: 'keyboard',
+    time: 1.2,
+  });
+  writePNG(`.qa/${name}.png`, ctx.w, ctx.h, ctx.buf);
+  console.log(`  ${name}.png  ${ctx.w}x${ctx.h}  (${npc.name} 第 ${page + 1}/${pages.length} 页)`);
+}
+
+shootDialogue('15-dialogue-mid', 'keeper', 9);
+shootDialogue('16-dialogue-full', 'sheller', -1, 1);
 
 // ---- 覆盖层版面(结算屏 / 商店)----
 // 这两块面板都在 M0 里加了内容(结算屏 6 项分栏 + 两个选项;商店 4 条 → 7 条),

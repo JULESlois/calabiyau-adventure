@@ -217,6 +217,7 @@ const R: RoomDef[] = [];
   rect(g, 12, 12, 25, 28, '='); // 台阶
   rect(g, 10, 10, 30, 33, '='); // 观景台
   set(g, 9, 31, '*');
+  set(g, 13, 8, 's'); // 灯塔守:开场就有人说话,世界不该是空的
   R.push({
     id: 'coast_start', zone: 'coast', name: '海滨 · 灯塔下', rows: rows(g),
     mapX: 2, mapY: 2,
@@ -429,6 +430,8 @@ const R: RoomDef[] = [];
   set(g, 30, 14, '2');
   set(g, 30, 25, 'e');
   set(g, 8, 30, '7'); // 弦蛭:吊在捷径封顶下的伏击
+  set(g, 30, 12, 't'); // 拾贝童(救出香奈美后出现)
+  set(g, 30, 20, 'u'); // 归乡渔妇(击败回响守卫后出现)
   R.push({
     id: 'coast_beacon', zone: 'coast', name: '海滨 · 旧灯芯室', rows: rows(g),
     mapX: 2, mapY: 5, mapH: 2,

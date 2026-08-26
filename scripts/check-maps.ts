@@ -33,7 +33,7 @@ import { WorldState } from '../src/game/world/WorldState';
 declare const process: { exit(code: number): void };
 
 let errors = 0;
-const knownSpawns = new Set('PTFWJGDSXYAECVLQ*heabcdg123456789RmnMNUBZ><IOKk'.split(''));
+const knownSpawns = new Set('PTFWJGDSXYAECVLQ*heabcdg123456789RmnMNUBZ><IOKkstu'.split(''));
 const err = (msg: string) => {
   errors++;
   console.error(`  [错误] ${msg}`);
@@ -83,7 +83,7 @@ for (const room of ROOM_LIST) {
 
   // 地面实体下方必须有支撑('2' 浮游炮除外)
   for (const s of lvl.spawns) {
-    if (!'PTFWJGDSXYAECVLQabcdg1345689RBZIOKk><'.includes(s.char)) continue;
+    if (!'PTFWJGDSXYAECVLQabcdg1345689RBZIOKk><stu'.includes(s.char)) continue;
     let supported = false;
     for (let r = s.row + 1; r < lvl.h; r++) {
       const t = tileAt(s.col, r);
