@@ -77,9 +77,28 @@ import {
   type ZoneId,
 } from '../world/world';
 import type { WorldState } from '../world/WorldState';
-import { moverDisplacement, RegionMechanics, type MechanicsHost, type ShortcutRuntime } from './regionMechanics';
+import { moverDisplacement, RegionMechanics, type MechanicsHost } from './regionMechanics';
 
 export { moverDisplacement };
+
+/**
+ * 一件可交互物(信标、祭坛、拉杆、商人、日后的 NPC……)。
+ * **触发范围、提示文字、提示锚点与行为写在同一条记录里** —— 这正是这个类型存在的理由:
+ * 在此之前它们分散在 PlayState 的三串手排 if 链中,靠注释约定"顺序要一致",
+ * 而实际上早已不一致(信标在提示链里排第一、在检测链里排第三,
+ * 于是重叠时会出现"提示写着休息、按下去却开了闸门")。
+ */
+export interface Interactable {
+  id: string;
+  /** 触发范围(世界坐标) */
+  zone: Rect;
+  /** F 提示文字 */
+  label: string;
+  /** 提示锚点(世界坐标) */
+  anchor: { x: number; y: number };
+  /** 按下 F 时执行 */
+  interact(): void;
+}
 
 /** 结算屏在这段时间内不收输入,免得通关瞬间的连打直接跳过结算。 */
 export const VICTORY_INPUT_DELAY = 1.4;
@@ -212,12 +231,11 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   controlsPage = 0;
   /** 由 Engine 在首次进入房间时置位,用来报一次房间名。 */
   announceRoomName = false;
-  private nearBenchSpot: BenchSpot | null = null;
-  private nearShop = false;
-  private nearAbilitySpot: AbilitySpot | null = null;
-  private nearKanamiSpot: { x: number; y: number } | null = null;
-  private nearShortcutSpot: ShortcutRuntime | null = null;
-  private nearPolaritySpot: { x: number; y: number } | null = null;
+  /**
+   * 当前与玩家重叠、优先级最高的可交互物。
+   * 它同时决定「按 F 会发生什么」与「提示显示什么」—— 这是把两者绑死在一起的那一个字段。
+   */
+  private activeInteractable: Interactable | null = null;
   particles = new ParticleSystem();
   bg: Background;
   private transitionBg: Background | null = null;
@@ -1176,129 +1194,148 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     return list;
   }
 
-  private updateInteractables(): void {
-    const p = this.player;
-    if (p.dead) return;
-    const pr = p.rect();
+  /**
+   * 收集本房间的可交互物,**顺序即优先级**。
+   * 每条记录自带触发范围、提示文字、锚点与行为 —— 三者在同一个对象里,
+   * 因此不可能再出现"提示说休息、按下去却开了闸门"这种分叉。
+   * 新增一种可交互物(NPC、告示牌……)= 往这个列表里加一条,不必改动下面任何代码。
+   */
+  private collectInteractables(): Interactable[] {
+    const list: Interactable[] = [];
 
-    // 永久捷径开关:只在关闭时显示 F,从远端开启后立即持久化。
-    this.nearShortcutSpot = null;
+    // 永久捷径开关:只在尚未开启时可交互
     for (const shortcut of this.mechanics.shortcuts) {
       if (this.world.shortcuts.has(shortcut.def.id)) continue;
-      const zone: Rect = { x: shortcut.lever.x - 12, y: shortcut.lever.y - 28, w: 24, h: 28 };
-      if (!rectsOverlap(pr, zone)) continue;
-      this.nearShortcutSpot = shortcut;
-      if (this.input.pressed('interact')) {
-        this.world.shortcuts.add(shortcut.def.id);
-        this.engine.persistWorld();
-        this.sfx('switch');
-        this.shake(2);
-        this.toast(`${shortcut.def.name} 已开启`);
-        this.particles.burst(shortcut.lever.x, shortcut.lever.y - 12, 16, '#ffe9a8', 85, 0.55, 'spark');
-        this.nearShortcutSpot = null;
-        return;
-      }
-      break;
+      list.push({
+        id: `shortcut:${shortcut.def.id}`,
+        zone: { x: shortcut.lever.x - 12, y: shortcut.lever.y - 28, w: 24, h: 28 },
+        label: '开启闸门',
+        anchor: { x: shortcut.lever.x, y: shortcut.lever.y - 22 },
+        interact: () => {
+          this.world.shortcuts.add(shortcut.def.id);
+          this.engine.persistWorld();
+          this.sfx('switch');
+          this.shake(2);
+          this.toast(`${shortcut.def.name} 已开启`);
+          this.particles.burst(shortcut.lever.x, shortcut.lever.y - 12, 16, '#ffe9a8', 85, 0.55, 'spark');
+        },
+      });
     }
 
-    // 研究区极性终端:切换本房间的极性弦膜。
-    this.nearPolaritySpot = null;
+    // 研究区极性终端
     for (const spot of this.mechanics.polaritySpots) {
-      const zone: Rect = { x: spot.x - 12, y: spot.y - 28, w: 24, h: 28 };
-      if (!rectsOverlap(pr, zone)) continue;
-      this.nearPolaritySpot = spot;
-      if (this.input.pressed('interact')) {
-        this.mechanics.polarityOpen = !this.mechanics.polarityOpen;
-        this.sfx('switch');
-        this.toast(this.mechanics.polarityOpen ? '极性膜：开放' : '极性膜：封锁');
-        this.particles.burst(spot.x, spot.y - 12, 12, '#7ef0ff', 70, 0.4, 'spark');
-        return;
-      }
-      break;
+      list.push({
+        id: `polarity:${spot.x},${spot.y}`,
+        zone: { x: spot.x - 12, y: spot.y - 28, w: 24, h: 28 },
+        label: this.mechanics.polarityOpen ? '封锁极性膜' : '开放极性膜',
+        anchor: { x: spot.x, y: spot.y - 22 },
+        interact: () => {
+          this.mechanics.polarityOpen = !this.mechanics.polarityOpen;
+          this.sfx('switch');
+          this.toast(this.mechanics.polarityOpen ? '极性膜：开放' : '极性膜：封锁');
+          this.particles.burst(spot.x, spot.y - 12, 12, '#7ef0ff', 70, 0.4, 'spark');
+        },
+      });
     }
 
-    // 1. 信标 (Bench)
-    this.nearBenchSpot = null;
+    // 信标
     for (const b of this.benches) {
-      const zone: Rect = { x: b.x - 14, y: b.y - 30, w: 28, h: 30 };
-      if (rectsOverlap(pr, zone)) {
-        this.nearBenchSpot = b;
-        if (this.input.pressed('interact')) {
+      list.push({
+        id: `bench:${b.x}`,
+        zone: { x: b.x - 14, y: b.y - 30, w: 28, h: 30 },
+        label: b.resting ? '传送' : '休息',
+        anchor: { x: b.x, y: b.y - 32 },
+        interact: () => {
           if (b.resting) {
             // 已经休息过:同一个键改为开传送列表,并把光标停在当前信标上,
             // 免得手快连按两次 F 就被送回开局房间。
             this.overlay = 'fast_travel';
-            const list = this.getVisitedBenches();
-            const here = list.findIndex((entry) => entry.isCurrent);
+            const list2 = this.getVisitedBenches();
+            const here = list2.findIndex((entry) => entry.isCurrent);
             this.fastTravelIndex = here >= 0 ? here : 0;
             this.sfx('ui');
             return;
           }
           b.resting = true;
           const w = this.world;
-          p.hp = w.hpMax;
-          p.energy = w.energyMax;
+          this.player.hp = w.hpMax;
+          this.player.energy = w.energyMax;
           w.benchRoom = this.roomId;
           w.activatedBeacons.add(this.roomId);
           w.hp = w.hpMax;
           w.energy = w.energyMax;
-          w.char = p.char;
+          w.char = this.player.char;
           this.engine.persistWorld();
           this.sfx('checkpoint');
           this.toast('信标已激活 · 进度已保存');
           this.particles.burst(b.x, b.y - 14, 16, '#8ee8f4', 70, 0.7, 'spark');
-          return;
-        }
-        break;
-      }
+        },
+      });
     }
 
-    // 2. 能力祭坛 (Ability Shrine)
-    this.nearAbilitySpot = null;
+    // 能力祭坛(倒序:后放置的先响应,与原实现一致)
     for (let i = this.abilitySpots.length - 1; i >= 0; i--) {
       const a = this.abilitySpots[i];
-      const zone: Rect = { x: a.x - 12, y: a.y - 28, w: 24, h: 28 };
-      if (rectsOverlap(pr, zone)) {
-        this.nearAbilitySpot = a;
-        if (this.input.pressed('interact')) {
-          this.abilitySpots.splice(i, 1);
+      list.push({
+        id: `ability:${a.kind}`,
+        zone: { x: a.x - 12, y: a.y - 28, w: 24, h: 28 },
+        label: '取得能力',
+        anchor: { x: a.x, y: a.y - 28 },
+        interact: () => {
+          const idx = this.abilitySpots.indexOf(a);
+          if (idx >= 0) this.abilitySpots.splice(idx, 1);
           this.grantAbility(a.kind, a.x, a.y);
-          this.nearAbilitySpot = null;
-          return;
-        }
-        break;
-      }
+        },
+      });
     }
 
-    // 3. 救出香奈美 (Caged Kanami)
-    this.nearKanamiSpot = null;
+    // 救出香奈美
     if (this.kanamiSpot) {
       const k = this.kanamiSpot;
-      const zone: Rect = { x: k.x - 12, y: k.y - 26, w: 24, h: 26 };
-      if (rectsOverlap(pr, zone)) {
-        this.nearKanamiSpot = k;
-        if (this.input.pressed('interact')) {
+      list.push({
+        id: 'kanami',
+        zone: { x: k.x - 12, y: k.y - 26, w: 24, h: 26 },
+        label: '解救香奈美',
+        anchor: { x: k.x, y: k.y - 26 },
+        interact: () => {
           this.kanamiSpot = null;
           this.grantAbility('kanami', k.x, k.y);
-          this.nearKanamiSpot = null;
-          return;
-        }
-      }
+        },
+      });
     }
 
-    // 4. 商人 (Shop NPC)
-    this.nearShop = false;
+    // 商人
     if (this.shopSpot) {
-      const zone: Rect = { x: this.shopSpot.x - 16, y: this.shopSpot.y - 26, w: 32, h: 26 };
-      if (rectsOverlap(pr, zone)) {
-        this.nearShop = true;
-        if (this.input.pressed('interact')) {
+      const shop = this.shopSpot;
+      list.push({
+        id: 'shop',
+        zone: { x: shop.x - 16, y: shop.y - 26, w: 32, h: 26 },
+        label: '交易',
+        anchor: { x: shop.x, y: shop.y - 26 },
+        interact: () => {
           this.overlay = 'shop';
           this.shopSel = 0;
           this.sfx('ui');
-          return;
-        }
+        },
+      });
+    }
+
+    return list;
+  }
+
+  private updateInteractables(): void {
+    this.activeInteractable = null;
+    const p = this.player;
+    if (p.dead) return;
+    const pr = p.rect();
+    for (const item of this.collectInteractables()) {
+      if (!rectsOverlap(pr, item.zone)) continue;
+      if (this.input.pressed('interact')) {
+        item.interact();
+      } else {
+        this.activeInteractable = item;
       }
+      return; // 一次只响应一个目标
     }
   }
 
@@ -2525,26 +2562,12 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
 
   /** 让玩家在按下之前就知道这一下会发生什么。 */
   private interactionPromptLabel(): string {
-    if (this.nearBenchSpot) return this.nearBenchSpot.resting ? '传送' : '休息';
-    if (this.nearShortcutSpot) return '开启闸门';
-    if (this.nearPolaritySpot) return this.mechanics.polarityOpen ? '封锁极性膜' : '开放极性膜';
-    if (this.nearAbilitySpot) return '取得能力';
-    if (this.nearKanamiSpot) return '解救香奈美';
-    if (this.nearShop && this.shopSpot) return '交易';
-    return '';
+    return this.activeInteractable?.label ?? '';
   }
 
-  /** F 提示只显示一个目标,优先级与 updateInteractables 的检测顺序一致。 */
+  /** F 提示只显示一个目标 —— 与真正会被触发的那一个是同一条记录。 */
   private interactionPromptAnchor(): { x: number; y: number } | null {
-    if (this.nearBenchSpot) return { x: this.nearBenchSpot.x, y: this.nearBenchSpot.y - 32 };
-    if (this.nearShortcutSpot) {
-      return { x: this.nearShortcutSpot.lever.x, y: this.nearShortcutSpot.lever.y - 22 };
-    }
-    if (this.nearPolaritySpot) return { x: this.nearPolaritySpot.x, y: this.nearPolaritySpot.y - 22 };
-    if (this.nearAbilitySpot) return { x: this.nearAbilitySpot.x, y: this.nearAbilitySpot.y - 28 };
-    if (this.nearKanamiSpot) return { x: this.nearKanamiSpot.x, y: this.nearKanamiSpot.y - 26 };
-    if (this.nearShop && this.shopSpot) return { x: this.shopSpot.x, y: this.shopSpot.y - 26 };
-    return null;
+    return this.activeInteractable?.anchor ?? null;
   }
 }
 
