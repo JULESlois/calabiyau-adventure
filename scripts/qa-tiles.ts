@@ -250,6 +250,10 @@ shoot('09-crumble-collapsed', 'tide_gallery', 30, 25, 12, 8, (s) => {
     (s as unknown as { crumbleT: Map<number, number> }).crumbleT.set(28 * s.level.w + c, -1.2);
   }
 });
+// 1.5 水体:水面波纹 + 池底;1.6 吊链:必须一眼看出"这条能爬"
+shoot('13-water', 'tide_cistern', 4, 26, 16, 8);
+shoot('14-chain', 'tide_cistern', 29, 8, 10, 10);
+
 // ---- 覆盖层版面(结算屏 / 商店)----
 // 这两块面板都在 M0 里加了内容(结算屏 6 项分栏 + 两个选项;商店 4 条 → 7 条),
 // 逻辑分辨率只有 480×270,溢出是真实风险。画整屏,连边界一起看。

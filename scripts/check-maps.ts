@@ -13,6 +13,8 @@ import {
   T_SOLID,
   T_SPIKE,
   T_THORN,
+  T_WATER,
+  T_CHAIN,
 } from '../src/game/levels/levels';
 import { PlayState } from '../src/game/states/PlayState';
 import type { Engine } from '../src/game/Engine';
@@ -268,6 +270,9 @@ let breakableCount = 0;
 let crumbleCount = 0;
 let thornCount = 0;
 let iceCount = 0;
+let waterCount = 0;
+let chainCount = 0;
+const darkRooms = ROOM_LIST.filter((r) => r.dark).length;
 
 for (const room of ROOM_LIST) {
   const raw = rawParsed.get(room.id)!;
@@ -280,6 +285,8 @@ for (const room of ROOM_LIST) {
     else if (t === T_CRUMBLE) crumbleCount++;
     else if (t === T_THORN) thornCount++;
     else if (t === T_ICE) iceCount++;
+    else if (t === T_WATER) waterCount++;
+    else if (t === T_CHAIN) chainCount++;
   }
 
   // 把开放空间(把未击碎的 @ 当作实体)分成连通区域
@@ -371,12 +378,57 @@ for (const room of ROOM_LIST) {
       }
     }
   }
+
+  // 水体:纸片入水会被强制展开,因此**任何 needs:['paper'] 的坠落口都不能泡在水里**,
+  // 否则那条路永远走不通。这条规则来自实际踩坑:第一版蓄水池积水正好盖住井底坠落口。
+  for (const exit of room.exits) {
+    if (exit.side !== 'down' || !exit.needs?.includes('paper')) continue;
+    for (let c = exit.from; c <= exit.to; c++) {
+      for (let r = 0; r < h; r++) {
+        if (at(c, r) === T_WATER) {
+          err(`${room.id} 的纸片坠落口 (col ${c}) 被水体淹没 —— 纸片入水会展开,这条路走不通`);
+        }
+      }
+    }
+  }
+
+  // 水面必须够得着:一池水如果四周全是实体,玩家进得去出不来
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      if (at(c, r) !== T_WATER || at(c, r - 1) === T_WATER) continue;
+      // 这是水面格:上方必须是可通行空间
+      if (blocks(at(c, r - 1))) {
+        err(`${room.id} 的水面 (col ${c}, row ${r}) 被实体封顶 —— 入水后无法上浮离开`);
+      }
+    }
+  }
+
+  // 吊链必须成串且底端离地够高,否则那截链子只是装饰
+  for (let c = 0; c < w; c++) {
+    let run = 0;
+    for (let r = 0; r < h; r++) {
+      if (at(c, r) === T_CHAIN) {
+        run++;
+        continue;
+      }
+      if (run > 0 && run < 3) {
+        err(`${room.id} 的吊链 | (col ${c}, row ${r - run}) 只有 ${run} 格 —— 不足以构成一条纵向路`);
+      }
+      run = 0;
+    }
+    if (run > 0 && run < 3) {
+      err(`${room.id} 的吊链 | (col ${c}) 只有 ${run} 格 —— 不足以构成一条纵向路`);
+    }
+  }
 }
 
 if (breakableCount === 0) err('世界里没有任何可破坏墙 @,Phase 1 地形词汇未铺设');
+if (waterCount === 0) err('世界里没有任何水体 ~,Phase 1.5 未铺设');
+if (chainCount === 0) err('世界里没有任何吊链 |,Phase 1.6 未铺设');
+if (darkRooms === 0) err('世界里没有任何暗区房间,Phase 1.7 未铺设');
 console.log(
   `  [通过] Phase 1 地形铺设 ${breakableCount} 可破坏墙 / ${crumbleCount} 碎裂平台 / ` +
-    `${thornCount} 荆棘 / ${iceCount} 冰面`,
+    `${thornCount} 荆棘 / ${iceCount} 冰面 / ${waterCount} 水体 / ${chainCount} 吊链 / ${darkRooms} 暗区`,
 );
 
 // ---------------- 奖励曲线不得中途断掉 ----------------

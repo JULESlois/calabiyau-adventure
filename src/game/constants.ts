@@ -69,6 +69,20 @@ export const THORN_SLOW_MULT = 0.6; // 减速 40%
 // 冰面(tile :):加速与减速共用同一个 accel 项,所以压低它即可同时得到"推不动"与"刹不住"
 export const ICE_ACCEL_MULT = 0.35;
 
+// 水体(tile ~):半高浮力区
+export const WATER_SPEED_MULT = 0.45; // 水中水平速度 −55%
+export const WATER_JUMP_MULT = 0.7; // 水中起跳 −30%
+export const WATER_GRAVITY_MULT = 0.28; // 缓沉而不是直坠
+export const WATER_MAX_SINK = 70; // 下沉终速
+
+// 吊链(tile |):无能力需求的纵向抓附
+export const CHAIN_CLIMB_SPEED = 74;
+export const CHAIN_RELEASE_VX = 96; // 松手蹬离链条的水平初速
+
+// 暗区(RoomDef.dark)
+export const DARK_VISION_RADIUS = 90; // 玩家周围的可见半径
+export const DARK_SONAR_LIGHT = 1.6; // 声呐照亮全屏的持续秒数
+
 export const COLORS = {
   hud: '#e8ecff',
   hp: '#ff5d7e',

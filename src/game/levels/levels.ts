@@ -4,6 +4,7 @@
 //   H  隐藏平台(香奈美的声呐显形后短暂实体化)  &  极性弦膜(I 终端切换)
 //   @  可破坏墙(击打若干次后永久碎裂)      !  碎裂平台(踩上后塌落,离房重置)
 //   ;  荆棘(非致死减速带)                 :  冰面(低摩擦地表)
+//   ~  水体(浮力区;纸片入水强制展开)      |  吊链(无能力需求的纵向抓附)
 //   其余字符视为实体生成点(spawns),由 PlayState 解释。
 //
 // 地形 tile 一律用标点,生成符一律用字母数字 —— 见 docs/ROADMAP.md 的字符命名空间。
@@ -35,6 +36,8 @@ export const T_BREAKABLE = 7; // 可破坏墙:未碎时等同实体,碎裂永久
 export const T_CRUMBLE = 8; // 碎裂平台:踩住片刻后塌落,过一会儿重建
 export const T_THORN = 9; // 荆棘:不实体,接触掉血并减速(与尖刺的击退区分)
 export const T_ICE = 10; // 冰面:实体地表,加减速都被压低
+export const T_WATER = 11; // 水体:不实体的浮力区;纸片入水强制展开(纸会湿)
+export const T_CHAIN = 12; // 吊链:不实体,可抓附纵向移动 —— 不需要任何能力
 
 export interface SpawnPoint {
   char: string;
@@ -69,6 +72,8 @@ export function parseRows(rows: string[]): ParsedRows {
         case '!': tiles[r * w + c] = T_CRUMBLE; break;
         case ';': tiles[r * w + c] = T_THORN; break;
         case ':': tiles[r * w + c] = T_ICE; break;
+        case '~': tiles[r * w + c] = T_WATER; break;
+        case '|': tiles[r * w + c] = T_CHAIN; break;
         case '.': case ' ': break;
         default:
           spawns.push({ char: ch, col: c, row: r });

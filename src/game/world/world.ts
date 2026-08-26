@@ -74,6 +74,12 @@ export interface RoomDef {
    * 用来让守卫战真正成为能力的门,而不是可以绕过的摆设。
    */
   bossGate?: { flag: string; gate: { col: number; row: number; w: number; h: number } };
+  /**
+   * 暗区:视野收缩为玩家周围的一小圈,其余渐暗。
+   * 只改绘制,不改碰撞 —— 暗区考验的是记路,不是手感。
+   * 香奈美的声呐脉冲会短暂照亮全屏,让侦察角色在这里真正有位置。
+   */
+  dark?: boolean;
   /** 跨区缓冲空间:房间内视觉由当前区域逐渐混合到目标区域。 */
   transition?: {
     to: ZoneId;
@@ -176,6 +182,17 @@ function rect(g: Grid, r0: number, r1: number, c0: number, c1: number, ch: strin
 
 function set(g: Grid, r: number, c: number, ch: string): void {
   g[r][c] = ch;
+}
+
+/**
+ * 只往**空格**里填,已有内容一律不动。
+ * 水体这类"灌进空腔"的地形必须用它:`rect()` 会覆写,一不留神就冲掉了
+ * 地板、拉杆或坠落口 —— 这正是第一版积水踩到的坑(check-maps 当场报出四条错)。
+ */
+function soak(g: Grid, r0: number, r1: number, c0: number, c1: number, ch: string): void {
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) if (g[r][c] === '.') g[r][c] = ch;
+  }
 }
 
 function rows(g: Grid): string[] {
@@ -442,6 +459,7 @@ const R: RoomDef[] = [];
   set(g, 9, 21, '*');
   set(g, 13, 27, '>');
   set(g, 13, 38, '1');
+  soak(g, 12, 13, 15, 22, '~'); // 阀道浅水
   set(g, 13, 45, '5');
   set(g, 13, 41, '9'); // 逆弦犬
   R.push({
@@ -469,8 +487,14 @@ const R: RoomDef[] = [];
   set(g, 24, 11, '*');
   set(g, 30, 12, '>');
   set(g, 30, 6, '6');
+  soak(g, 6, 23, 34, 34, '|'); // 吊链:不靠能力也能爬的纵向路
   set(g, 30, 24, '3');
   set(g, 12, 22, '7'); // 弦蛭吸附在中层顶板下
+  // 池水分居坠落口两侧,中间 15–19 列留干。
+  // 「纸会湿」意味着水与**纸片专用通路**天然互斥 —— 井底那条 needs:['paper'] 的
+  // 坠落口若泡在水里就永远走不通(check-maps 会直接报错)。这条干道就是那条规则的物证。
+  soak(g, 29, 30, 4, 14, '~');
+  soak(g, 29, 30, 20, 28, '~');
   set(g, 8, 6, 'e');
   R.push({
     id: 'tide_cistern', zone: 'tide', name: '沉潮 · 倒悬蓄水池', rows: rows(g),
@@ -618,6 +642,7 @@ const R: RoomDef[] = [];
   set(g, 30, 20, '5');
   set(g, 30, 34, '6');
   set(g, 30, 26, '8'); // 迫击晶压制中庭
+  soak(g, 31, 33, 6, 24, '~'); // 泄流库房积水
   set(g, 30, 38, 'e');
   R.push({
     id: 'tide_vault', zone: 'tide', name: '沉潮 · 泄流库房', rows: rows(g),
@@ -923,7 +948,7 @@ const R: RoomDef[] = [];
   set(g, 13, 25, '3');
   set(g, 13, 49, '6');
   R.push({
-    id: 'lab_service', zone: 'lab', name: '研究区 · 检修暗线', rows: rows(g),
+    id: 'lab_service', dark: true, zone: 'lab', name: '研究区 · 检修暗线', rows: rows(g),
     mapX: 4, mapY: 5,
     exits: [
       { side: 'left', from: 11, to: 13, target: 'lab_gate', ex: 40, ey: 21 },
@@ -1294,7 +1319,7 @@ const R: RoomDef[] = [];
   set(g, 13, 44, 'R'); // 镜弦猎兵
   set(g, 13, 24, '9'); // 云背档案馆的逆弦犬
   R.push({
-    id: 'sky_archive', zone: 'sky', name: '天穹 · 云背档案馆', rows: rows(g),
+    id: 'sky_archive', dark: true, zone: 'sky', name: '天穹 · 云背档案馆', rows: rows(g),
     mapX: 9, mapY: 3,
     exits: [{ side: 'right', from: 11, to: 13, target: 'sky_belltower', ex: 3, ey: 30, needs: ['kanami'] }],
   });
@@ -1315,6 +1340,7 @@ const R: RoomDef[] = [];
   set(g, 14, 11, '*');
   set(g, 30, 29, 'e');
   set(g, 30, 22, '8'); // 迫击晶
+  soak(g, 10, 28, 17, 17, '|'); // 钟楼吊链
   R.push({
     id: 'sky_belltower', zone: 'sky', name: '天穹 · 钟摆塔', rows: rows(g),
     mapX: 10, mapY: 3, mapH: 2,
@@ -1451,6 +1477,7 @@ const R: RoomDef[] = [];
   set(g, 30, 24, 'h');
   set(g, 30, 27, 'e');
   set(g, 30, 33, 'K');
+  soak(g, 6, 28, 20, 20, '|'); // 机库吊链
   set(g, 30, 29, '8'); // 迫击晶
   R.push({
     id: 'hangar_gate', zone: 'hangar', name: '机库 · 前厅', rows: rows(g),

@@ -35,6 +35,8 @@ function makeState(abilities: Ability[] = []) {
     mapH: 270,
     tileAt: (col: number, row: number) => (col === 2 && row >= 0 && row <= 12 ? T_SOLID : T_EMPTY),
     isIceAt: () => false, // 弦化用例测的是普通地面手感
+    isWaterAt: () => false, // 干燥地面:水与吊链另有 terrain.test.ts 覆盖
+    isChainAt: () => false,
     sfx: () => undefined,
     shake: () => undefined,
     particles: {

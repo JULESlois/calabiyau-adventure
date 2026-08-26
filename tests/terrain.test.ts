@@ -19,11 +19,31 @@ import { T_EMPTY, T_ONEWAY, T_SOLID } from '../src/game/levels/levels';
 import { parseWorldSave } from '../src/game/save';
 import { PlayState } from '../src/game/states/PlayState';
 import { WorldState } from '../src/game/world/WorldState';
+import { ROOMS, ROOM_LIST } from '../src/game/world/world';
 
 function makePlayState(roomId: string, world = new WorldState()): PlayState {
   const engine = {
     world,
     input: { pressed: () => false, down: () => false, lastDevice: 'keyboard' as const },
+    audio: {
+      sfx: () => undefined,
+      playSong: () => undefined,
+      playStinger: () => undefined,
+      setMusicState: () => undefined,
+    },
+    persistWorld: () => undefined,
+  } as unknown as Engine;
+  return new PlayState(engine, roomId, { kind: 'start' });
+}
+
+function makePlayStateWithInput(
+  roomId: string,
+  world: WorldState,
+  down: (action: string) => boolean,
+): PlayState {
+  const engine = {
+    world,
+    input: { pressed: down, down, lastDevice: 'keyboard' as const },
     audio: {
       sfx: () => undefined,
       playSong: () => undefined,
@@ -307,4 +327,143 @@ test('a legitimate breakable coordinate survives validation', () => {
   const parsed = parseWorldSave(save);
   assert.ok(parsed);
   assert.deepEqual(parsed.brokenWalls, [`${WALL_ROOM}:${WALL_COL}:${WALL_ROW}`]);
+});
+
+// ---------------- 水体 ~ ----------------
+// tide_cistern 池水在 row 29-30、cols 4-14 与 20-28(中间 15-19 为坠落口干道)
+
+const WATER_ROOM = 'tide_cistern';
+const WATER_COL = 10;
+const WATER_ROW = 30;
+
+test('water is not solid — you swim into it, you do not stand on it', () => {
+  const state = makePlayState(WATER_ROOM);
+  assert.equal(state.isWaterAt(WATER_COL, WATER_ROW), true);
+  assert.equal(
+    state.rectHitsSolid({ x: WATER_COL * TILE + 2, y: WATER_ROW * TILE + 2, w: 4, h: 4 }),
+    false,
+    '水体不该阻挡移动',
+  );
+});
+
+test('paper form is forcibly expanded on entering water — paper gets wet', () => {
+  const world = new WorldState();
+  world.grant('paper');
+  const state = makePlayState(WATER_ROOM, world);
+  const p = state.player;
+  (p as unknown as { stringMode: string }).stringMode = 'glide';
+  assert.equal(p.paper, true);
+
+  p.x = WATER_COL * TILE + TILE / 2;
+  p.y = WATER_ROW * TILE + TILE;
+  state.update(DT);
+
+  assert.equal(p.paper, false, '入水应强制展开');
+  assert.equal(p.stringMode, 'normal');
+});
+
+test('water slows the sink rate well below a normal fall', () => {
+  const dry = makePlayState(WATER_ROOM);
+  dry.player.x = 17 * TILE + TILE / 2; // 坠落口干道:没有水
+  dry.player.y = 20 * TILE;
+  dry.player.vy = 0;
+  for (let i = 0; i < 20; i++) dry.update(DT);
+  const dryFall = dry.player.vy;
+
+  const wet = makePlayState(WATER_ROOM);
+  wet.player.x = WATER_COL * TILE + TILE / 2;
+  wet.player.y = WATER_ROW * TILE + TILE;
+  wet.player.vy = 0;
+  for (let i = 0; i < 20; i++) wet.update(DT);
+
+  assert.ok(wet.player.vy < dryFall * 0.6, `水中下沉 ${wet.player.vy} 应远慢于空气中 ${dryFall}`);
+});
+
+test('the paper-only drop chute is never flooded — the rule would make it impassable', () => {
+  // 「纸会湿」使水与 needs:['paper'] 的通路天然互斥;这条断言把那个约束钉死。
+  const room = ROOMS[WATER_ROOM];
+  const chute = room.exits.find((e) => e.side === 'down' && e.needs?.includes('paper'));
+  assert.ok(chute, '蓄水池应当有一条纸片坠落口');
+  for (let c = chute!.from; c <= chute!.to; c++) {
+    for (let r = 0; r < room.rows.length; r++) {
+      assert.notEqual(room.rows[r][c], '~', `坠落口 col ${c} row ${r} 不能有水`);
+    }
+  }
+});
+
+// ---------------- 吊链 | ----------------
+// tide_cistern 的链在 col 34、rows 6-23
+
+const CHAIN_ROOM = 'tide_cistern';
+const CHAIN_COL = 34;
+
+test('a chain can be climbed with no ability at all', () => {
+  const world = new WorldState(); // 空能力:链是"作者放的路",不是"能力开的路"
+  assert.equal(world.abilities.size, 0);
+  let held = 'up';
+  const state = makePlayStateWithInput(CHAIN_ROOM, world, (a) => a === held);
+  const p = state.player;
+  p.x = CHAIN_COL * TILE + TILE / 2;
+  p.y = 20 * TILE;
+
+  state.update(DT);
+  assert.equal(p.onChain, true, '重叠链条应自动抓住');
+  const startY = p.y;
+  for (let i = 0; i < 30; i++) state.update(DT);
+  assert.ok(p.y < startY - 8, `按上应向上爬,实际 ${startY} → ${p.y}`);
+
+  held = 'down';
+  const midY = p.y;
+  for (let i = 0; i < 30; i++) state.update(DT);
+  assert.ok(p.y > midY + 8, '按下应向下爬');
+});
+
+test('a chain holds you against gravity without draining string energy', () => {
+  const state = makePlayStateWithInput(CHAIN_ROOM, new WorldState(), () => false);
+  const p = state.player;
+  p.x = CHAIN_COL * TILE + TILE / 2;
+  p.y = 20 * TILE;
+  state.update(DT);
+  const y0 = p.y;
+  const e0 = p.energy;
+  for (let i = 0; i < 60; i++) state.update(DT);
+  assert.equal(p.y, y0, '抓链时不该下坠');
+  assert.ok(p.energy >= e0, '抓链不是弦化,不该消耗弦能');
+  assert.equal(p.stringMode, 'normal');
+});
+
+test('jumping off a chain releases it and launches the player', () => {
+  const state = makePlayStateWithInput(CHAIN_ROOM, new WorldState(), (a) => a === 'jump');
+  const p = state.player;
+  p.x = CHAIN_COL * TILE + TILE / 2;
+  p.y = 20 * TILE;
+  (state as unknown as { player: { onChain: boolean } }).player.onChain = true;
+  state.update(DT);
+  assert.equal(p.onChain, false, '跳跃应脱离链条');
+  assert.ok(p.vy < 0, '应获得向上初速');
+});
+
+// ---------------- 暗区 ----------------
+
+test('exactly the rooms marked dark are dark, and they are real rooms', () => {
+  const dark = ROOM_LIST.filter((r) => r.dark);
+  assert.ok(dark.length >= 1, '应至少有一个暗区房间');
+  for (const r of dark) assert.ok(ROOMS[r.id], `${r.id} 应是真实房间`);
+});
+
+test('a sonar pulse lights a dark room, and the light fades', () => {
+  const darkRoom = ROOM_LIST.find((r) => r.dark)!;
+  const state = makePlayState(darkRoom.id);
+  const lit = () => priv<{ sonarLightT: number }>(state).sonarLightT;
+  assert.equal(lit(), 0);
+  state.sonarPulse(state.player.x, state.player.y, 50);
+  assert.ok(lit() > 0, '声呐应照亮暗区');
+  step(state, 2.2);
+  assert.equal(lit(), 0, '照明应当衰减');
+});
+
+test('a sonar pulse in a lit room does not arm the darkness timer', () => {
+  const state = makePlayState('coast_walk');
+  state.sonarPulse(state.player.x, state.player.y, 50);
+  assert.equal(priv<{ sonarLightT: number }>(state).sonarLightT, 0);
 });

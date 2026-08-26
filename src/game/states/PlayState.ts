@@ -9,6 +9,8 @@ import {
   INVULN_TIME,
   THORN_DMG,
   THORN_SLOW_TIME,
+  DARK_VISION_RADIUS,
+  DARK_SONAR_LIGHT,
   TILE,
   VIEW_H,
   VIEW_W,
@@ -35,6 +37,8 @@ import {
   T_SOLID,
   T_SPIKE,
   T_THORN,
+  T_WATER,
+  T_CHAIN,
   type LevelTheme,
   type ParsedRows,
 } from '../levels/levels';
@@ -191,6 +195,8 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   private meleeTileHits = new Map<number, number>();
   /** 结算屏光标:0 = 继续探索(默认),1 = 返回标题 */
   victorySel = 0;
+  /** 暗区中被声呐照亮的剩余秒数 */
+  private sonarLightT = 0;
   turrets: CatTurret[] = [];
   darts: SonarDart[] = [];
   /** 显形中的隐藏平台:tile 索引 → 剩余秒数 */
@@ -517,6 +523,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       else hint.t -= dt;
     }
     this.floatingHints = this.floatingHints.filter((hint) => hint.t > 0);
+    this.sonarLightT = Math.max(0, this.sonarLightT - dt);
   }
 
   tileAt(c: number, r: number): number {
@@ -542,8 +549,26 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
 
   /** 脚下这一格是否是冰面 —— Player 借此压低加减速。 */
   isIceAt(c: number, r: number): boolean {
+    return this.rawTileIs(c, r, T_ICE);
+  }
+
+  /** 这一格是否是水体 —— Player 借此切换浮力物理。 */
+  isWaterAt(c: number, r: number): boolean {
+    return this.rawTileIs(c, r, T_WATER);
+  }
+
+  /** 这一格是否有吊链 —— Player 借此抓附。 */
+  isChainAt(c: number, r: number): boolean {
+    return this.rawTileIs(c, r, T_CHAIN);
+  }
+
+  /**
+   * 读**原始** tile 而非 tileAt():水/冰/链都不参与 tileAt() 的归一化
+   * (它们对碰撞层来说等同空气),所以必须绕开那层查询。
+   */
+  private rawTileIs(c: number, r: number, kind: number): boolean {
     if (c < 0 || c >= this.level.w || r < 0 || r >= this.level.h) return false;
-    return this.level.tiles[r * this.level.w + c] === T_ICE;
+    return this.level.tiles[r * this.level.w + c] === kind;
   }
 
   /** MechanicsHost:共鸣器与声呐共用的隐藏平台显形入口。 */
@@ -1352,6 +1377,8 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
 
   /** 声呐脉冲:标记+微伤敌人、显形隐藏平台;heal 时为附近的玩家回复(歌声治愈) */
   sonarPulse(x: number, y: number, radius: number, heal = false): void {
+    // 暗区里,声呐是照明:侦察角色在这里的价值必须是机制上的,而不只是设定上的
+    if (this.room.dark) this.sonarLightT = DARK_SONAR_LIGHT;
     this.revealBreakablesNear(x, y, radius);
     for (let i = 0; i < 14; i++) {
       const a = (i / 14) * Math.PI * 2;
@@ -2006,6 +2033,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     }
 
     this.particles.render(ctx);
+    this.renderDarkness(ctx, cx, cy);
     ctx.restore();
 
     // 前景遮挡层(视差 1.3)
@@ -2108,6 +2136,27 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         page: this.controlsPage,
       });
     }
+  }
+
+  /**
+   * 暗区遮罩(RoomDef.dark)。
+   * 画在世界层最上面、HUD 之下:遮的是场景,不是界面 —— 血条在黑暗里必须仍然可读。
+   * 香奈美的声呐脉冲会把 sonarLightT 顶起来,短暂照亮全屏,
+   * 这是"侦察角色"在暗区里的实际价值,而不只是台词。
+   */
+  private renderDarkness(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
+    if (!this.room.dark) return;
+    const lit = Math.min(1, this.sonarLightT / DARK_SONAR_LIGHT);
+    if (lit >= 1) return;
+    const px = this.player.x;
+    const py = this.player.centerY();
+    const radius = DARK_VISION_RADIUS * (1 + lit * 2.2);
+    const grad = ctx.createRadialGradient(px, py, radius * 0.35, px, py, radius);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.62, `rgba(2,2,8,${0.55 * (1 - lit)})`);
+    grad.addColorStop(1, `rgba(1,1,5,${0.94 * (1 - lit)})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(cx, cy, VIEW_W, VIEW_H);
   }
 
   private renderTiles(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
@@ -2392,6 +2441,53 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
             ctx.fillRect(x + (h + 5) % 11, y + 8, 2, 1);
             ctx.fillStyle = 'rgba(0,0,0,0.28)';
             ctx.fillRect(x, y + TILE - 2, TILE, 2);
+            break;
+          }
+          case T_WATER: {
+            // 半透明水体:上表面有波纹,内部有缓慢漂浮的气泡。
+            // 只在"水面"(上方不是水)画亮线,水体内部不画,否则每格都像一层薄冰。
+            const surface = this.level.tiles[(r - 1) * this.level.w + c] !== T_WATER;
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = '#1d5c86';
+            ctx.fillRect(x, y, TILE, TILE);
+            ctx.globalAlpha = 1;
+            if (surface) {
+              const wob = Math.sin(this.time * 2.2 + c * 0.7) * 1.5;
+              ctx.fillStyle = 'rgba(180,232,255,0.75)';
+              ctx.fillRect(x, y + 1 + Math.round(wob), TILE, 1);
+              ctx.fillStyle = 'rgba(120,200,240,0.35)';
+              ctx.fillRect(x, y + 2 + Math.round(wob), TILE, 1);
+            }
+            const bub = (c * 29 + r * 13) % 7;
+            if (bub < 3) {
+              const by = (y + TILE - ((this.time * 14 + c * 9 + r * 5) % TILE)) | 0;
+              ctx.fillStyle = 'rgba(200,240,255,0.45)';
+              ctx.fillRect(x + 3 + bub * 4, by, 1, 1);
+            }
+            break;
+          }
+          case T_CHAIN: {
+            // 吊链:不实体。画成一列交错的铁环,与"墙"在视觉上彻底分开 ——
+            // 链是作者放的路,墙是能力开的路,玩家必须一眼看出这条能爬。
+            // 先画一条连续的绳芯,再压上铁环 —— 只画环会读成一列虚线,
+            // 而"能不能爬"必须一眼看得出来。
+            const mx = x + TILE / 2;
+            ctx.fillStyle = '#4a4658';
+            ctx.fillRect(mx - 1, y, 3, TILE);
+            ctx.fillStyle = '#6f6a80';
+            ctx.fillRect(mx - 1, y, 1, TILE);
+            for (let i = 0; i < 2; i++) {
+              const ly = y + i * 8;
+              ctx.fillStyle = '#9a93a8';
+              ctx.fillRect(mx - 3, ly + 1, 6, 1);
+              ctx.fillRect(mx - 3, ly + 5, 6, 1);
+              ctx.fillRect(mx - 3, ly + 2, 1, 3);
+              ctx.fillRect(mx + 2, ly + 2, 1, 3);
+              ctx.fillStyle = 'rgba(236,232,248,0.7)';
+              ctx.fillRect(mx - 3, ly + 1, 5, 1);
+              ctx.fillStyle = 'rgba(0,0,0,0.4)';
+              ctx.fillRect(mx - 2, ly + 6, 5, 1);
+            }
             break;
           }
           default:

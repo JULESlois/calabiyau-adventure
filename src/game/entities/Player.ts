@@ -30,6 +30,12 @@ import {
   SWITCH_CD,
   THORN_SLOW_MULT,
   ICE_ACCEL_MULT,
+  WATER_SPEED_MULT,
+  WATER_JUMP_MULT,
+  WATER_GRAVITY_MULT,
+  WATER_MAX_SINK,
+  CHAIN_CLIMB_SPEED,
+  CHAIN_RELEASE_VX,
   TILE,
   WALL_STRING_DRAIN,
   WALL_JUMP_VX,
@@ -79,6 +85,8 @@ export class Player {
   turnAnimT = 0;
   /** 荆棘减速剩余秒数 */
   slowT = 0;
+  /** 是否正抓在吊链上(不属于弦化,不耗弦能) */
+  onChain = false;
   dead = false;
   shootFlashT = 0;
   /** 进入纸片形态以来的秒数;弦闪据此判定"精准" */
@@ -403,17 +411,61 @@ export class Player {
       this.energy = Math.min(ps.world.energyMax, this.energy + STRING_REGEN * regenMul * dt);
     }
 
-    // ---- 水平移动 ----
+    // ---- 水:纸片入水强制展开 ----
+    // 纸会湿 —— 弦化与水互斥。这条规则给沉潮地窟补上主题欠账,也让水面成为
+    // "不能靠弦化蒙混过去"的一类关卡边界。判定放在移动之前,免得同一帧里
+    // 仍以纸片速度游一次。
+    const inWater = this.submerged(ps);
+    if (inWater && this.stringMode !== 'normal') {
+      this.setStringMode('normal', ps);
+      ps.particles.burst(this.x, this.y - this.h * 0.4, 10, '#8fd7ff', 70, 0.35, 'spark');
+      ps.sfx('hurt');
+    }
+
+    // ---- 吊链 ----
+    // 与贴墙的区别是设计意图:链是"作者放的路"(无能力需求),墙是"能力开的路"。
+    // 因此抓链不进入 stringMode、不耗弦能,纸片形态下也不抓。
+    const chainCol = this.stringMode === 'normal' && !inWater ? this.chainColumn(ps) : null;
+    if (chainCol === null) {
+      this.onChain = false;
+    } else if (!this.onChain && !input.down('down')) {
+      // 按住下 = 主动放手下滑,不再重新抓住
+      this.onChain = true;
+      this.vy = 0;
+      this.jumpsUsed = 0;
+      this.airDashed = false;
+    }
     const left = input.down('left');
     const right = input.down('right');
+    if (this.onChain) {
+      // 吸附到链条列心,纵向由 W/S 控制;跳跃 = 蹬离
+      this.x = chainCol! * TILE + TILE / 2;
+      this.vx = 0;
+      const climb = (input.down('down') ? 1 : 0) - (input.down('up') ? 1 : 0);
+      this.vy = climb * CHAIN_CLIMB_SPEED;
+      if (input.pressed('jump')) {
+        this.onChain = false;
+        this.vy = -JUMP_VEL;
+        this.vx = ((right ? 1 : 0) - (left ? 1 : 0)) * CHAIN_RELEASE_VX;
+        this.jumpsUsed = 1;
+        this.jumpBuffer = 0;
+        this.takeoffAnimT = TAKEOFF_ANIM_TIME;
+        ps.sfx('jump');
+      }
+    }
+
+    // ---- 水平移动 ----
     const moveDir = (right ? 1 : 0) - (left ? 1 : 0);
     const slowMul = this.slowT > 0 ? THORN_SLOW_MULT : 1;
-    const maxSpeed = RUN_SPEED * slowMul * (this.paper ? PAPER_SPEED_MULT : this.charging ? 0.6 : 1);
+    const maxSpeed = RUN_SPEED * slowMul * (inWater ? WATER_SPEED_MULT : 1)
+      * (this.paper ? PAPER_SPEED_MULT : this.charging ? 0.6 : 1);
     // 冰面:加速与减速共用这一个 accel 项(见下方 approach 的两个分支),
     // 所以压低它同时得到"推不动"和"刹不住" —— 这正是冰的手感,不需要单独的摩擦系数。
     const onIce = this.onGround && this.standingOnIce(ps);
     const accel = (this.onGround ? RUN_ACCEL : AIR_ACCEL) * (onIce ? ICE_ACCEL_MULT : 1);
-    if (this.stringMode === 'wall') {
+    if (this.onChain) {
+      // 抓链时横向完全由链条固定,上面已置 0
+    } else if (this.stringMode === 'wall') {
       this.vx = 0;
     } else if (moveDir !== 0) {
       this.vx = approach(this.vx, moveDir * maxSpeed, accel * dt);
@@ -428,8 +480,8 @@ export class Player {
     }
 
     // ---- 跳跃 ----
-    // 贴墙和飘飞状态都不接受普通/二段跳输入。
-    if (startedOnWall || this.stringMode === 'wall' || this.stringMode === 'glide') {
+    // 贴墙、飘飞与抓链状态都不走这里的普通/二段跳(抓链有自己的蹬离)。
+    if (startedOnWall || this.onChain || this.stringMode === 'wall' || this.stringMode === 'glide') {
       this.jumpBuffer = 0;
     } else if (!jumpedFromWall && input.pressed('jump')) {
       this.jumpBuffer = JUMP_BUFFER;
@@ -442,6 +494,13 @@ export class Player {
         this.dropTimer = 0.22;
         this.jumpBuffer = 0;
         this.onGround = false;
+      } else if (inWater) {
+        // 水中划水:不消耗跳跃次数,可连续上浮 —— 水是"慢",不该是"陷阱"
+        this.vy = -JUMP_VEL * WATER_JUMP_MULT;
+        this.jumpBuffer = 0;
+        this.takeoffAnimT = TAKEOFF_ANIM_TIME;
+        ps.particles.burst(this.x, this.y, 5, '#8fd7ff', 50, 0.3, 'spark');
+        ps.sfx('jump');
       } else if (grounded) {
         this.vy = -JUMP_VEL;
         this.takeoffAnimT = TAKEOFF_ANIM_TIME;
@@ -511,6 +570,11 @@ export class Player {
       // 飘飞只减缓下落。上升阶段仍使用普通重力,避免稍晚一帧按 Shift 放大跳跃高度。
       const gravityMultiplier = this.vy < 0 ? 1 : GLIDE_GRAVITY_MULT;
       this.vy = Math.min(this.vy + GRAVITY * gravityMultiplier * dt, GLIDE_FALL_SPEED);
+    } else if (this.onChain) {
+      // 抓链不受重力:纵向速度完全由 W/S 决定
+    } else if (inWater) {
+      // 浮力:缓沉而不是直坠,且上浮不被 MAX_FALL 之外的项干扰
+      this.vy = Math.min(this.vy + GRAVITY * WATER_GRAVITY_MULT * dt, WATER_MAX_SINK);
     } else {
       this.vy = Math.min(this.vy + GRAVITY * dt, MAX_FALL);
     }
@@ -668,6 +732,26 @@ export class Player {
       this.dead = true;
     }
     return true;
+  }
+
+  /** 身体中段浸在水里即算入水 —— 以中段而非脚底判定,免得贴着水面反复进出。 */
+  submerged(ps: PlayerHost): boolean {
+    const r = this.rect();
+    const row = Math.floor((this.y - this.h * 0.35) / TILE);
+    for (let c = Math.floor(r.x / TILE); c <= Math.floor((r.x + r.w - 0.01) / TILE); c++) {
+      if (ps.isWaterAt(c, row)) return true;
+    }
+    return false;
+  }
+
+  /** 与身体重叠的吊链列;没有则返回 null。 */
+  private chainColumn(ps: PlayerHost): number | null {
+    const r = this.rect();
+    const rows = [Math.floor((this.y - this.h * 0.6) / TILE), Math.floor((this.y - this.h * 0.2) / TILE)];
+    for (let c = Math.floor(r.x / TILE); c <= Math.floor((r.x + r.w - 0.01) / TILE); c++) {
+      for (const row of rows) if (ps.isChainAt(c, row)) return c;
+    }
+    return null;
   }
 
   /** 脚下任意一格是冰即算站在冰上 —— 半只脚踩冰也滑,过渡处才不会有硬边界。 */
