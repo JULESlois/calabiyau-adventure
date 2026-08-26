@@ -13,7 +13,8 @@ export type EnemyKind =
   | 'slasher'
   | 'leech'
   | 'mortar'
-  | 'hound';
+  | 'hound'
+  | 'stringer';
 
 const STATS: Record<EnemyKind, { hp: number; contact: number; w: number; h: number }> = {
   patrol: { hp: 30, contact: 10, w: 14, h: 12 },
@@ -25,6 +26,7 @@ const STATS: Record<EnemyKind, { hp: number; contact: number; w: number; h: numb
   leech: { hp: 24, contact: 12, w: 12, h: 10 },
   mortar: { hp: 50, contact: 8, w: 16, h: 14 },
   hound: { hp: 32, contact: 14, w: 14, h: 12 },
+  stringer: { hp: 55, contact: 12, w: 13, h: 18 },
 };
 
 export class Enemy {
@@ -61,6 +63,17 @@ export class Enemy {
   chargeT = -1;
   /** 逆弦犬:锁定玩家的剩余时间(锁定期间无视纸片形态) */
   lockT = 0;
+  /** 镜弦猎兵:弦化换位的行程(0..1);<0 表示不在行程中 */
+  travelT = -1;
+  travelFromX = 0;
+  travelFromY = 0;
+  travelToX = 0;
+  travelToY = 0;
+  /** 展弦失衡窗口(受伤 +60%) */
+  unfurlT = 0;
+  /** 换位冷却与受压计数 */
+  stringCdT = 0;
+  pressureHits = 0;
 
   constructor(kind: EnemyKind, x: number, y: number) {
     this.kind = kind;
@@ -98,15 +111,25 @@ export class Enemy {
         return true;
       case 'leech':
         return this.leechPhase !== 'hang';
+      case 'stringer':
+        return this.travelT < 0;
       default:
         return false;
     }
   }
 
+  /** 镜弦猎兵弦化行程中是一道纸光,子弹/近战/接触全部穿过。 */
+  get intangible(): boolean {
+    return this.kind === 'stringer' && this.travelT >= 0;
+  }
+
   hit(dmg: number, freeze: number, _w: WorldApi): void {
+    if (this.intangible) return;
     if (this.markT > 0) dmg *= 1.3;
+    if (this.unfurlT > 0) dmg *= 1.6; // 展弦失衡:读准出口的奖励
     this.hp -= dmg;
     this.hurtT = 0.12;
+    this.pressureHits++;
     if (freeze > 0) this.frozen = Math.max(this.frozen, freeze);
     if (this.hp <= 0) this.dead = true;
   }
@@ -393,6 +416,86 @@ export class Enemy {
         this.x += this.dir * 30 * dt;
         break;
       }
+      case 'stringer': {
+        // 镜弦猎兵:墙不是它的边界。受压或被贴近时弦化换位,
+        // 在玩家另一侧展弦并重新开火;展弦瞬间是读得到的失衡窗口。
+        this.stringCdT = Math.max(0, this.stringCdT - dt);
+        if (this.travelT >= 0) {
+          this.travelT += dt / 0.55;
+          const t = Math.min(1, this.travelT);
+          const ease = t * t * (3 - 2 * t);
+          this.x = this.travelFromX + (this.travelToX - this.travelFromX) * ease;
+          // 行程走一条上凸弧线,读起来是"沿墙/顶掠过"而不是瞬移
+          const arc = Math.sin(t * Math.PI) * 46;
+          this.y = this.travelFromY + (this.travelToY - this.travelFromY) * ease - arc;
+          if (Math.random() < 0.5) {
+            w.particles.spawn({
+              x: this.x, y: this.y - this.h / 2,
+              vx: (Math.random() - 0.5) * 20, vy: (Math.random() - 0.5) * 20,
+              life: 0.25, color: '#c47eff', shape: 'paper', size: 1,
+            });
+          }
+          if (this.travelT >= 1) {
+            this.travelT = -1;
+            this.y = this.travelToY;
+            this.unfurlT = 0.55;
+            this.vy = 0;
+            w.sfx('paperOff');
+            w.particles.burst(this.x, this.y - this.h / 2, 12, '#c47eff', 90, 0.4, 'paper');
+          }
+          break;
+        }
+        this.applyGravity(dt, w);
+        if (this.unfurlT > 0) {
+          this.unfurlT -= dt; // 失衡:站桩挨打
+          break;
+        }
+        this.dir = px > this.x ? 1 : -1;
+        // 受压(挨了 3 下)或被贴身,且冷却完毕 → 弦化换位到玩家另一侧
+        if (this.stringCdT <= 0 && (this.pressureHits >= 3 || d < 56)) {
+          this.pressureHits = 0;
+          this.stringCdT = 4.5;
+          this.travelFromX = this.x;
+          this.travelFromY = this.y;
+          // 目的地:镜像到玩家另一侧,落点向下探到有地面为止
+          const mirrorX = clamp(px + (px - this.x) * 0.9 + this.dir * 20, 24, w.mapW - 24);
+          let landY = this.y;
+          for (let probe = py - 64; probe < py + 96; probe += 8) {
+            if (w.hasGroundAt(mirrorX, probe)) {
+              landY = probe - 2;
+              break;
+            }
+          }
+          this.travelToX = mirrorX;
+          this.travelToY = landY;
+          this.travelT = 0;
+          w.sfx('paperOn');
+          w.particles.burst(this.x, this.y - this.h / 2, 10, '#c47eff', 70, 0.35, 'paper');
+          break;
+        }
+        // 保持中距离,双发点射
+        if (d < 70) this.x -= this.dir * 30 * dt;
+        else if (d > 150) this.x += this.dir * 26 * dt;
+        this.shootT -= dt;
+        if (this.burstLeft > 0) {
+          this.burstT -= dt;
+          if (this.burstT <= 0) {
+            this.burstLeft--;
+            this.burstT = 0.14;
+            const a = Math.atan2(py - (this.y - this.h * 0.7), px - this.x);
+            w.fireEnemyBullet(
+              this.x + Math.cos(a) * 9, this.y - this.h * 0.7 + Math.sin(a) * 9,
+              Math.cos(a) * 165, Math.sin(a) * 165, 9, '#c47eff', 2.5, this,
+            );
+            w.sfx('shootNote');
+          }
+        } else if (this.shootT <= 0 && d < 210 && !w.playerPaper) {
+          this.burstLeft = 2;
+          this.burstT = 0;
+          this.shootT = 2.1 + Math.random() * 0.5;
+        }
+        break;
+      }
       case 'shield': {
         const dx = px - this.x;
         if (Math.abs(dx) < 170) this.dir = dx > 0 ? 1 : -1;
@@ -442,6 +545,8 @@ export class Enemy {
       fuse: this.fuseT >= 0 ? 1 - this.fuseT / 0.7 : -1,
       lunging: this.lungeT < 0 || this.leechPhase === 'drop',
       locked: this.lockT > 0,
+      traveling: this.travelT >= 0,
+      unfurl: this.unfurlT > 0 ? this.unfurlT / 0.55 : -1,
     };
   }
 

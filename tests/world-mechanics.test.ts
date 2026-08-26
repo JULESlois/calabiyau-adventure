@@ -537,3 +537,51 @@ test('without the skystep ability the third jump never fires', () => {
 
   assert.ok(p.vy > 0, '未取得踏空蓄步时两段跳耗尽后不该再跳');
 });
+
+// ---------------- 镜弦猎兵(stringer) ----------------
+
+function stringerWorld(px: number, py: number) {
+  return {
+    time: 0, mapW: 800, mapH: 272,
+    playerX: px, playerY: py, playerPaper: false,
+    particles: { spawn: () => undefined, burst: () => undefined },
+    rectHitsSolid: () => false,
+    hasGroundAt: (_x: number, y: number) => y >= 200,
+    fireEnemyBullet: () => undefined,
+    sfx: () => undefined, shake: () => undefined, spawnEnemy: () => undefined,
+  } as unknown as Parameters<Enemy['update']>[1];
+}
+
+test('the stringer relocates across the player when pressured and staggers on unfurl', () => {
+  const e = new Enemy('stringer', 300, 208);
+  const w = stringerWorld(340, 200);
+
+  // 连挨三下 → 触发弦化换位
+  e.hit(5, 0, w); e.hit(5, 0, w); e.hit(5, 0, w);
+  e.update(1 / 60, w);
+  assert.ok(e.travelT >= 0, '受压后应进入弦化行程');
+  assert.equal(e.intangible, true, '行程中应不可触碰');
+
+  // 行程中 hit 无效
+  const hpBefore = e.hp;
+  e.hit(99, 0, w);
+  assert.equal(e.hp, hpBefore, '行程中不该吃到伤害');
+
+  // 走完行程(0.55 秒)→ 展弦失衡
+  for (let i = 0; i < 40 && e.travelT >= 0; i++) e.update(1 / 60, w);
+  assert.equal(e.travelT, -1, '行程应结束');
+  assert.ok(e.unfurlT > 0, '落位后应进入展弦失衡');
+  assert.ok(e.x > 340, '应换位到玩家另一侧');
+
+  // 失衡窗口吃 1.6 倍伤害
+  const hp2 = e.hp;
+  e.hit(10, 0, w);
+  assert.equal(hp2 - e.hp, 16, '展弦期间应吃 1.6 倍伤害');
+});
+
+test('the stringer holds its ground while the pressure threshold is not met', () => {
+  const e = new Enemy('stringer', 300, 208);
+  const w = stringerWorld(500, 200); // 远距离,也没有受压
+  e.update(1 / 60, w);
+  assert.equal(e.travelT, -1, '无压力时不该换位');
+});

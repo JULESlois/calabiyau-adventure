@@ -321,6 +321,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         case '9':
           this.enemies.push(new Enemy('hound', cx, bottom));
           break;
+        case 'R':
+          this.enemies.push(new Enemy('stringer', cx, bottom));
+          break;
         case 'Z':
           // 回响守卫:已击败则屏障永久解封,不再重生。
           if (!world.flags.has('boss:warden')) this.boss = new Warden(cx, bottom);
@@ -1317,7 +1320,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       const br: Rect = { x: b.x - 3, y: b.y - 3, w: 6, h: 6 };
       let consumed = false;
       for (const e of this.enemies) {
-        if (e.dead) continue;
+        if (e.dead || e.intangible) continue;
         if (!rectsOverlap(br, e.rect())) continue;
         if (e.blocksShot(b.vx)) {
           this.particles.burst(b.x, b.y, 5, '#aeb8dd', 60, 0.25, 'spark');
@@ -1359,7 +1362,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       const wasDown = p.downSlash;
       let pogoHit = false;
       for (const e of this.enemies) {
-        if (e.dead) continue;
+        if (e.dead || e.intangible) continue;
         if (this.meleeHits.get(e) === p.swingId) continue;
         if (rectsOverlap(melee, e.rect())) {
           this.meleeHits.set(e, p.swingId);
@@ -1428,7 +1431,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
 
     if (!p.dead) {
       for (const e of this.enemies) {
-        if (e.dead || e.frozen > 0) continue;
+        if (e.dead || e.frozen > 0 || e.intangible) continue;
         if (rectsOverlap(pr, e.rect())) {
           if (p.hurt(e.contactDmg, e.x, this) && p.char === 'michele') {
             e.markT = Math.max(e.markT, 5); // 猫踪喵迹

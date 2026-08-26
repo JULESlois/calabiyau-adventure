@@ -581,6 +581,10 @@ export interface EnemyPose {
   lunging: boolean;
   /** 逆弦犬已锁定玩家 */
   locked: boolean;
+  /** 镜弦猎兵:正沿墙面弦化行进 */
+  traveling: boolean;
+  /** 展弦失衡进度 1..0;<0 表示不在失衡中 */
+  unfurl: number;
 }
 
 function paintEnemy(
@@ -810,6 +814,66 @@ function paintEnemy(
       // 侧面弹仓
       px(g, -7, -11, 4, 5, '#2e241c');
       px(g, -6, -10, 2, 3, '#c8843c');
+      break;
+    }
+    case 'stringer': {
+      if (facing < 0) g.scale(-1, 1);
+      const violet = frozen ? '#8fc8e8' : '#5a3a86';
+      const hiC = frozen ? '#c8ecf8' : '#a878e0';
+      const glow = frozen ? '#e8f8ff' : '#c47eff';
+      if (pose.traveling) {
+        // 行程中:整个身体压成一道纸片流光,读起来是"贴着弦面滑走"
+        g.save();
+        g.globalAlpha = 0.85;
+        px(g, -10, -10, 20, 3, glow);
+        px(g, -14, -9, 8, 1, hiC);
+        g.globalAlpha = 0.4;
+        px(g, -18, -10, 6, 2, violet);
+        g.restore();
+        break;
+      }
+      const unfurling = pose.unfurl >= 0;
+      if (unfurling) {
+        // 展弦:纸片从中线向两侧摊开,失衡窗口的读牌信号
+        const open = 1 - pose.unfurl;
+        g.save();
+        g.globalAlpha = 0.5 + open * 0.5;
+        px(g, -Math.round(7 * open) - 1, -16, Math.round(14 * open) + 2, 14, violet);
+        px(g, -1, -18, 2, 18, glow);
+        g.globalAlpha = 0.7;
+        px(g, -Math.round(7 * open), -16, 1, 14, hiC);
+        px(g, Math.round(7 * open), -16, 1, 14, hiC);
+        g.restore();
+        // 失衡星芒
+        g.globalAlpha = 0.6 + 0.4 * Math.abs(Math.sin(time * 14));
+        px(g, -1, -21, 3, 1, '#ffe9a8');
+        px(g, 0, -22, 1, 3, '#ffe9a8');
+        g.globalAlpha = 1;
+        break;
+      }
+      // 3D 战斗形态:高瘦猎兵,肩披弦纹斗篷
+      px(g, -5, -17, 10, 12, violet);
+      px(g, -5, -17, 10, 1, hiC);
+      px(g, -6, -12, 3, 8, violet); // 斗篷摆
+      const swayC = Math.floor(time * 4) % 2;
+      px(g, -7, -6 + swayC, 3, 3, violet);
+      // 头 / 单目
+      px(g, -3, -21, 7, 5, violet);
+      px(g, -3, -21, 7, 1, hiC);
+      px(g, 0, -19, 3, 2, '#12060e');
+      px(g, 1, -19, 1, 1, glow);
+      // 胸口弦核(它换位的能量源)
+      const corePulse = Math.floor(time * 3) % 2;
+      px(g, -1, -13, 3, 3, corePulse ? glow : hiC);
+      // 腿
+      const step2 = Math.floor(time * 7) % 2;
+      px(g, -4 + step2, -5, 3, 5, '#241a34');
+      px(g, 1 - step2, -5, 3, 5, '#241a34');
+      // 弦纹:身侧两根绷紧的弦
+      g.globalAlpha = 0.55;
+      px(g, -8, -18, 1, 14, glow);
+      px(g, 7, -16, 1, 12, glow);
+      g.globalAlpha = 1;
       break;
     }
     case 'hound': {

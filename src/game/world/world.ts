@@ -771,6 +771,7 @@ const R: RoomDef[] = [];
   set(g, 13, 40, 'e');
   set(g, 13, 48, '5'); // 爆裂魔怪
   set(g, 13, 34, '8'); // 迫击晶压制迷宫长廊
+  set(g, 13, 42, 'R'); // 镜弦猎兵:迷宫的矩阵墙正是它的猎场
   R.push({
     id: 'lab_maze', zone: 'lab', name: '研究区 · 弦膜密室', rows: rows(g),
     mapX: 5, mapY: 3,
@@ -1230,6 +1231,7 @@ const R: RoomDef[] = [];
   set(g, 13, 46, '6');
   set(g, 13, 50, '*');
   set(g, 13, 37, '8'); // 迫击晶封锁档案馆中段
+  set(g, 13, 44, 'R'); // 镜弦猎兵
   set(g, 13, 24, '9'); // 云背档案馆的逆弦犬
   R.push({
     id: 'sky_archive', zone: 'sky', name: '天穹 · 云背档案馆', rows: rows(g),
@@ -1418,6 +1420,7 @@ const R: RoomDef[] = [];
   set(g, 13, 31, '6');
   set(g, 13, 42, '3');
   set(g, 13, 46, '8'); // 迫击晶守熔铸台出口
+  set(g, 13, 37, 'R'); // 镜弦猎兵
   set(g, 13, 50, 'h');
   R.push({
     id: 'hangar_foundry', zone: 'hangar', name: '机库 · 熔铸台', rows: rows(g),
