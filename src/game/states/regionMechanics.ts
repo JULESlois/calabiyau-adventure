@@ -3,7 +3,7 @@
 // 这些系统彼此独立,只通过 MechanicsHost 这个窄接口回访房间(时间、tile 数据、粒子、玩家位置)。
 // 把它们从 PlayState 里搬出来,是为了让"再加一种区域机关"不必再动那个房间状态类。
 
-import { TILE } from '../constants';
+import { NODE_LIT_TIME, TILE } from '../constants';
 import type { ParticleSystem } from '../entities/particles';
 import type { Player } from '../entities/Player';
 import { T_HIDDEN, type LevelTheme, type ParsedRows } from '../levels/levels';
@@ -23,6 +23,17 @@ export interface Mover {
   range: number;
   speed: number;
   phase: number;
+  /** 受电平台:只在回路点亮期间运转 */
+  powered?: boolean;
+  /** 受电平台的私有运行时钟(只在通电时推进,断电即冻结在原位) */
+  runT?: number;
+}
+
+/** 导能节点(#63):被满充电荷的攻击命中后点亮回路数秒。 */
+export interface ConductiveNode {
+  x: number;
+  y: number;
+  litT: number;
 }
 
 export interface Updraft {
@@ -124,6 +135,7 @@ export class RegionMechanics {
   shortcuts: ShortcutRuntime[] = [];
   /** Boss 死亡才解封的屏障(每房间至多一道) */
   bossGate: RoomDef['bossGate'] = undefined;
+  conductiveNodes: ConductiveNode[] = [];
   emitters: BeamEmitter[] = [];
   mirrorSockets: MirrorSocket[] = [];
   receivers: BeamReceiver[] = [];
@@ -180,6 +192,23 @@ export class RegionMechanics {
       case 'E':
         this.emitters.push({ x: cx, y: bottom - 10 });
         return true;
+      case 'Q':
+        this.conductiveNodes.push({ x: cx, y: bottom, litT: 0 });
+        return true;
+      case 'm':
+        this.movers.push({
+          baseX: cx, baseY: row * TILE, x: cx, y: row * TILE,
+          prevX: cx, prevY: row * TILE, w: 40, h: 6,
+          axis: 'h', range: 52, speed: 1.1, phase: 0, powered: true, runT: 0,
+        });
+        return true;
+      case 'n':
+        this.movers.push({
+          baseX: cx, baseY: row * TILE, x: cx, y: row * TILE,
+          prevX: cx, prevY: row * TILE, w: 40, h: 6,
+          axis: 'v', range: 62, speed: 0.9, phase: 0, powered: true, runT: 0,
+        });
+        return true;
       case 'C':
         this.mirrorSockets.push({ x: cx, y: bottom, active: false });
         return true;
@@ -224,6 +253,27 @@ export class RegionMechanics {
     return false;
   }
 
+  /** 任一节点点亮即视为本房间回路通电(房间都不大,不做逐台配线)。 */
+  get circuitLit(): boolean {
+    return this.conductiveNodes.some((node) => node.litT > 0);
+  }
+
+  /**
+   * 满充攻击命中节点则点亮回路;返回是否命中(调用方据此消耗玩家电荷)。
+   * 未满充的攻击打在节点上没有任何效果 —— 电荷才是钥匙,不是子弹。
+   */
+  tryDischarge(attack: Rect): boolean {
+    for (const node of this.conductiveNodes) {
+      const zone: Rect = { x: node.x - 10, y: node.y - 24, w: 20, h: 24 };
+      if (!rectsOverlap(attack, zone)) continue;
+      node.litT = NODE_LIT_TIME;
+      this.host.sfx('switch');
+      this.host.particles.burst(node.x, node.y - 12, 14, '#ffd75e', 100, 0.5, 'spark');
+      return true;
+    }
+    return false;
+  }
+
   pressureJetActive(jet: PressureJet): boolean {
     return Math.sin(this.host.time * 2.2 + jet.phase) > -0.2;
   }
@@ -231,10 +281,21 @@ export class RegionMechanics {
   // ---------------- 每帧推进 ----------------
 
   /** 移动平台:先记住上一帧位置,骑乘判定要用到位移增量。 */
-  advanceMovers(): void {
+  advanceMovers(dt = 0): void {
+    for (const node of this.conductiveNodes) node.litT = Math.max(0, node.litT - dt);
+    const lit = this.circuitLit;
     for (const m of this.movers) {
       m.prevX = m.x;
       m.prevY = m.y;
+      if (m.powered) {
+        // 受电平台用私有时钟:断电即冻结,不会因全局时间流逝而瞬移。
+        if (!lit) continue;
+        m.runT = (m.runT ?? 0) + dt;
+        const sp = moverDisplacement(m.runT, m.speed, m.phase, m.range);
+        if (m.axis === 'h') m.x = m.baseX + sp;
+        else m.y = m.baseY + sp;
+        continue;
+      }
       const s = moverDisplacement(this.host.time, m.speed, m.phase, m.range);
       if (m.axis === 'h') m.x = m.baseX + s;
       else m.y = m.baseY + s;
@@ -244,6 +305,7 @@ export class RegionMechanics {
   /** 把平台对齐到当前 time(入场与过场用),resetPrevious 时同时抹掉位移增量。 */
   syncMoversToTime(resetPrevious: boolean): void {
     for (const mover of this.movers) {
+      if (mover.powered) continue; // 受电平台走私有时钟,入场对齐无意义
       const displacement = moverDisplacement(this.host.time, mover.speed, mover.phase, mover.range);
       if (mover.axis === 'h') mover.x = mover.baseX + displacement;
       else mover.y = mover.baseY + displacement;
@@ -566,6 +628,36 @@ export class RegionMechanics {
       ctx.fillRect(lever.x - (open ? 1 : 4), lever.y - 10, 2, 6);
     }
 
+    // 导能节点:线圈柱,点亮时金色辉光 + 剩余时间弧
+    for (const node of this.conductiveNodes) {
+      const lit = node.litT > 0;
+      ctx.fillStyle = '#241c10';
+      ctx.fillRect(node.x - 6, node.y - 22, 12, 22);
+      ctx.strokeStyle = lit ? '#ffd75e' : '#6a5a34';
+      ctx.strokeRect(node.x - 5.5, node.y - 21.5, 11, 21);
+      // 线圈匝
+      ctx.fillStyle = lit ? '#ffe9a8' : '#8a7444';
+      for (let i = 0; i < 4; i++) ctx.fillRect(node.x - 4, node.y - 19 + i * 5, 8, 2);
+      if (lit) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.18 + 0.08 * Math.sin(time * 9);
+        ctx.fillStyle = '#ffd75e';
+        ctx.beginPath();
+        ctx.arc(node.x, node.y - 11, 15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        // 剩余时间弧
+        ctx.save();
+        ctx.strokeStyle = '#ffe9a8';
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y - 11, 10, -Math.PI / 2, -Math.PI / 2 + (node.litT / NODE_LIT_TIME) * Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     // 弦镜偏转:能束、发射器、节点与接收器
     for (const path of this.beams) {
       ctx.save();
@@ -671,18 +763,21 @@ export class RegionMechanics {
       ctx.restore();
     }
 
-    // 移动平台
+    // 移动平台(受电平台断电时压暗,通电时描金)
+    const lit = this.circuitLit;
     for (const m of this.movers) {
       const x = Math.round(m.x - m.w / 2);
       const y = Math.round(m.y);
-      ctx.fillStyle = theme.tileEdge;
+      const dormant = m.powered && !lit;
+      ctx.globalAlpha = dormant ? 0.45 : 1;
+      ctx.fillStyle = m.powered && lit ? '#ffd75e' : theme.tileEdge;
       ctx.fillRect(x, y, m.w, 2);
       ctx.fillStyle = theme.tileBase;
       ctx.fillRect(x, y + 2, m.w, m.h - 2);
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
       ctx.fillRect(x, y + m.h - 1, m.w, 1);
-      ctx.fillStyle = theme.accent;
-      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = m.powered ? (lit ? '#ffe9a8' : '#6a5a34') : theme.accent;
+      ctx.globalAlpha = dormant ? 0.5 : 0.8;
       ctx.fillRect(x + 3, y + 3, 2, 2);
       ctx.fillRect(x + m.w - 5, y + 3, 2, 2);
       ctx.globalAlpha = 1;

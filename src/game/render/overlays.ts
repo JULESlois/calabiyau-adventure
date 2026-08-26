@@ -395,16 +395,25 @@ function drawMap(ctx: CanvasRenderingContext2D, view: OverlayView): void {
     }
 
     // 通往未到访房间的出口画成短桩:这是地图上唯一的"还没走过的方向"线索。
-    // 拿到新能力后要重访哪里,以前只能靠回忆 57 个房间。
+    // 弦迹测绘(#48):曾经能力不足、现在条件已满足的关口是"回访候选" ——
+    // 用明亮脉冲区分,解决"记得哪里过不去、忘了是哪间房"的中期通病。
     for (const e of r.exits) {
       if (world.visited.has(e.target)) continue;
-      const gated = (e.needs ?? []).some((need) => !world.abilities.has(need));
-      ctx.fillStyle = gated ? '#d8a850' : '#8ee8f4';
-      ctx.globalAlpha = 0.85;
+      const needs = e.needs ?? [];
+      const gated = needs.some((need) => !world.abilities.has(need));
+      const revisit = !gated && needs.length > 0;
+      if (revisit) {
+        ctx.fillStyle = '#e8fbff';
+        ctx.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(view.time * 4));
+      } else {
+        ctx.fillStyle = gated ? '#d8a850' : '#8ee8f4';
+        ctx.globalAlpha = 0.85;
+      }
       const midY = y + h / 2;
-      if (e.side === 'left') ctx.fillRect(x - 3, midY - 1, 5, 2);
-      else if (e.side === 'right') ctx.fillRect(x + cw - 2, midY - 1, 5, 2);
-      else ctx.fillRect(x + cw / 2 - 1, y + h - 2, 2, 5);
+      const stub = revisit ? 6 : 5;
+      if (e.side === 'left') ctx.fillRect(x - stub + 2, midY - 1, stub, 2);
+      else if (e.side === 'right') ctx.fillRect(x + cw - 2, midY - 1, stub, 2);
+      else ctx.fillRect(x + cw / 2 - 1, y + h - 2, 2, stub);
       ctx.globalAlpha = 1;
     }
 
@@ -435,6 +444,7 @@ function drawMap(ctx: CanvasRenderingContext2D, view: OverlayView): void {
     ['#e878c0', '未取弦晶'],
     ['#8ee8f4', '未探索'],
     ['#d8a850', '能力未足'],
+    ['#e8fbff', '可回访'],
   ];
   let lx = 10;
   for (let i = 0; i < legend.length; i++) {
@@ -450,8 +460,19 @@ function drawMap(ctx: CanvasRenderingContext2D, view: OverlayView): void {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#8a7a98';
   const visited = [...world.visited].length;
+  // 回访候选:能力条件已满足、但目标房仍未到访的关口数量。
+  let revisitCount = 0;
+  for (const r of ROOM_LIST) {
+    if (!world.visited.has(r.id)) continue;
+    for (const e of r.exits) {
+      const needs = e.needs ?? [];
+      if (needs.length === 0 || world.visited.has(e.target)) continue;
+      if (needs.every((need) => world.abilities.has(need))) revisitCount++;
+    }
+  }
+  const revisitNote = revisitCount > 0 ? `　可回访 ${revisitCount}` : '';
   ctx.fillText(
-    `${view.roomName}　◆ ${world.crystals.size}/${view.totalCrystals}　房间 ${visited}/${ROOM_LIST.length}`,
+    `${view.roomName}　◆ ${world.crystals.size}/${view.totalCrystals}　房间 ${visited}/${ROOM_LIST.length}${revisitNote}`,
     VIEW_W / 2,
     VIEW_H - 26,
   );

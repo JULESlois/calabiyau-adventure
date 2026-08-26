@@ -262,6 +262,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         case 'Y':
           if (!world.has('skystep')) this.abilitySpots.push({ x: cx, y: bottom, kind: 'skystep' });
           break;
+        case 'L':
+          if (!world.has('kinetic')) this.abilitySpots.push({ x: cx, y: bottom, kind: 'kinetic' });
+          break;
         case 'G':
           if (!world.has('kanami')) this.kanamiSpot = { x: cx, y: bottom };
           break;
@@ -734,7 +737,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     }
 
     // 移动平台
-    this.mechanics.advanceMovers();
+    this.mechanics.advanceMovers(dt);
     this.mechanics.updateResonators();
     this.mechanics.updateBeams(dt);
 
@@ -1277,6 +1280,11 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
           shape: 'square',
         });
       }
+      if (this.player.kineticCharge >= 1
+        && this.mechanics.tryDischarge({ x: b.x - 3, y: b.y - 3, w: 6, h: 6 })) {
+        this.player.kineticCharge = 0;
+        this.toast('回路已点亮');
+      }
       const hitTile = this.rectHitsSolid({ x: b.x - 2, y: b.y - 2, w: 4, h: 4 });
       if (b.life <= 0 || hitTile) {
         if (hitTile) {
@@ -1399,6 +1407,11 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         p.pogoBounce();
         this.particles.burst(p.x, p.y, 8, '#ffd75e', 80, 0.35, 'spark');
         this.sfx('meleeHit');
+      }
+      // 雷行电容:满充近战命中导能节点即放电点亮回路
+      if (p.kineticCharge >= 1 && this.mechanics.tryDischarge(melee)) {
+        p.kineticCharge = 0;
+        this.toast('回路已点亮');
       }
     }
 

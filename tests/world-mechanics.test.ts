@@ -161,6 +161,7 @@ test('every newly granted ability creates a concise in-world key hint', () => {
     dash: 'U',
     flash: 'Shift',
     skystep: '跳跃',
+    kinetic: 'K',
     kanami: 'Q',
   };
 
@@ -682,4 +683,69 @@ test('the beam passes straight when the player is not papered on the socket', ()
   assert.equal(receiver.charge, 0, '普通形态不该折转能束');
   assert.ok(state.mechanics.beams.every((b) => !b.bent));
   assert.equal(state.tileAt(35, 4), T_EMPTY, '隐藏平台应保持隐藏');
+});
+
+// ---------------- 雷行电容(#63) ----------------
+
+test('kinetic charge builds while moving and discharges into a conductive node', () => {
+  const state = makePlayState('lab_service');
+  state.world.grant('kinetic');
+  const p = state.player;
+  const node = state.mechanics.conductiveNodes[0];
+  assert.ok(node, '检修暗线应有导能节点');
+
+  // 移动蓄电
+  p.vx = 120;
+  for (let i = 0; i < 200; i++) {
+    (p as unknown as { update(dt: number, ps: unknown): void }).update(1 / 60, state);
+    p.vx = 120; // 摩擦会衰减,保持速度
+    p.x = 400; // 固定位置,避免撞墙
+    p.y = 208;
+  }
+  assert.equal(p.kineticCharge, 1, '持续移动应充满电荷');
+
+  // 满充近战命中节点 → 点亮回路
+  assert.equal(state.mechanics.circuitLit, false);
+  const hit = state.mechanics.tryDischarge({ x: node.x - 4, y: node.y - 12, w: 8, h: 8 });
+  assert.equal(hit, true, '满充攻击应命中节点');
+  assert.equal(state.mechanics.circuitLit, true, '回路应点亮');
+});
+
+test('powered movers only advance while the circuit is lit', () => {
+  const state = makePlayState('lab_service');
+  const powered = state.mechanics.movers.find((m) => m.powered);
+  assert.ok(powered, '检修暗线应有受电平台');
+
+  // 断电:平台冻结
+  const x0 = powered.x;
+  const y0 = powered.y;
+  for (let i = 0; i < 30; i++) state.mechanics.advanceMovers(1 / 60);
+  assert.equal(powered.x, x0);
+  assert.equal(powered.y, y0);
+
+  // 点亮:平台开始运转
+  state.mechanics.conductiveNodes[0].litT = 4;
+  for (let i = 0; i < 30; i++) state.mechanics.advanceMovers(1 / 60);
+  assert.ok(powered.x !== x0 || powered.y !== y0, '通电后平台应运动');
+
+  // 电力耗尽:再次冻结
+  state.mechanics.conductiveNodes[0].litT = 0;
+  const fx = powered.x;
+  const fy = powered.y;
+  for (let i = 0; i < 30; i++) state.mechanics.advanceMovers(1 / 60);
+  assert.equal(powered.x, fx);
+  assert.equal(powered.y, fy);
+});
+
+test('without the kinetic ability no charge ever builds', () => {
+  const state = makePlayState('lab_service');
+  const p = state.player;
+  p.vx = 120;
+  for (let i = 0; i < 120; i++) {
+    (p as unknown as { update(dt: number, ps: unknown): void }).update(1 / 60, state);
+    p.vx = 120;
+    p.x = 400;
+    p.y = 208;
+  }
+  assert.equal(p.kineticCharge, 0, '未取得能力不该蓄电');
 });

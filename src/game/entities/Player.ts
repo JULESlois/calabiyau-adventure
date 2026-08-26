@@ -1,5 +1,7 @@
 import {
   FLASH_MULT,
+  KINETIC_BUILD_TIME,
+  KINETIC_DECAY,
   SKYSTEP_CD,
   SKYSTEP_VEL,
   AIR_ACCEL,
@@ -81,6 +83,8 @@ export class Player {
   flashChargeT = 0;
   /** 踏空蓄步:虚步充能剩余秒数(0 = 就绪);空中同样计时 */
   skystepCdT = 0;
+  /** 雷行电容:移动蓄电 0..1,满充后攻击导能节点可放电 */
+  kineticCharge = 0;
   /** 香奈美·谢幕曲蓄力(秒,满蓄 0.7) */
   chargeT = 0;
   charging = false;
@@ -252,6 +256,25 @@ export class Player {
     this.shootFlashT = Math.max(0, this.shootFlashT - dt);
     this.paperEnterT += dt;
     this.skystepCdT = Math.max(0, this.skystepCdT - dt);
+    if (ps.world.has('kinetic')) {
+      // 奔跑、冲刺、飘飞、贴墙爬行都算"保持运动";站桩缓慢漏电。
+      const moving = Math.abs(this.vx) > 88 || this.dashT > 0 || this.stringMode === 'glide'
+        || (this.stringMode === 'wall' && Math.abs(this.vy) > 20);
+      if (moving) this.kineticCharge = Math.min(1, this.kineticCharge + dt / KINETIC_BUILD_TIME);
+      else this.kineticCharge = Math.max(0, this.kineticCharge - dt * KINETIC_DECAY);
+      if (this.kineticCharge >= 1 && Math.random() < 0.25) {
+        ps.particles.spawn({
+          x: this.x + (Math.random() - 0.5) * 12,
+          y: this.y - Math.random() * this.h,
+          vx: (Math.random() - 0.5) * 30,
+          vy: -18,
+          life: 0.22,
+          color: '#ffd75e',
+          shape: 'spark',
+          size: 1,
+        });
+      }
+    }
     if (this.flashChargeT > 0) {
       this.flashChargeT = Math.max(0, this.flashChargeT - dt);
       // 充能余辉:让玩家看得见"下一击是强化的"

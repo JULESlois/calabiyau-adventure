@@ -19,7 +19,7 @@ import type { LevelTheme } from '../levels/levels';
 import { MAX_HP, MAX_STRING } from '../constants';
 import type { MusicCue } from '../music';
 
-export type Ability = 'paper' | 'cling' | 'djump' | 'dash' | 'flash' | 'skystep' | 'kanami';
+export type Ability = 'paper' | 'cling' | 'djump' | 'dash' | 'flash' | 'skystep' | 'kinetic' | 'kanami';
 export type ZoneId = 'coast' | 'tide' | 'lab' | 'choir' | 'sky' | 'hangar';
 export type ExitSide = 'left' | 'right' | 'down';
 
@@ -878,6 +878,11 @@ const R: RoomDef[] = [];
   set(g, 9, 37, 'M');
   rect(g, 7, 7, 25, 29, 'H');
   set(g, 6, 27, '*');
+  rect(g, 6, 7, 56, 59, '#'); // 受电升降台顶端的检修台
+  set(g, 5, 58, '*');
+  set(g, 13, 55, 'L'); // 雷行电容祭坛:冲刺捷径的尽头,奖励移动本身
+  set(g, 13, 52, 'Q'); // 导能节点
+  set(g, 10, 57, 'n'); // 受电升降台:回路点亮才运转
   set(g, 13, 25, '3');
   set(g, 13, 49, '6');
   R.push({
@@ -1703,6 +1708,11 @@ export const START_ROOM = 'coast_start';
 export const SHORTCUT_IDS = new Set(ROOM_LIST.flatMap((room) => room.shortcuts?.map((s) => s.id) ?? []));
 
 export const ABILITY_INFO: Record<Ability, { name: string; desc: string; hint: string }> = {
+  kinetic: {
+    name: '雷行电容',
+    desc: '持续移动积蓄电荷,满充后攻击导能节点即可点亮回路',
+    hint: '奔跑蓄电 · 满充后 K 击节点',
+  },
   skystep: {
     name: '踏空蓄步',
     desc: '获得按时间充能的第三跳,滞空时也会继续充能',

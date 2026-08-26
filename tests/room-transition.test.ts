@@ -302,6 +302,8 @@ test('moving platforms are initialized at the restored scene time before first r
       },
     });
     for (const mover of state.mechanics.movers) {
+      // 受电平台走私有时钟(断电冻结),不参与全局时间对齐。
+      if (mover.powered) continue;
       const expected = moverDisplacement(sceneTime, mover.speed, mover.phase, mover.range);
       if (mover.axis === 'h') assert.ok(Math.abs(mover.x - (mover.baseX + expected)) < 1e-9, room.id);
       else assert.ok(Math.abs(mover.y - (mover.baseY + expected)) < 1e-9, room.id);

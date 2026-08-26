@@ -11,7 +11,7 @@ import { WorldState } from '../src/game/world/WorldState';
 declare const process: { exit(code: number): void };
 
 let errors = 0;
-const knownSpawns = new Set('PTFWJGDSXYAECV*heabcd123456789RMNUBZ><IOKk'.split(''));
+const knownSpawns = new Set('PTFWJGDSXYAECVLQ*heabcd123456789RmnMNUBZ><IOKk'.split(''));
 const err = (msg: string) => {
   errors++;
   console.error(`  [错误] ${msg}`);
@@ -37,7 +37,7 @@ for (const room of ROOM_LIST) {
 
   // 地面实体下方必须有支撑('2' 浮游炮除外)
   for (const s of lvl.spawns) {
-    if (!'PTFWJGDSXYAECVabcd1345689RBZIOKk><'.includes(s.char)) continue;
+    if (!'PTFWJGDSXYAECVLQabcd1345689RBZIOKk><'.includes(s.char)) continue;
     let supported = false;
     for (let r = s.row + 1; r < lvl.h; r++) {
       const t = tileAt(s.col, r);
@@ -162,6 +162,10 @@ for (const room of ROOM_LIST) {
   if (count('E') > 0 && (count('C') === 0 || count('V') === 0)) {
     err(`${room.id} 有能束发射器但缺少弦镜节点(C)或接收器(V)`);
   }
+  // 受电平台没有导能节点就永远不动。
+  if ((count('m') > 0 || count('n') > 0) && count('Q') === 0) {
+    err(`${room.id} 有受电平台但没有导能节点(Q)`);
+  }
 
   const bossGate = room.bossGate;
   if (bossGate) {
@@ -199,7 +203,7 @@ if (globalCount('P') !== 1) err(`P 出生点数量 = ${globalCount('P')},应为 
 if (globalCount('B') !== 1) err(`Boss B 数量 = ${globalCount('B')},应为 1`);
 if (globalCount('Z') !== 1) err(`中 Boss Z 数量 = ${globalCount('Z')},应为 1`);
 if (globalCount('A') !== 1) err(`审判者 A 数量 = ${globalCount('A')},应为 1`);
-for (const ch of ['F', 'W', 'J', 'G', 'D', 'X', 'Y']) {
+for (const ch of ['F', 'W', 'J', 'G', 'D', 'X', 'Y', 'L']) {
   if (globalCount(ch) !== 1) err(`能力 ${ch} 数量 = ${globalCount(ch)},应为 1`);
 }
 for (const ch of ['a', 'b', 'c', 'd']) {
@@ -408,7 +412,7 @@ if (readme) {
 }
 
 // ---------------- 能力推进拓扑可达性(BFS 到不动点) ----------------
-const abilityOf: Record<string, Ability> = { F: 'paper', W: 'cling', J: 'djump', D: 'dash', G: 'kanami', X: 'flash', Y: 'skystep' };
+const abilityOf: Record<string, Ability> = { F: 'paper', W: 'cling', J: 'djump', D: 'dash', G: 'kanami', X: 'flash', Y: 'skystep', L: 'kinetic' };
 const owned = new Set<Ability>();
 let reachable = new Set<string>([START_ROOM]);
 let changed = true;

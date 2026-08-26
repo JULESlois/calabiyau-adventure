@@ -44,6 +44,11 @@ export const SWITCH_CD = 0.6;
 export const SKYSTEP_CD = 6.0; // 原作诺诺被动 2026-07 调整后的 6 秒
 export const SKYSTEP_VEL = 268; // 略低于二段跳,定位是"续一口",不是更高的跳
 
+// 雷行电容(能力 kinetic):持续移动蓄电,满充后命中导能节点点亮回路
+export const KINETIC_BUILD_TIME = 2.4; // 持续移动多久充满
+export const KINETIC_DECAY = 0.25; // 静止时每秒衰减
+export const NODE_LIT_TIME = 4.5; // 回路点亮秒数
+
 // 弦闪(能力 flash):敌弹临身的瞬间弦化 → 擦弹 → 强化下一击
 export const FLASH_WINDOW = 0.14; // 进入纸片后多久内算"精准"
 export const FLASH_CHARGE = 4.0; // 强化窗口持续秒数
