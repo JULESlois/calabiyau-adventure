@@ -308,6 +308,14 @@ export class Background {
       for (let x = 80; x < span; x += 270 + rng() * 220) {
         this.fronts.push({ x, w: 3, h: 70 + rng() * 90, kind: 'fgChain', seed: rng() });
       }
+    } else if (this.levelId === 7) {
+      // 潮汐游园:只要贴脸的海雾。
+      // 前景层原本没有分区,于是城镇继承了王座厅的**哥特垂旗与铁链** ——
+      // 血红长幡挂在海滨游园上空,是纯粹的串味。这个错只有看合成帧才会发现:
+      // 地形、覆盖层、单元测试全都不碰前景层。
+      for (let x = 0; x < span; x += 210 + rng() * 170) {
+        this.fronts.push({ x, w: 100 + rng() * 120, h: 18 + rng() * 14, kind: 'fgFog', seed: rng() });
+      }
     } else {
       for (let x = 0; x < span; x += 320 + rng() * 220) {
         this.fronts.push({ x, w: 26 + rng() * 8, h: 74 + rng() * 50, kind: 'fgBanner', seed: rng() });

@@ -61,7 +61,7 @@ class MiniCtx {
   h: number;
   buf: Uint8ClampedArray;
   globalAlpha = 1;
-  fillStyle = '#000';
+  fillStyle: unknown = '#000';
   strokeStyle = '#000';
   lineWidth = 1;
   private tx = 0;
@@ -70,7 +70,7 @@ class MiniCtx {
   // 只存平移时,被调用方(如 drawCandle)在 save 后压低 globalAlpha 再 restore,
   // alpha 不会被还原 —— 于是那之后画的一切都近乎全黑。
   // 这个 bug 一度让整条地面看起来只有左边四格是亮的。
-  private stack: { tx: number; ty: number; alpha: number; fill: string; stroke: string; font: string; align: string }[] = [];
+  private stack: { tx: number; ty: number; alpha: number; comp: string; clip: { x0: number; y0: number; x1: number; y1: number } | null; fill: unknown; stroke: string; font: string; align: string }[] = [];
 
   constructor(w: number, h: number) {
     this.w = w;
@@ -83,22 +83,88 @@ class MiniCtx {
   }
   save() {
     this.stack.push({
-      tx: this.tx, ty: this.ty, alpha: this.globalAlpha,
+      tx: this.tx, ty: this.ty, alpha: this.globalAlpha, comp: this.globalCompositeOperation, clip: this.clipBox,
       fill: this.fillStyle, stroke: this.strokeStyle, font: this.font, align: this.textAlign,
     });
   }
   restore() {
     const s = this.stack.pop();
     if (!s) return;
-    this.tx = s.tx; this.ty = s.ty; this.globalAlpha = s.alpha;
+    this.tx = s.tx; this.ty = s.ty; this.globalAlpha = s.alpha; this.globalCompositeOperation = s.comp; this.clipBox = s.clip;
     this.fillStyle = s.fill; this.strokeStyle = s.stroke; this.font = s.font;
     this.textAlign = s.align as 'left' | 'center' | 'right';
   }
   translate(x: number, y: number) { this.tx += x; this.ty += y; }
-  beginPath() {} moveTo() {} lineTo() {} closePath() {} fill() {} stroke() {} arc() {}
-  createLinearGradient() { return { addColorStop() {} }; }
-  createRadialGradient() { return { addColorStop() {} }; }
-  drawImage() {} clip() {} rect() {} setTransform() {} scale() {} rotate() {}
+  // ---- 路径:多边形扫描线填充(尖塔剪影、神光束、尖刺都用它)----
+  private path: [number, number][] = [];
+  globalCompositeOperation: string = 'source-over';
+
+  beginPath() { this.path = []; }
+  moveTo(x: number, y: number) { this.path.push([x, y]); }
+  lineTo(x: number, y: number) { this.path.push([x, y]); }
+  closePath() {}
+  stroke() {}
+  arc(x: number, y: number, r: number, a0: number, a1: number) {
+    const steps = Math.max(8, Math.round(r * 4));
+    for (let i = 0; i <= steps; i++) {
+      const a = a0 + ((a1 - a0) * i) / steps;
+      this.path.push([x + Math.cos(a) * r, y + Math.sin(a) * r]);
+    }
+  }
+  fill() {
+    const pts = this.path;
+    if (pts.length < 3) return;
+    let minY = Infinity, maxY = -Infinity, minX = Infinity, maxX = -Infinity;
+    for (const [px, py] of pts) {
+      minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+      minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+    }
+    for (let y = Math.floor(minY); y <= Math.ceil(maxY); y++) {
+      const xs: number[] = [];
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, yi] = pts[i];
+        const [xj, yj] = pts[j];
+        if ((yi > y) !== (yj > y)) xs.push(xi + ((y - yi) / (yj - yi)) * (xj - xi));
+      }
+      xs.sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        for (let x = Math.floor(xs[k]); x <= Math.ceil(xs[k + 1]); x++) {
+          this.paint(x, y, this.sample(this.fillStyle, x, y), this.globalAlpha);
+        }
+      }
+    }
+  }
+
+  // ---- 渐变:记录端点与色标,取样时按投影插值 ----
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number) {
+    return { kind: 'linear' as const, x0, y0, x1, y1, stops: [] as [number, string][],
+      addColorStop(o: number, c: string) { this.stops.push([o, c]); } };
+  }
+  createRadialGradient(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number) {
+    return { kind: 'radial' as const, x0, y0, r0, x1, y1, r1, stops: [] as [number, string][],
+      addColorStop(o: number, c: string) { this.stops.push([o, c]); } };
+  }
+  drawImage() {} setTransform() {} scale() {} rotate() {}
+
+  /**
+   * 裁剪区。**用当前路径的包围盒近似**,不做真正的任意形状裁剪 ——
+   * 全项目只有三处 clip(落日的低云、切房过渡的两侧),路径都是圆或矩形,包围盒够用。
+   * 不实现的话:落日那三道"低云"会脱离日面、变成横贯天空的暗带
+   * (这正是第一帧合成图里那两道莫名其妙的横线)。
+   */
+  private clipBox: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  rect(x: number, y: number, w: number, h: number) {
+    this.path.push([x, y], [x + w, y], [x + w, y + h], [x, y + h]);
+  }
+  clip() {
+    if (this.path.length === 0) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [px, py] of this.path) {
+      x0 = Math.min(x0, px); y0 = Math.min(y0, py);
+      x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+    }
+    this.clipBox = { x0, y0, x1, y1 };
+  }
 
   // ---- 文字:只画字形盒,不求可读 ----
   // 目的不是读字,而是验证**版面**:面板有没有超出 480×270、行与行有没有压在一起、
@@ -123,7 +189,7 @@ class MiniCtx {
     const size = this.fontSize();
     const total = this.measureText(text).width;
     let cx = this.textAlign === 'center' ? x - total / 2 : this.textAlign === 'right' ? x - total : x;
-    const col = parseColor(this.fillStyle);
+    const col = parseColor(this.fillStyle as string);
     const top = y - size * 0.78;
     for (const ch of text) {
       const w = this.charW(ch);
@@ -156,27 +222,76 @@ class MiniCtx {
     }
   }
 
+  /** 依当前 fillStyle(纯色或渐变)求该点颜色。 */
+  private sample(style: unknown, x: number, y: number): [number, number, number, number] {
+    if (typeof style === 'string') return parseColor(style);
+    const g = style as { kind: string; stops: [number, string][]; x0: number; y0: number; x1: number; y1: number; r0?: number; r1?: number };
+    if (!g || !g.stops || g.stops.length === 0) return [0, 0, 0, 0];
+    let t: number;
+    if (g.kind === 'linear') {
+      const dx = g.x1 - g.x0, dy = g.y1 - g.y0;
+      const len2 = dx * dx + dy * dy;
+      t = len2 === 0 ? 0 : ((x - g.x0) * dx + (y - g.y0) * dy) / len2;
+    } else {
+      const d = Math.hypot(x - g.x1, y - g.y1);
+      const r0 = g.r0 ?? 0, r1 = g.r1 ?? 1;
+      t = r1 === r0 ? 0 : (d - r0) / (r1 - r0);
+    }
+    t = Math.max(0, Math.min(1, t));
+    const stops = [...g.stops].sort((a, b) => a[0] - b[0]);
+    let lo = stops[0], hi = stops[stops.length - 1];
+    for (let i = 0; i + 1 < stops.length; i++) {
+      if (t >= stops[i][0] && t <= stops[i + 1][0]) { lo = stops[i]; hi = stops[i + 1]; break; }
+    }
+    const span = hi[0] - lo[0];
+    const k = span === 0 ? 0 : (t - lo[0]) / span;
+    const a = parseColor(lo[1]), b = parseColor(hi[1]);
+    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + (b[3] - a[3]) * k];
+  }
+
+  /** 逻辑像素上色,尊重 globalCompositeOperation。 */
+  private paint(x: number, y: number, col: [number, number, number, number], alpha: number) {
+    this.px(x, y, col, alpha);
+  }
+
   private px(x: number, y: number, col: [number, number, number, number], alpha: number) {
     const sx = Math.round((x + this.tx) * SCALE);
     const sy = Math.round((y + this.ty) * SCALE);
     const a = col[3] * alpha;
     if (a <= 0) return;
+    if (this.clipBox) {
+      const lx = x + this.tx, ly = y + this.ty;
+      const c = this.clipBox;
+      if (lx < c.x0 - 1 || lx > c.x1 + 1 || ly < c.y0 - 1 || ly > c.y1 + 1) return;
+    }
+    // 'lighter' = 加色混合。落日辉光、神光束、弦闪环爆全都依赖它 ——
+    // 不实现的话它们会变成一块块硬边半透明色板,而不是光。
+    const add = this.globalCompositeOperation === 'lighter';
     for (let dy = 0; dy < SCALE; dy++) {
       for (let dx = 0; dx < SCALE; dx++) {
         const px = sx + dx;
         const py = sy + dy;
         if (px < 0 || px >= this.w || py < 0 || py >= this.h) continue;
         const i = (py * this.w + px) * 4;
-        this.buf[i] = this.buf[i] * (1 - a) + col[0] * a;
-        this.buf[i + 1] = this.buf[i + 1] * (1 - a) + col[1] * a;
-        this.buf[i + 2] = this.buf[i + 2] * (1 - a) + col[2] * a;
+        if (add) {
+          this.buf[i] = Math.min(255, this.buf[i] + col[0] * a);
+          this.buf[i + 1] = Math.min(255, this.buf[i + 1] + col[1] * a);
+          this.buf[i + 2] = Math.min(255, this.buf[i + 2] + col[2] * a);
+        } else {
+          this.buf[i] = this.buf[i] * (1 - a) + col[0] * a;
+          this.buf[i + 1] = this.buf[i + 1] * (1 - a) + col[1] * a;
+          this.buf[i + 2] = this.buf[i + 2] * (1 - a) + col[2] * a;
+        }
       }
     }
   }
   fillRect(x: number, y: number, w: number, h: number) {
-    const col = parseColor(this.fillStyle);
+    const flat = typeof this.fillStyle === 'string' ? parseColor(this.fillStyle) : null;
     for (let iy = 0; iy < Math.round(h); iy++) {
-      for (let ix = 0; ix < Math.round(w); ix++) this.px(x + ix, y + iy, col, this.globalAlpha);
+      for (let ix = 0; ix < Math.round(w); ix++) {
+        const col = flat ?? this.sample(this.fillStyle, x + ix, y + iy);
+        this.px(x + ix, y + iy, col, this.globalAlpha);
+      }
     }
   }
   strokeRect(x: number, y: number, w: number, h: number) {
@@ -423,5 +538,37 @@ function measureSeparation(): void {
   }
 }
 measureSeparation();
+
+// ---- 合成帧:背景 + 地形 + 道具 + 粒子 + HUD 一起画 ----
+// 到此为止,所有验收都只看了 tile 层与覆盖层。**从没有一帧完整画面被看过。**
+// 渐变与路径填充补上之后,PlayState.render() 可以整帧跑通了 —— 这才是 4.3 实机 QA
+// 在这个没有浏览器的环境里能做到的最接近的事。
+function shootFrame(name: string, roomId: string, prep?: (s: PlayState, w: WorldState) => void) {
+  const world = new WorldState();
+  for (const a of ['paper', 'cling', 'djump', 'dash'] as const) world.grant(a);
+  const engine = {
+    world,
+    input: { pressed: () => false, down: () => false, lastDevice: 'keyboard' as const },
+    audio: { sfx() {}, playSong() {}, playStinger() {}, setMusicState() {} },
+    persistWorld() {}, startRoom() {}, respawnAtBench() {}, showTitle() {},
+  } as unknown as Engine;
+  const state = new PlayState(engine, roomId, { kind: 'start' });
+  prep?.(state, world);
+  // 跑够帧数让"进入区域"的标题卡先过去 —— 否则每张合成图上都横着一张卡片,
+  // 会被误读成渲染缺陷(第一次看图时就被它骗了一轮)。
+  for (let i = 0; i < 260; i++) state.update(1 / 60);
+  const ctx = new MiniCtx(VIEW_W * SCALE, VIEW_H * SCALE);
+  state.render(ctx as unknown as CanvasRenderingContext2D);
+  writePNG(`.qa/${name}.png`, ctx.w, ctx.h, ctx.buf);
+  console.log(`  ${name}.png  ${roomId}`);
+}
+
+console.log('\n合成帧:');
+shootFrame('30-frame-coast', 'coast_walk');
+shootFrame('31-frame-haven', 'haven_lane', (_s, w) => {
+  w.flags.add('rescue:kanami'); w.flags.add('boss:warden'); w.flags.add('boss:gambit');
+});
+shootFrame('32-frame-sky', 'sky_corridor');
+shootFrame('33-frame-hangar', 'hangar_assembly');
 
 console.log('\n渲染完毕');
