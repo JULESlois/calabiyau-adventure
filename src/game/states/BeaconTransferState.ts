@@ -32,6 +32,11 @@ export class BeaconTransferState implements GameState {
     if (this.elapsed >= this.duration) this.engine.completeBeaconTransfer(this, this.next);
   }
 
+  renderUi(ctx: CanvasRenderingContext2D): void {
+    const frame = beaconTransferFrame(this.elapsed / this.duration);
+    (frame.showNext ? this.next : this.previous).renderUi(ctx);
+  }
+
   render(ctx: CanvasRenderingContext2D): void {
     const frame = beaconTransferFrame(this.elapsed / this.duration);
     (frame.showNext ? this.next : this.previous).render(ctx);

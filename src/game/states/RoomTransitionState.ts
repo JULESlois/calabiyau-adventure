@@ -46,6 +46,10 @@ export class RoomTransitionState implements GameState {
     if (this.elapsed >= this.duration) this.engine.completeRoomTransition(this, this.next);
   }
 
+  renderUi(ctx: CanvasRenderingContext2D): void {
+    this.next.renderChrome(ctx, false);
+  }
+
   render(ctx: CanvasRenderingContext2D): void {
     const linear = Math.max(0, Math.min(1, this.elapsed / this.duration));
     const eased = linear * linear * (3 - 2 * linear);
@@ -70,7 +74,7 @@ export class RoomTransitionState implements GameState {
     ctx.clip();
     this.next.renderTransitionPlayer(ctx, playerX, playerY);
     ctx.restore();
-    this.next.renderChrome(ctx, false);
+    if (!this.engine.hasUiSurface) this.next.renderChrome(ctx, false);
   }
 
   private renderScene(

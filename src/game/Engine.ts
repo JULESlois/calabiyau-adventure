@@ -14,6 +14,13 @@ export interface GameState {
   enter(): void;
   update(dt: number): void;
   render(ctx: CanvasRenderingContext2D): void;
+  /**
+   * 界面层(HUD/覆盖层/对话)的高分辨率绘制入口。
+   * UI 画布按显示分辨率开背板并预乘 scale 变换,绘制代码仍用 480×270 逻辑坐标,
+   * 文字因此在真实像素上栅格化 —— 中文终于不再是放大后的马赛克。
+   * 不实现则回退到主画布(测试与无 DOM 工装走这条路)。
+   */
+  renderUi?(ctx: CanvasRenderingContext2D): void;
 }
 
 export class Engine {
@@ -29,6 +36,8 @@ export class Engine {
   private acc = 0;
   private running = false;
   private post: HTMLCanvasElement | null = null;
+  private uiCtx: CanvasRenderingContext2D | null = null;
+  private uiScale = 1;
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -37,6 +46,16 @@ export class Engine {
     this.ctx.imageSmoothingEnabled = false;
     this.audio.applyVolumePrefs(this.settings.musicVol, this.settings.sfxVol, this.settings.muted);
     this.input.onAnyKey = () => this.audio.unlock();
+  }
+
+  /** React 宿主在布局变化时同步 UI 画布;scale 含 devicePixelRatio。 */
+  setUiSurface(canvas: HTMLCanvasElement, scale: number): void {
+    this.uiCtx = canvas.getContext('2d');
+    this.uiScale = Math.max(0.1, scale);
+  }
+
+  get hasUiSurface(): boolean {
+    return this.uiCtx !== null;
   }
 
   hasSave(): boolean {
@@ -234,6 +253,16 @@ export class Engine {
     // 后处理:哥特暗角
     if (!this.post) this.post = buildVignette();
     if (this.post) ctx.drawImage(this.post, 0, 0);
+
+    // UI 层:显示分辨率画布,叠在暗角之上
+    if (this.uiCtx && this.state?.renderUi) {
+      const ui = this.uiCtx;
+      ui.setTransform(1, 0, 0, 1, 0, 0);
+      ui.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
+      ui.setTransform(this.uiScale, 0, 0, this.uiScale, 0, 0);
+      this.state.renderUi(ui);
+      ui.setTransform(1, 0, 0, 1, 0, 0);
+    }
   };
 }
 

@@ -2283,7 +2283,12 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     }
     ctx.globalAlpha = 1;
 
-    if (chrome) this.renderChrome(ctx);
+    // 有 UI 画布时 chrome 走 renderUi(高分辨率);无 DOM 的工装仍在主画布上画。
+    if (chrome && !this.engine.hasUiSurface) this.renderChrome(ctx);
+  }
+
+  renderUi(ctx: CanvasRenderingContext2D): void {
+    this.renderChrome(ctx);
   }
 
   private renderFloatingHints(ctx: CanvasRenderingContext2D): void {
