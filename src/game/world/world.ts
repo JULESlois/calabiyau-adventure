@@ -75,6 +75,12 @@ export interface RoomDef {
    */
   bossGate?: { flag: string; gate: { col: number; row: number; w: number; h: number } };
   /**
+   * 晶蚀叠景(#24):同一几何空间的侵蚀第二状态。
+   * `boss:warden` 置位后替换 rows 使用;信标/收集物/能力点位置必须与基础版完全一致
+   * (check-maps 强制),因此进度永远不会因房间切换状态而丢失或漂移。
+   */
+  corrupted?: string[];
+  /**
    * 暗区:视野收缩为玩家周围的一小圈,其余渐暗。
    * 只改绘制,不改碰撞 —— 暗区考验的是记路,不是手感。
    * 香奈美的声呐脉冲会短暂照亮全屏,让侦察角色在这里真正有位置。
@@ -1918,6 +1924,42 @@ const R: RoomDef[] = [];
 // ---------------- 导出 ----------------
 
 export const ROOMS: Record<string, RoomDef> = Object.fromEntries(R.map((r) => [r.id, r]));
+
+// ---------------- 晶蚀叠景:侵蚀变体(击败回响守卫后激活) ----------------
+// 变体基于基础 rows 克隆再改写,保证几何与锚点天然一致;只动地形与敌表。
+
+function corruptVariant(roomId: string, edit: (g: string[][]) => void): void {
+  const room = ROOMS[roomId];
+  const g = room.rows.map((line) => line.split(''));
+  edit(g);
+  room.corrupted = g.map((line) => line.join(''));
+}
+
+// 海滨长廊:巡逻兵尸变为刺镰,地面长出晶棘,逆弦犬在长廊东端游荡。
+corruptVariant('coast_walk', (g) => {
+  g[13][16] = '6';
+  g[13][50] = '6';
+  g[13][44] = '9';
+  for (let c = 36; c <= 38; c++) g[13][c] = ';';
+});
+
+// 海崖:爆裂魔怪成窝,崖边多出荆棘带。
+corruptVariant('coast_cliff', (g) => {
+  for (const c of [20, 28]) if ('123456789'.includes(g[13][c])) g[13][c] = '5';
+  for (let c = 40; c <= 42; c++) if (g[13][c] === '.') g[13][c] = ';';
+});
+
+// 沉潮门楼:弦蛭吊上了门拱,巡逻位换成刺镰。
+corruptVariant('tide_entry', (g) => {
+  if (g[13][38] === '1') g[13][38] = '6';
+  g[11][3] = '7';
+});
+
+// 倒悬蓄水池:炮台被晶化成迫击晶,井底游着逆弦犬。
+corruptVariant('tide_cistern', (g) => {
+  if (g[30][24] === '3') g[30][24] = '8';
+  g[30][20] = '9';
+});
 export const ROOM_LIST: RoomDef[] = R;
 export const START_ROOM = 'coast_start';
 export const SHORTCUT_IDS = new Set(ROOM_LIST.flatMap((room) => room.shortcuts?.map((s) => s.id) ?? []));

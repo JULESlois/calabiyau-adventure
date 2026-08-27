@@ -869,3 +869,31 @@ test('paper toggle mode latches on press instead of requiring hold', () => {
   state.update(1 / 60);
   assert.equal(p.stringMode, 'normal', '再按一次应退出弦化');
 });
+
+// ---------------- 晶蚀叠景(#24) ----------------
+
+test('corrupted rooms swap to their second state only after the warden falls', () => {
+  const before = makePlayState('coast_walk');
+  assert.equal(before.corrupted, false);
+
+  const after = makePlayState('coast_walk');
+  after.engine.world.flags.add('boss:warden');
+  const rebuilt = new PlayState(after.engine, 'coast_walk', { kind: 'start' });
+  assert.equal(rebuilt.corrupted, true, '旗标置位后应进入侵蚀态');
+
+  // 侵蚀态确实换了敌表(巡逻兵 → 刺镰),但弦晶位置一格不差。
+  const baseKinds = before.enemies.map((e) => e.kind).sort();
+  const corruptKinds = rebuilt.enemies.map((e) => e.kind).sort();
+  assert.notDeepEqual(corruptKinds, baseKinds, '侵蚀态敌表应当不同');
+  const crystalIds = (st: PlayState) => st.pickups.filter((pk) => pk.kind === 'crystal').map((pk) => pk.id).sort();
+  assert.deepEqual(crystalIds(rebuilt), crystalIds(before), '弦晶 id 必须保持一致');
+});
+
+test('every corrupted variant keeps its beacon so respawn anchors never break', () => {
+  for (const room of ROOM_LIST) {
+    if (!room.corrupted) continue;
+    const baseBench = room.rows.some((r) => r.includes('T'));
+    const cvBench = room.corrupted.some((r) => r.includes('T'));
+    assert.equal(cvBench, baseBench, `${room.id} 侵蚀变体的信标状态漂移`);
+  }
+});

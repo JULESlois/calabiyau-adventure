@@ -233,6 +233,63 @@ for (const room of ROOM_LIST) {
       err(`${room.id} 有守卫屏障但房间里没有 Boss,屏障将永远无法解封`);
     }
   }
+  // ---------------- 晶蚀叠景变体 ----------------
+  if (room.corrupted) {
+    const cv = parseForChecks(room.corrupted);
+    const rawCv = parseRows(room.corrupted);
+    if (cv.w !== lvl.w || cv.h !== lvl.h) {
+      err(`${room.id} 侵蚀变体尺寸 ${cv.w}×${cv.h} 与基础版 ${lvl.w}×${lvl.h} 不一致`);
+    } else {
+      // 锚点保真:信标/收集物/能力点/NPC 的位置两个状态必须逐格一致,
+      // 否则进度(弦晶 id = 房间:列:行)会因房间病变而漂移或永久丢失。
+      const ANCHORS = new Set('PTFWJGDSXYLQVCEabcdg*'.split(''));
+      const baseRaw = rawParsed.get(room.id)!;
+      const key = (sp: { char: string; col: number; row: number }) => `${sp.char}:${sp.col}:${sp.row}`;
+      const baseAnchors = new Set(baseRaw.spawns.filter((sp) => ANCHORS.has(sp.char)).map(key));
+      const cvAnchors = new Set(rawCv.spawns.filter((sp) => ANCHORS.has(sp.char)).map(key));
+      for (const a of baseAnchors) if (!cvAnchors.has(a)) err(`${room.id} 侵蚀变体丢失锚点 ${a}`);
+      for (const a of cvAnchors) if (!baseAnchors.has(a)) err(`${room.id} 侵蚀变体擅自新增锚点 ${a}`);
+
+      // 出口门槛在侵蚀态也必须敞开,否则打完守卫反而把路封了。
+      const cvAt = (c: number, r: number) =>
+        c < 0 || c >= cv.w ? T_SOLID : r < 0 || r >= cv.h ? 0 : cv.tiles[r * cv.w + c];
+      for (const e of room.exits) {
+        if (e.side === 'down') {
+          let open = false;
+          for (let c = e.from; c <= e.to; c++) if (cvAt(c, cv.h - 1) !== T_SOLID) open = true;
+          if (!open) err(`${room.id} 侵蚀变体封死了 down 出口 ${e.from}-${e.to}`);
+        } else {
+          const c = e.side === 'left' ? 0 : cv.w - 1;
+          let open = false;
+          for (let r = e.from; r <= e.to; r++) if (cvAt(c, r) !== T_SOLID) open = true;
+          if (!open) err(`${room.id} 侵蚀变体封死了 ${e.side} 出口 rows ${e.from}-${e.to}`);
+        }
+      }
+
+      // 侵蚀敌表同样要站得住:地面型有支撑、弦蛭有天花板。
+      for (const sp of rawCv.spawns) {
+        if ('1345689'.includes(sp.char)) {
+          let supported = false;
+          for (let r = sp.row + 1; r < cv.h; r++) {
+            const t = cvAt(sp.col, r);
+            if (t === T_SOLID || t === T_ONEWAY) { supported = true; break; }
+            if (t !== 0) break;
+          }
+          if (!supported) err(`${room.id} 侵蚀变体敌人 ${sp.char} @ (${sp.col},${sp.row}) 无支撑`);
+        }
+        if (sp.char === '7') {
+          let ceiling = false;
+          for (let r = sp.row - 1; r >= 0; r--) {
+            const t = cvAt(sp.col, r);
+            if (t === T_SOLID) { ceiling = true; break; }
+            if (t !== 0) break;
+          }
+          if (!ceiling) err(`${room.id} 侵蚀变体弦蛭 @ (${sp.col},${sp.row}) 无天花板`);
+        }
+      }
+    }
+  }
+
   console.log(
     `  [通过] 尺寸 ${lvl.w}×${lvl.h},出口 ${room.exits.length},弦晶 ${count('*')},敌人 ${
       count('1') + count('2') + count('3') + count('4') + count('5') + count('6') +

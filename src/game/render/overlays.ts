@@ -445,6 +445,14 @@ function drawMap(ctx: CanvasRenderingContext2D, view: OverlayView): void {
       else ctx.fillRect(x + cw / 2, y + 2, cw / 2 - 2, h - 4);
     }
     ctx.globalAlpha = 1;
+    // 晶蚀叠景:已激活侵蚀态的房间描紫边,提示"这里已经变了,值得再去看"。
+    const corruptedNow = r.corrupted && world.flags.has('boss:warden');
+    if (corruptedNow) {
+      ctx.strokeStyle = '#c47eff';
+      ctx.globalAlpha = 0.5 + 0.3 * Math.abs(Math.sin(view.time * 3));
+      ctx.strokeRect(x + 0.5, y + 0.5, cw - 1, h - 1);
+      ctx.globalAlpha = 1;
+    }
     ctx.strokeStyle = current && Math.floor(view.time * 10) % 2 === 0 ? '#f0e0b0' : ZONE_COLOR[r.zone];
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 2.5, y + 2.5, cw - 5, h - 5);

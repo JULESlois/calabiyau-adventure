@@ -192,6 +192,20 @@ const ZONE_MAP_ORIGIN = ROOM_LIST.reduce(
  * 背景相位必须只由房间决定，不能随玩家走过的路径累加。
  * 地图纵坐标不是严格的世界高度，因此只取四分之一屏作为纵向视差步长。
  */
+/** 晶蚀叠景的目标色相:晶紫底 + 病态青光,叠在区域原色之上。 */
+const CORRUPT_COLORS = {
+  skyTop: '#180a24', skyBottom: '#2a1038',
+  far: '#241436', mid: '#31204a', near: '#3e2a5c',
+  tileBase: '#2e1e42', tileEdge: '#8a5ec8', tileDark: '#160c22',
+  accent: '#c47eff', fog: 'rgba(120,70,180,0.16)',
+  ember: '#c47eff', ambient: 'rgba(60,20,90,0.10)',
+};
+
+/** 侵蚀主题只改配色;材质画法与氛围粒子沿用所在区域,让"同一个地方病变了"读得出来。 */
+function corruptTheme(base: LevelTheme): LevelTheme {
+  return { ...base, ...CORRUPT_COLORS };
+}
+
 export function roomBackdropAnchor(room: RoomDef): { x: number; y: number } {
   const origin = ZONE_MAP_ORIGIN[room.zone] ?? { x: 0, y: 0 };
   return {
@@ -243,6 +257,8 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   controlsPage = 0;
   /** 由 Engine 在首次进入房间时置位,用来报一次房间名。 */
   announceRoomName = false;
+  /** 本房间当前处于晶蚀第二状态 */
+  corrupted = false;
   /**
    * 当前与玩家重叠、优先级最高的可交互物。
    * 它同时决定「按 F 会发生什么」与「提示显示什么」—— 这是把两者绑死在一起的那一个字段。
@@ -294,7 +310,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     this.room = ROOMS[roomId];
     this.zone = ZONES[this.room.zone];
     this.theme = this.zone.theme;
-    this.level = parseRows(this.room.rows);
+    // 晶蚀叠景:守卫倒下后,带 corrupted 变体的房间进入侵蚀第二状态。
+    this.corrupted = Boolean(this.room.corrupted && this.engine.world.flags.has('boss:warden'));
+    this.level = parseRows(this.corrupted ? this.room.corrupted! : this.room.rows);
     this.bg = new Background(this.theme, ZONE_INDEX[this.room.zone]);
     if (this.room.transition) {
       const targetZone = ZONES[this.room.transition.to];
@@ -2043,7 +2061,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   private updateVisualTheme(): void {
     const transition = this.room.transition;
     if (!transition) {
-      this.theme = this.zone.theme;
+      this.theme = this.corrupted
+        ? blendLevelThemes(this.zone.theme, corruptTheme(this.zone.theme), 0.42)
+        : this.zone.theme;
       this.bg.setTheme(this.theme);
       return;
     }
