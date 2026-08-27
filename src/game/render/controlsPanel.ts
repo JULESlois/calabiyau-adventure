@@ -9,6 +9,8 @@
 
 import { VIEW_H, VIEW_W } from '../constants';
 import { actionLabel, type Action, type InputDevice } from '../Input';
+import { completionReport, type WorldState } from '../world/WorldState';
+import { currentObjective } from '../story';
 import {
   ABILITY_INFO,
   HIDDEN_CHIPS,
@@ -16,11 +18,13 @@ import {
   type Ability,
 } from '../world/world';
 
-export const CONTROLS_PAGE_COUNT = 2;
+export const CONTROLS_PAGE_COUNT = 3;
 
 export interface ControlsPanelView {
   abilities: ReadonlySet<Ability>;
   chips: ReadonlySet<string>;
+  /** 进度页需要完整世界状态(完成度/目标/觉醒) */
+  world: WorldState;
   device: InputDevice;
   page: number;
 }
@@ -85,10 +89,12 @@ export function drawControlsPanel(ctx: CanvasRenderingContext2D, view: ControlsP
   ctx.textAlign = 'center';
   ctx.font = F_TITLE;
   ctx.fillStyle = '#e8d8a8';
-  ctx.fillText(view.page === 0 ? '操 作 说 明' : '能 力 与 芯 片', VIEW_W / 2, 30);
+  const titles = ['操 作 说 明', '能 力 与 芯 片', '冒 险 进 度'];
+  ctx.fillText(titles[view.page] ?? titles[0], VIEW_W / 2, 30);
 
   if (view.page === 0) drawKeys(ctx, view);
-  else drawLoadout(ctx, view);
+  else if (view.page === 1) drawLoadout(ctx, view);
+  else drawProgress(ctx, view);
 
   // 页码 + 页脚
   ctx.textAlign = 'center';
@@ -194,4 +200,47 @@ function drawLoadout(ctx: CanvasRenderingContext2D, view: ControlsPanelView): vo
     ctx.fillText(owned ? item.desc : '未持有', x + 96, y);
     y += 12;
   }
+}
+
+
+/** 冒险进度页:主线目标 + 完成度分项 + 觉醒概览。 */
+function drawProgress(ctx: CanvasRenderingContext2D, view: ControlsPanelView): void {
+  const x = 30;
+  let y = 52;
+  ctx.textAlign = 'left';
+
+  ctx.font = F_FOOT;
+  ctx.fillStyle = '#6a6080';
+  ctx.fillText('当前目标', x, y);
+  y += 14;
+  ctx.font = F_ROW;
+  ctx.fillStyle = '#8ee8f4';
+  ctx.fillText(currentObjective(view.world), x, y);
+  y += 20;
+
+  const report = completionReport(view.world);
+  ctx.font = F_FOOT;
+  ctx.fillStyle = '#6a6080';
+  ctx.fillText(`完成度 ${report.percent}%`, x, y);
+  y += 14;
+  // 两列分项
+  const colW = 200;
+  report.entries.forEach((entry, i) => {
+    const cx = x + (i % 2) * colW;
+    const cy = y + Math.floor(i / 2) * 14;
+    ctx.font = F_ROW;
+    ctx.fillStyle = entry.got >= entry.total ? '#ffe9a8' : '#c8bcd8';
+    ctx.fillText(`${entry.label} ${entry.got}/${entry.total}`, cx, cy);
+  });
+  y += Math.ceil(report.entries.length / 2) * 14 + 12;
+
+  ctx.font = F_FOOT;
+  ctx.fillStyle = '#6a6080';
+  ctx.fillText('觉醒', x, y);
+  y += 14;
+  const aw = view.world.awaken;
+  const remain = view.world.awakenEarned() - view.world.awakenSpent();
+  ctx.font = F_ROW;
+  ctx.fillStyle = '#c8bcd8';
+  ctx.fillText(`体魄 ${aw.vigor} · 弦流 ${aw.flow} · 锋刃 ${aw.edge}` + (remain > 0 ? `　(未分配 ${remain} 点,信标处分配)` : ''), x, y);
 }

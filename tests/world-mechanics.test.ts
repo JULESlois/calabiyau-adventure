@@ -972,3 +972,30 @@ test('awaken points are capped by recomputed earnings and survive a save roundtr
   const restored = WorldState.deserialize(parsed!);
   assert.equal(restored.awakenSpent(), restored.awakenEarned(), '超发点数必须被夹回');
 });
+
+test('the mainline objective chain follows ability and boss progression', async () => {
+  const { currentObjective } = await import('../src/game/story');
+  const w = new WorldState();
+  assert.match(currentObjective(w), /弦化/);
+  w.grant('paper');
+  assert.match(currentObjective(w), /香奈美/);
+  w.grant('kanami');
+  w.grant('cling');
+  assert.match(currentObjective(w), /守卫/);
+  w.flags.add('boss:warden');
+  assert.match(currentObjective(w), /弦翼/);
+  w.grant('djump');
+  assert.match(currentObjective(w), /守望者/);
+  w.flags.add('boss:guardian');
+  assert.match(currentObjective(w), /秘密/);
+});
+
+test('the corruption reaction beat fires only inside a corrupted room', async () => {
+  const { storyBeatFor } = await import('../src/game/story');
+  const w = new WorldState();
+  w.flags.add('boss:warden');
+  w.flags.add('story:post_warden');
+  assert.equal(storyBeatFor('coast_walk', w, false), null, '普通房不触发侵蚀反应');
+  const beat = storyBeatFor('coast_walk', w, true);
+  assert.ok(beat && beat.flag === 'story:corruption', '侵蚀房应触发首见反应');
+});

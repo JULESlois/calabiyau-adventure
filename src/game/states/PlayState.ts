@@ -1113,7 +1113,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
 
     // 主线叙事节拍:一次性,触发即写旗标并存档。
     if (this.introT <= 0 && !this.player.dead) {
-      const beat = storyBeatFor(this.roomId, this.world);
+      const beat = storyBeatFor(this.roomId, this.world, this.corrupted);
       if (beat) {
         this.world.flags.add(beat.flag);
         this.engine.persistWorld();
@@ -2474,6 +2474,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       drawControlsPanel(ctx, {
         abilities: this.world.abilities,
         chips: this.world.chips,
+        world: this.world,
         device: this.engine.input.lastDevice,
         page: this.controlsPage,
       });
