@@ -54,6 +54,8 @@ import { drawDialogue, pageLength, type DialogueView } from '../render/dialogue'
 import { drawHUD } from '../render/hud';
 import { CONTROLS_PAGE_COUNT, drawControlsPanel } from '../render/controlsPanel';
 import {
+  AWAKEN_TRACKS,
+  BENCH_ITEMS,
   drawOverlays,
   PAUSE_ITEMS,
   SETTINGS_ROWS,
@@ -255,6 +257,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   pauseSel = 0;
   pauseConfirm: PauseAction | null = null;
   settingsSel = 0;
+  benchSel = 0;
+  loadoutSel = 0;
+  awakenSel = 0;
   controlsPage = 0;
   /** 由 Engine 在首次进入房间时置位,用来报一次房间名。 */
   announceRoomName = false;
@@ -837,6 +842,100 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       }
     }
 
+    if (this.overlay === 'bench_menu') {
+      this.time += dt * 0.2;
+      const n = BENCH_ITEMS.length;
+      if (input.pressed('up')) { this.benchSel = (this.benchSel - 1 + n) % n; this.sfx('ui'); }
+      if (input.pressed('down')) { this.benchSel = (this.benchSel + 1) % n; this.sfx('ui'); }
+      if (input.pressed('confirm') || input.pressed('interact')) {
+        const action = BENCH_ITEMS[this.benchSel].action;
+        this.sfx('ui');
+        if (action === 'travel') {
+          this.overlay = 'fast_travel';
+          const list = this.getVisitedBenches();
+          const here = list.findIndex((entry) => entry.isCurrent);
+          this.fastTravelIndex = here >= 0 ? here : 0;
+        } else if (action === 'loadout') {
+          this.overlay = 'loadout';
+          this.loadoutSel = 0;
+        } else if (action === 'awaken') {
+          this.overlay = 'awaken';
+          this.awakenSel = 0;
+        } else {
+          this.overlay = 'none';
+        }
+      }
+      if (input.pressed('pause')) { this.overlay = 'none'; this.sfx('ui'); }
+      return;
+    }
+
+    if (this.overlay === 'loadout') {
+      this.time += dt * 0.2;
+      const owned = [...SHOP_ITEMS, ...HIDDEN_CHIPS].filter((i) => this.world.chips.has(i.id));
+      const n = Math.max(1, owned.length);
+      if (input.pressed('up')) { this.loadoutSel = (this.loadoutSel - 1 + n) % n; this.sfx('ui'); }
+      if (input.pressed('down')) { this.loadoutSel = (this.loadoutSel + 1) % n; this.sfx('ui'); }
+      if ((input.pressed('confirm') || input.pressed('interact')) && owned.length > 0) {
+        const id = owned[this.loadoutSel].id;
+        const w = this.world;
+        const idx = w.loadout.indexOf(id);
+        if (idx >= 0) {
+          w.loadout.splice(idx, 1);
+          this.sfx('paperOff');
+        } else if (w.loadout.length < w.loadoutCap()) {
+          w.loadout.push(id);
+          this.sfx('crystal');
+        } else {
+          this.toast('槽位已满 · 先卸下一枚');
+          this.sfx('hurt');
+        }
+        // 配载影响生命/弦能上限(强健弦芯等):立即重算并夹住当前值。
+        w.recalculateStats();
+        this.player.hp = Math.min(this.player.hp, w.hpMax);
+        this.player.energy = Math.min(this.player.energy, w.energyMax);
+        this.engine.persistWorld();
+      }
+      if (input.pressed('pause') || input.pressed('map')) { this.overlay = 'bench_menu'; this.sfx('ui'); }
+      return;
+    }
+
+    if (this.overlay === 'awaken') {
+      this.time += dt * 0.2;
+      const n = AWAKEN_TRACKS.length;
+      if (input.pressed('up')) { this.awakenSel = (this.awakenSel - 1 + n) % n; this.sfx('ui'); }
+      if (input.pressed('down')) { this.awakenSel = (this.awakenSel + 1) % n; this.sfx('ui'); }
+      const key = AWAKEN_TRACKS[this.awakenSel].key;
+      const w = this.world;
+      if (input.pressed('right') || input.pressed('confirm')) {
+        if (w.awakenSpent() < w.awakenEarned() && w.awaken[key] < 8) {
+          w.awaken[key]++;
+          const prevHp = w.hpMax;
+          const prevEn = w.energyMax;
+          w.recalculateStats();
+          // 上限提升的部分直接补给当前值,和弦晶共鸣的手感一致。
+          this.player.hp = Math.min(w.hpMax, this.player.hp + Math.max(0, w.hpMax - prevHp));
+          this.player.energy = Math.min(w.energyMax, this.player.energy + Math.max(0, w.energyMax - prevEn));
+          this.engine.persistWorld();
+          this.sfx('crystal');
+        } else {
+          this.sfx('hurt');
+        }
+      }
+      if (input.pressed('left')) {
+        // 允许退点重配:构筑实验是这套系统存在的意义,不设惩罚。
+        if (w.awaken[key] > 0) {
+          w.awaken[key]--;
+          w.recalculateStats();
+          this.player.hp = Math.min(this.player.hp, w.hpMax);
+          this.player.energy = Math.min(this.player.energy, w.energyMax);
+          this.engine.persistWorld();
+          this.sfx('paperOff');
+        }
+      }
+      if (input.pressed('pause') || input.pressed('map')) { this.overlay = 'bench_menu'; this.sfx('ui'); }
+      return;
+    }
+
     if (this.overlay === 'settings') {
       this.time += dt * 0.2;
       const rows = SETTINGS_ROWS;
@@ -1413,16 +1512,14 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       list.push({
         id: `bench:${b.x}`,
         zone: { x: b.x - 14, y: b.y - 30, w: 28, h: 30 },
-        label: b.resting ? '传送' : '休息',
+        label: b.resting ? '信标菜单' : '休息',
         anchor: { x: b.x, y: b.y - 32 },
         interact: () => {
           if (b.resting) {
-            // 已经休息过:同一个键改为开传送列表,并把光标停在当前信标上,
-            // 免得手快连按两次 F 就被送回开局房间。
-            this.overlay = 'fast_travel';
-            const list2 = this.getVisitedBenches();
-            const here = list2.findIndex((entry) => entry.isCurrent);
-            this.fastTravelIndex = here >= 0 ? here : 0;
+            // 已休息过:第二次 F 打开信标菜单(传送/配载/觉醒)。
+            // 配载与加点刻意锁在信标处 —— 离开信标即锁定,这是构筑决策而非随身菜单。
+            this.overlay = 'bench_menu';
+            this.benchSel = 0;
             this.sfx('ui');
             return;
           }
@@ -1557,7 +1654,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     w.dust -= cost;
     const previousHpMax = w.hpMax;
     if (repeat) w.forgeLevel++;
-    else w.chips.add(id);
+    else w.grantChip(id);
     w.recalculateStats();
     const hpGain = w.hpMax - previousHpMax;
     if (hpGain > 0) this.player.hp = Math.min(w.hpMax, this.player.hp + hpGain);
@@ -1633,7 +1730,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       for (let c = c0; c <= c1; c++) {
         if (this.level.tiles[r * this.level.w + c] !== T_HIDDEN) continue;
         if (!this.hiddenReveal.has(r * this.level.w + c)) fresh = true;
-        this.hiddenReveal.set(r * this.level.w + c, this.world.chips.has('relic_echo') ? 9 : 6);
+        this.hiddenReveal.set(r * this.level.w + c, this.world.chipActive('relic_echo') ? 9 : 6);
       }
     }
     if (fresh) this.sfx('crystal');
@@ -1796,7 +1893,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
 
     const melee = p.meleeHitbox();
     if (melee) {
-      const bladeMul = this.world.chips.has('chip_blade') ? 1.3 : 1;
+      const bladeMul = (this.world.chipActive('chip_blade') ? 1.3 : 1) * (1 + this.world.awaken.edge * 0.04);
       const wasDown = p.downSlash;
       let pogoHit = false;
       // 挥击扫过的可破坏墙:按 swingId 去重,否则一次挥砍会在多帧里反复计数
@@ -1805,7 +1902,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
           const idx = r * this.level.w + c;
           if (this.meleeTileHits.get(idx) === p.swingId) continue;
           // 裂石之握:近战拆墙效率翻倍(一刀一格)
-          const quarry = this.world.chips.has('chip_quarry') ? 2 : 1;
+          const quarry = this.world.chipActive('chip_quarry') ? 2 : 1;
           if (this.damageBreakable(c, r, BREAKABLE_MELEE_HITS * quarry)) {
             this.meleeTileHits.set(idx, p.swingId);
             this.shake(1);
@@ -1972,7 +2069,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     const p = this.player;
     if (p.dead) return;
     const pr = p.rect();
-    const magnetR = this.world.chips.has('chip_magnet') ? 110 : 50;
+    const magnetR = this.world.chipActive('chip_magnet') ? 110 : 50;
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const pk = this.pickups[i];
       pk.t += 1 / 60;
@@ -2035,7 +2132,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
           case 'relic': {
             if (pk.chipId) {
               const previousHpMax = this.world.hpMax;
-              this.world.chips.add(pk.chipId);
+              this.world.grantChip(pk.chipId);
               this.world.recalculateStats();
               const hpGain = this.world.hpMax - previousHpMax;
               if (hpGain > 0) p.hp = Math.min(this.world.hpMax, p.hp + hpGain);
@@ -2731,6 +2828,9 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       pauseConfirm: this.pauseConfirm,
       settings: this.engine.settings ?? DEFAULT_SETTINGS,
       settingsSel: this.settingsSel,
+      benchSel: this.benchSel,
+      loadoutSel: this.loadoutSel,
+      awakenSel: this.awakenSel,
     };
   }
 

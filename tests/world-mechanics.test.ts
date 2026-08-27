@@ -4,6 +4,7 @@ import type { Engine } from '../src/game/Engine';
 import { Enemy } from '../src/game/entities/enemies';
 import { T_EMPTY, T_MEMBRANE, T_SOLID } from '../src/game/levels/levels';
 import { PAUSE_ITEMS } from '../src/game/render/overlays';
+import { parseWorldSave } from '../src/game/save';
 import { PlayState, type EntryInfo } from '../src/game/states/PlayState';
 import type { MusicCue, MusicIntensity } from '../src/game/music';
 import { ABILITY_INFO, ROOM_LIST, type Ability } from '../src/game/world/world';
@@ -121,8 +122,18 @@ test('resting at a beacon saves without hijacking the screen; a second press ope
   assert.equal(state.overlay, 'none');
   assert.equal(beacon.resting, true);
 
-  // 第二次:才打开传送列表,且光标停在当前信标上。
+  // 第二次:打开信标菜单;「信标传送」是第一项,确认后进入传送列表。
   interact();
+  assert.equal(state.overlay, 'bench_menu');
+  (state as unknown as { benchSel: number }).benchSel = 0;
+  const pressConfirm = () => {
+    const eng = state.engine as unknown as { input: { pressed(a: string): boolean } };
+    const orig = eng.input.pressed;
+    eng.input.pressed = (a: string) => a === 'confirm';
+    state.update(1 / 60);
+    eng.input.pressed = orig;
+  };
+  pressConfirm();
   assert.equal(state.overlay, 'fast_travel');
   const list = (state as unknown as {
     getVisitedBenches(): { id: string; isCurrent: boolean }[];
@@ -917,4 +928,47 @@ test('boss-room beats gate on their flags and fire before the fight', () => {
   for (let i = 0; i < 240 && state.overlay === 'none'; i++) state.update(1 / 60);
   assert.equal(state.overlay, 'dialogue', '首入弦翼圣所应有前文台词');
   assert.ok(state.world.flags.has('story:pre_warden'));
+});
+
+// ---------------- 配载与觉醒(#3+#52) ----------------
+
+test('chips only take effect while loaded, and capacity grows with bosses', () => {
+  const w = new WorldState();
+  for (let i = 0; i < 4; i++) w.grantChip(`chip_${['hp','blade','regen','magnet'][i]}`);
+  assert.equal(w.loadoutCap(), 3, '基础容量 3');
+  assert.equal(w.loadout.length, 3, '第 4 枚芯片没有空槽,不自动装载');
+  assert.equal(w.chipActive('chip_magnet'), false, '拥有但未装载不生效');
+
+  w.flags.add('boss:warden');
+  assert.equal(w.loadoutCap(), 4, '击败 Boss 扩容');
+  w.loadout.push('chip_magnet');
+  assert.equal(w.chipActive('chip_magnet'), true);
+});
+
+test('loadout drives derived stats: unloading chip_hp drops hpMax', () => {
+  const w = new WorldState();
+  w.grantChip('chip_hp');
+  w.recalculateStats();
+  const withChip = w.hpMax;
+  w.loadout = [];
+  w.recalculateStats();
+  assert.equal(withChip - w.hpMax, 25, '卸下强健弦芯应损失 +25 上限');
+});
+
+test('awaken points are capped by recomputed earnings and survive a save roundtrip', () => {
+  const w = new WorldState();
+  w.flags.add('boss:warden');
+  w.flags.add('boss:arbiter');
+  assert.equal(w.awakenEarned(), 2);
+  w.awaken = { vigor: 2, flow: 0, edge: 0 };
+  w.recalculateStats();
+  assert.equal(w.hpMax, 112, '体魄 2 点 = +12 生命上限');
+
+  // 往返:伪造多花的点数会被削减回合法值
+  const save = w.serialize();
+  save.awaken = { vigor: 5, flow: 3, edge: 2 };
+  const parsed = parseWorldSave(JSON.parse(JSON.stringify(save)));
+  assert.ok(parsed, '存档应通过形状校验');
+  const restored = WorldState.deserialize(parsed!);
+  assert.equal(restored.awakenSpent(), restored.awakenEarned(), '超发点数必须被夹回');
 });

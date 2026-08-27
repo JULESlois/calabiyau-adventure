@@ -54,6 +54,11 @@ const TAKEOFF_ANIM_TIME = 0.12;
 const LANDING_ANIM_TIME = 0.16;
 const TURN_ANIM_TIME = 0.12;
 
+/** 觉醒「锋刃」:每点 +4% 攻击伤害(近战与远程共用)。 */
+function edgeMult(ps: PlayerHost): number {
+  return 1 + ps.world.awaken.edge * 0.04;
+}
+
 export class Player {
   x: number; // 脚底中心
   y: number;
@@ -344,7 +349,7 @@ export class Player {
       (this.onGround || !this.airDashed)
     ) {
       this.dashT = DASH_TIME;
-      this.dashCdT = ps.world.chips.has('relic_reactor') ? DASH_CD * 0.6 : DASH_CD;
+      this.dashCdT = ps.world.chipActive('relic_reactor') ? DASH_CD * 0.6 : DASH_CD;
       if (!this.onGround) this.airDashed = true;
       this.vy = 0;
       ps.sfx('doubleJump');
@@ -409,7 +414,7 @@ export class Player {
             ? GLIDE_STRING_DRAIN
             : STRING_DRAIN;
       const drain =
-        this.stringMode === 'glide' && ps.world.chips.has('relic_tide') ? baseDrain * 0.75 : baseDrain;
+        this.stringMode === 'glide' && ps.world.chipActive('relic_tide') ? baseDrain * 0.75 : baseDrain;
       this.energy = Math.max(0, this.energy - drain * dt);
       this.regenDelay = 0.55;
       if (this.energy <= 0) {
@@ -417,7 +422,7 @@ export class Player {
         else this.setStringMode('normal', ps);
       }
     } else if (this.regenDelay <= 0) {
-      const regenMul = ps.world.chips.has('chip_regen') ? 1.4 : 1;
+      const regenMul = ps.world.chipActive('chip_regen') ? 1.4 : 1;
       this.energy = Math.min(ps.world.energyMax, this.energy + STRING_REGEN * regenMul * dt);
     }
 
@@ -671,7 +676,7 @@ export class Player {
   private shoot(ps: PlayerHost): void {
     const gy = this.y - 11;
     const shot = makeRifleShot(this.x + this.facing * 8, gy, this.facing);
-    shot.dmg = Math.round(shot.dmg * this.consumeFlash(ps));
+    shot.dmg = Math.round(shot.dmg * this.consumeFlash(ps) * edgeMult(ps));
     ps.playerBullets.push(shot);
     this.shootCd = 0.14;
     ps.sfx('shootIce');
@@ -684,14 +689,14 @@ export class Player {
     const gy = this.y - 11;
     if (this.chargeT < 0.15) {
       const note = makeQuickNote(this.x + this.facing * 7, gy, this.facing);
-      note.dmg = Math.round(note.dmg * this.consumeFlash(ps));
+      note.dmg = Math.round(note.dmg * this.consumeFlash(ps) * edgeMult(ps));
       ps.playerBullets.push(note);
       this.shootCd = 0.28;
       ps.sfx('shootNote');
     } else {
       const charge = this.chargeT / 0.7;
       const snipe = makeSnipe(this.x + this.facing * 8, gy, this.facing, charge);
-      snipe.dmg = Math.round(snipe.dmg * this.consumeFlash(ps));
+      snipe.dmg = Math.round(snipe.dmg * this.consumeFlash(ps) * edgeMult(ps));
       ps.playerBullets.push(snipe);
       this.shootCd = 0.45;
       ps.sfx('shootNote');
@@ -727,7 +732,7 @@ export class Player {
     if (this.invuln > 0 || this.dead) return false;
     this.hp -= dmg;
     // 潮汐外壳:受击后的无敌时间 +25%
-    this.invuln = INVULN_TIME * (ps.world.chips.has('chip_guard') ? 1.25 : 1);
+    this.invuln = INVULN_TIME * (ps.world.chipActive('chip_guard') ? 1.25 : 1);
     if (knockback) {
       const dir = this.x < fromX ? -1 : 1;
       this.vx = dir * 150;

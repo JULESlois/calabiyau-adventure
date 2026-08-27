@@ -132,7 +132,7 @@ test('a beacon relabels itself from rest to travel once used', () => {
   assert.equal(labelFor('bench'), '休息');
   p.updateInteractables();
   assert.equal(bench.resting, true);
-  assert.equal(labelFor('bench'), '传送', '休息之后同一条记录应改口为传送');
+  assert.equal(labelFor('bench'), '信标菜单', '休息之后同一条记录应改口为传送');
 });
 
 test('an opened shortcut leaves the registry entirely', () => {

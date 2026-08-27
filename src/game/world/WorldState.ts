@@ -4,6 +4,7 @@
 import type { CharId } from '../types';
 import { MAX_HP, MAX_STRING } from '../constants';
 import {
+  CRYSTAL_MILESTONES,
   HIDDEN_CHIPS,
   progressionStats,
   ROOM_LIST,
@@ -30,6 +31,10 @@ export interface WorldSave {
   shortcuts?: string[];
   brokenWalls?: string[];
   forgeLevel?: number;
+  /** 配载中的芯片 id(容量制,信标处重配) */
+  loadout?: string[];
+  /** 觉醒加点(体魄/弦流/锋刃),点数来源由旗标与里程碑重算,只存分配 */
+  awaken?: { vigor: number; flow: number; edge: number };
   hpMax?: number;
 }
 
@@ -99,6 +104,10 @@ export class WorldState {
   brokenWalls = new Set<string>();
   /** 弦芯熔铸的已购次数(可重复商品) */
   forgeLevel = 0;
+  /** 配载:激活中的芯片(拥有 ≠ 生效,槽位有限,信标处重配) */
+  loadout: string[] = [];
+  /** 觉醒加点分配 */
+  awaken = { vigor: 0, flow: 0, edge: 0 };
   /** 生命上限(弦晶共鸣与强健弦芯可提升) */
   hpMax = MAX_HP;
   /** 弦能上限(弦晶共鸣可提升) */
@@ -127,10 +136,46 @@ export class WorldState {
     return `${room}:${col}:${row}`;
   }
 
+  /** 配载容量:基础 3,每击败一场 Boss +1(上限 7)。 */
+  loadoutCap(): number {
+    let cap = 3;
+    for (const flag of BOSS_FLAGS) if (this.flags.has(flag)) cap++;
+    return cap;
+  }
+
+  /** 芯片是否"生效":必须既拥有又在配载中。拥有但未装载的只是收藏。 */
+  chipActive(id: string): boolean {
+    return this.chips.has(id) && this.loadout.includes(id);
+  }
+
+  private activeChipSet(): ReadonlySet<string> {
+    return new Set(this.loadout.filter((id) => this.chips.has(id)));
+  }
+
+  /** 觉醒点总量:每场 Boss 1 点 + 每个弦晶里程碑 1 点。全部由进度重算,不入档。 */
+  awakenEarned(): number {
+    let earned = 0;
+    for (const flag of BOSS_FLAGS) if (this.flags.has(flag)) earned++;
+    for (const m of CRYSTAL_MILESTONES) if (this.crystals.size >= m.count) earned++;
+    return earned;
+  }
+
+  awakenSpent(): number {
+    return this.awaken.vigor + this.awaken.flow + this.awaken.edge;
+  }
+
+  /** 拾取/购买芯片统一入口:有空槽自动装载,让"捡到就生效"的旧直觉不被打破。 */
+  grantChip(id: string): void {
+    this.chips.add(id);
+    if (!this.loadout.includes(id) && this.loadout.length < this.loadoutCap()) {
+      this.loadout.push(id);
+    }
+  }
+
   recalculateStats(): void {
-    const stats = progressionStats(this.crystals.size, this.chips, this.forgeLevel);
-    this.hpMax = stats.hpMax;
-    this.energyMax = stats.energyMax;
+    const stats = progressionStats(this.crystals.size, this.activeChipSet(), this.forgeLevel);
+    this.hpMax = stats.hpMax + this.awaken.vigor * 6;
+    this.energyMax = stats.energyMax + this.awaken.flow * 6;
     this.hp = Math.min(this.hp, this.hpMax);
     this.energy = Math.min(this.energy, this.energyMax);
   }
@@ -151,6 +196,8 @@ export class WorldState {
       shortcuts: [...this.shortcuts],
       brokenWalls: [...this.brokenWalls],
       forgeLevel: this.forgeLevel,
+      loadout: [...this.loadout],
+      awaken: { ...this.awaken },
       hpMax: this.hpMax,
     };
   }
@@ -171,6 +218,22 @@ export class WorldState {
     w.shortcuts = new Set(d.shortcuts);
     w.brokenWalls = new Set(d.brokenWalls);
     w.forgeLevel = d.forgeLevel;
+    // 配载只保留真正拥有的芯片,并截断到当前容量;旧档(无 loadout)自动装满,
+    // 让升级前"永久生效"的存档无感迁移。
+    const owned = d.loadout.filter((id) => w.chips.has(id));
+    w.loadout = owned.slice(0, w.loadoutCap());
+    if (d.loadout.length === 0 && w.chips.size > 0) {
+      w.loadout = [...w.chips].slice(0, w.loadoutCap());
+    }
+    // 加点花费不得超过重算出的点数总量;超了按体魄→弦流→锋刃顺序削减。
+    w.awaken = { ...d.awaken };
+    let over = w.awakenSpent() - w.awakenEarned();
+    for (const key of ['vigor', 'flow', 'edge'] as const) {
+      if (over <= 0) break;
+      const cut = Math.min(over, w.awaken[key]);
+      w.awaken[key] -= cut;
+      over -= cut;
+    }
     // hpMax/energyMax 只认弦晶与芯片推导出的结果,与运行时成长走同一条路径
     w.recalculateStats();
     return w;

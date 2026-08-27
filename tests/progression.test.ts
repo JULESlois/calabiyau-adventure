@@ -236,7 +236,7 @@ test('chip_guard lengthens the invulnerability window', () => {
   const baseline = plain.player.invuln;
 
   const world = new WorldState();
-  world.chips.add('chip_guard');
+  world.grantChip('chip_guard');
   const guarded = makePlayState('coast_walk', world);
   guarded.player.hurt(1, guarded.player.x + 10, guarded);
 
@@ -246,7 +246,7 @@ test('chip_guard lengthens the invulnerability window', () => {
 
 test('chip_quarry doubles melee wall-breaking, opening a wall in one swing', () => {
   const world = new WorldState();
-  world.chips.add('chip_quarry');
+  world.grantChip('chip_quarry');
   const state = makePlayState('coast_walk', world);
   const p = state.player;
   p.x = 51 * TILE - 6;

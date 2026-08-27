@@ -75,6 +75,19 @@ export function parseWorldSave(value: unknown): ValidWorldSave | null {
   if (!shortcuts || shortcuts.some((shortcut) => !SHORTCUT_IDS.has(shortcut))) return null;
   const brokenWalls = value.brokenWalls === undefined ? [] : readStringList(value.brokenWalls);
   if (!brokenWalls) return null;
+  // 配载:形状校验在此,交集/容量截断在 deserialize(容量依赖旗标,属派生逻辑)。
+  const loadout = value.loadout === undefined ? [] : readStringList(value.loadout);
+  if (!loadout || loadout.some((chip) => !CHIPS.has(chip))) return null;
+  // 觉醒加点:三项都是小的非负整数;总量上限由 deserialize 按进度重算后夹紧。
+  const awakenRaw = value.awaken === undefined ? { vigor: 0, flow: 0, edge: 0 } : value.awaken;
+  if (!isRecord(awakenRaw)) return null;
+  const readPoint = (v: unknown) =>
+    typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= 32 ? v : null;
+  const vigor = readPoint(awakenRaw.vigor ?? 0);
+  const flow = readPoint(awakenRaw.flow ?? 0);
+  const edge = readPoint(awakenRaw.edge ?? 0);
+  if (vigor === null || flow === null || edge === null) return null;
+  const awaken = { vigor, flow, edge };
   // 熔铸层数直接换算成生命上限,所以必须夹在合法区间里,不能信存档里的数字
   const forgeLevel = value.forgeLevel ?? 0;
   if (
@@ -115,6 +128,8 @@ export function parseWorldSave(value: unknown): ValidWorldSave | null {
     // 与 visited 同策略:丢掉已不存在的格位(房间改版很正常),而不是让整档作废
     brokenWalls: brokenWalls.filter(isBreakableCell),
     forgeLevel,
+    loadout,
+    awaken,
   } as ValidWorldSave;
 }
 

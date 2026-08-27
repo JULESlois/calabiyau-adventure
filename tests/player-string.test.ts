@@ -29,6 +29,9 @@ function makeState(abilities: Ability[] = []) {
     world: {
       has: (ability: Ability) => owned.has(ability),
       chips: new Set<string>(),
+      // 工装语义:拥有即生效(配载细节由 world-mechanics 覆盖)
+      chipActive(id: string) { return this.chips.has(id); },
+      awaken: { vigor: 0, flow: 0, edge: 0 },
       energyMax: 100,
     },
     mapW: 480,

@@ -8,6 +8,7 @@ import { actionLabel, type InputDevice } from '../Input';
 import { clamp } from '../utils';
 import {
   ABILITY_INFO,
+  HIDDEN_CHIPS,
   repeatableCost,
   ROOMS,
   ROOM_LIST,
@@ -24,6 +25,9 @@ export type Overlay =
   | 'pause'
   | 'controls'
   | 'settings'
+  | 'bench_menu'
+  | 'loadout'
+  | 'awaken'
   | 'dead'
   | 'ability'
   | 'victory'
@@ -78,6 +82,10 @@ export interface OverlayView {
   /** 设置菜单:当前偏好快照与光标。 */
   settings: GameSettings;
   settingsSel: number;
+  /** 信标菜单 / 配载 / 觉醒的光标。 */
+  benchSel: number;
+  loadoutSel: number;
+  awakenSel: number;
   /** 结算屏光标:0 = 继续探索,1 = 返回标题。 */
   victorySel: number;
 }
@@ -185,6 +193,14 @@ function drawOverlay(ctx: CanvasRenderingContext2D, view: OverlayView): void {
   }
   if (view.overlay === 'fast_travel') {
     drawFastTravel(ctx, view);
+    return;
+  }
+  if (view.overlay === 'bench_menu' || view.overlay === 'loadout' || view.overlay === 'awaken') {
+    ctx.fillStyle = 'rgba(4, 3, 10, 0.72)';
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    if (view.overlay === 'bench_menu') drawBenchMenu(ctx, view);
+    else if (view.overlay === 'loadout') drawLoadout(ctx, view);
+    else drawAwaken(ctx, view);
     return;
   }
   if (view.overlay === 'settings') {
@@ -321,6 +337,22 @@ function drawPause(ctx: CanvasRenderingContext2D, view: OverlayView): void {
   ctx.textAlign = 'left';
 }
 
+/** 信标菜单项;顺序与 PlayState 的输入处理一致。 */
+export const BENCH_ITEMS = [
+  { action: 'travel', label: '信标传送' },
+  { action: 'loadout', label: '芯片配载' },
+  { action: 'awaken', label: '觉醒加点' },
+  { action: 'leave', label: '离开' },
+] as const;
+export type BenchAction = (typeof BENCH_ITEMS)[number]['action'];
+
+/** 觉醒三轨;顺序与 PlayState 输入处理一致。 */
+export const AWAKEN_TRACKS = [
+  { key: 'vigor', name: '体魄', desc: '生命上限 +6/点', color: '#ff8ba0' },
+  { key: 'flow', name: '弦流', desc: '弦能上限 +6/点', color: '#7ef0ff' },
+  { key: 'edge', name: '锋刃', desc: '攻击伤害 +4%/点', color: '#ffd75e' },
+] as const;
+
 /** 设置菜单的行定义;PlayState 的输入处理与这里的顺序一一对应。 */
 export const SETTINGS_ROWS = ['musicVol', 'sfxVol', 'shake', 'paperToggle', 'muted'] as const;
 export type SettingsRow = (typeof SETTINGS_ROWS)[number];
@@ -380,6 +412,130 @@ function drawSettings(ctx: CanvasRenderingContext2D, view: OverlayView): void {
       `${actionLabel('pause', view.device)} 返回`,
     VIEW_W / 2,
     top + h - 14,
+  );
+  ctx.textAlign = 'left';
+}
+
+function drawBenchMenu(ctx: CanvasRenderingContext2D, view: OverlayView): void {
+  const rowH = 20;
+  const h = 66 + BENCH_ITEMS.length * rowH;
+  const top = Math.round((VIEW_H - h) / 2);
+  ornateFrame(ctx, VIEW_W / 2 - 92, top, 184, h);
+  ctx.textAlign = 'center';
+  ctx.font = F_BIG;
+  ctx.fillStyle = '#8ee8f4';
+  ctx.fillText('信 标', VIEW_W / 2, top + 24);
+  BENCH_ITEMS.forEach((item, i) => {
+    const y = top + 46 + i * rowH;
+    const sel = i === view.benchSel;
+    if (sel) {
+      ctx.fillStyle = 'rgba(142,232,244,0.14)';
+      ctx.fillRect(VIEW_W / 2 - 78, y - 12, 156, 17);
+    }
+    ctx.font = F_MID;
+    ctx.fillStyle = sel ? '#eafcff' : '#b8accc';
+    ctx.fillText(item.label, VIEW_W / 2, y);
+  });
+  ctx.font = F_SMALL;
+  ctx.fillStyle = '#8a7a98';
+  ctx.fillText(
+    `${actionLabel('confirm', view.device)} 确定 · ${actionLabel('pause', view.device)} 离开`,
+    VIEW_W / 2, top + h - 12,
+  );
+  ctx.textAlign = 'left';
+}
+
+/** 配载:拥有的芯片按槽位装卸;容量随 Boss 击破成长。 */
+function drawLoadout(ctx: CanvasRenderingContext2D, view: OverlayView): void {
+  const world = view.world;
+  const owned = [...SHOP_ITEMS.map((i) => ({ id: i.id, name: i.name, desc: i.desc })),
+    ...HIDDEN_CHIPS.map((i) => ({ id: i.id, name: i.name, desc: i.desc }))]
+    .filter((i) => world.chips.has(i.id));
+  const cap = world.loadoutCap();
+  ornateFrame(ctx, VIEW_W / 2 - 130, 26, 260, 218);
+  ctx.textAlign = 'center';
+  ctx.font = F_BIG;
+  ctx.fillStyle = '#e8d8a8';
+  ctx.fillText('芯 片 配 载', VIEW_W / 2, 48);
+  ctx.font = F_SMALL;
+  ctx.fillStyle = world.loadout.length >= cap ? '#ffd0a0' : '#8ee8f4';
+  ctx.fillText(`槽位 ${world.loadout.length} / ${cap}(击败守卫可扩容)`, VIEW_W / 2, 64);
+
+  if (owned.length === 0) {
+    ctx.fillStyle = '#8a7a98';
+    ctx.font = F_MID;
+    ctx.fillText('尚未持有任何芯片', VIEW_W / 2, 140);
+  }
+  ctx.textAlign = 'left';
+  owned.forEach((item, i) => {
+    const y = 82 + i * 16;
+    const sel = i === view.loadoutSel;
+    const active = world.loadout.includes(item.id);
+    if (sel) {
+      ctx.fillStyle = 'rgba(168,130,60,0.18)';
+      ctx.fillRect(VIEW_W / 2 - 118, y - 11, 236, 15);
+    }
+    ctx.font = F_MID;
+    ctx.fillStyle = active ? '#ffe9a8' : sel ? '#c8bcd8' : '#7a7090';
+    ctx.fillText(`${active ? '◆' : '◇'} ${item.name}`, VIEW_W / 2 - 110, y);
+    ctx.font = F_SMALL;
+    ctx.fillStyle = sel ? '#9a90b0' : '#5a5468';
+    ctx.fillText(item.desc, VIEW_W / 2 - 14, y);
+  });
+  ctx.textAlign = 'center';
+  ctx.font = F_SMALL;
+  ctx.fillStyle = '#8a7a98';
+  ctx.fillText(
+    `${actionLabel('confirm', view.device)} 装载/卸下 · ${actionLabel('pause', view.device)} 返回`,
+    VIEW_W / 2, 234,
+  );
+  ctx.textAlign = 'left';
+}
+
+/** 觉醒加点:三条成长轨,点数由 Boss 与里程碑给,可在信标自由重配。 */
+function drawAwaken(ctx: CanvasRenderingContext2D, view: OverlayView): void {
+  const world = view.world;
+  const remain = world.awakenEarned() - world.awakenSpent();
+  ornateFrame(ctx, VIEW_W / 2 - 120, 44, 240, 176);
+  ctx.textAlign = 'center';
+  ctx.font = F_BIG;
+  ctx.fillStyle = '#e8d8a8';
+  ctx.fillText('觉 醒 加 点', VIEW_W / 2, 68);
+  ctx.font = F_SMALL;
+  ctx.fillStyle = remain > 0 ? '#8ee8f4' : '#8a7a98';
+  ctx.fillText(`剩余觉醒点 ${remain}(Boss 与弦晶共鸣获得)`, VIEW_W / 2, 84);
+
+  AWAKEN_TRACKS.forEach((track, i) => {
+    const y = 108 + i * 30;
+    const sel = i === view.awakenSel;
+    const pts = world.awaken[track.key];
+    if (sel) {
+      ctx.fillStyle = 'rgba(168,130,60,0.18)';
+      ctx.fillRect(VIEW_W / 2 - 106, y - 13, 212, 26);
+    }
+    ctx.textAlign = 'left';
+    ctx.font = F_MID;
+    ctx.fillStyle = sel ? track.color : '#b8accc';
+    ctx.fillText(track.name, VIEW_W / 2 - 98, y);
+    ctx.font = F_SMALL;
+    ctx.fillStyle = '#7a7090';
+    ctx.fillText(track.desc, VIEW_W / 2 - 98, y + 11);
+    // 点数格
+    for (let d = 0; d < 8; d++) {
+      ctx.fillStyle = d < pts ? track.color : '#3a3444';
+      ctx.fillRect(VIEW_W / 2 - 10 + d * 12, y - 6, 8, 8);
+    }
+    ctx.textAlign = 'right';
+    ctx.fillStyle = sel ? '#eafcff' : '#7a7090';
+    ctx.fillText(`${pts}`, VIEW_W / 2 + 100, y);
+  });
+  ctx.textAlign = 'center';
+  ctx.font = F_SMALL;
+  ctx.fillStyle = '#8a7a98';
+  ctx.fillText(
+    `${actionLabel('right', view.device)} 加点 · ${actionLabel('left', view.device)} 退点 · ` +
+      `${actionLabel('pause', view.device)} 返回`,
+    VIEW_W / 2, 208,
   );
   ctx.textAlign = 'left';
 }
