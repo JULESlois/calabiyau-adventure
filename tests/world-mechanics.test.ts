@@ -986,7 +986,12 @@ test('the mainline objective chain follows ability and boss progression', async 
   assert.match(currentObjective(w), /弦翼/);
   w.grant('djump');
   assert.match(currentObjective(w), /守望者/);
+  // 通关后目标不清空:先指向尚未挑战的可选 Boss,再回落到收集。
   w.flags.add('boss:guardian');
+  assert.match(currentObjective(w), /审判者/);
+  w.flags.add('boss:arbiter');
+  assert.match(currentObjective(w), /星弈厅/);
+  w.flags.add('boss:gambit');
   assert.match(currentObjective(w), /秘密/);
 });
 
@@ -998,4 +1003,37 @@ test('the corruption reaction beat fires only inside a corrupted room', async ()
   assert.equal(storyBeatFor('coast_walk', w, false), null, '普通房不触发侵蚀反应');
   const beat = storyBeatFor('coast_walk', w, true);
   assert.ok(beat && beat.flag === 'story:corruption', '侵蚀房应触发首见反应');
+});
+
+test('post-boss beats fire at the kill site once their flags are set', async () => {
+  const { storyBeatFor } = await import('../src/game/story');
+  const w = new WorldState();
+  // 前文节拍在真实流程中已于入场时消费,测试里显式补上以隔离后记
+  w.flags.add('story:pre_arbiter');
+  assert.equal(storyBeatFor('choir_organ', w, false), null, 'Boss 未倒不应有后记');
+  w.flags.add('boss:arbiter');
+  const after = storyBeatFor('choir_organ', w, false);
+  assert.ok(after && after.flag === 'story:post_arbiter', '审判者倒下应触发祭坛解封台词');
+});
+
+test('the ending plays in two acts: hangar coda, then haven epilogue', async () => {
+  const { storyBeatFor } = await import('../src/game/story');
+  const w = new WorldState();
+  w.flags.add('story:pre_guardian');
+  w.flags.add('boss:guardian');
+  const coda = storyBeatFor('hangar_boss', w, false);
+  assert.ok(coda && coda.flag === 'story:post_guardian', '结算屏后机库应有终章第一幕');
+  w.flags.add('story:post_guardian');
+  const epilogue = storyBeatFor('haven_view', w, false);
+  assert.ok(epilogue && epilogue.flag === 'story:epilogue', '通关后望海台应有终章第二幕');
+});
+
+test('the lab-signal beat expires naturally once kanami is rescued', async () => {
+  const { storyBeatFor } = await import('../src/game/story');
+  const w = new WorldState();
+  const signal = storyBeatFor('lab_gate', w, false);
+  assert.ok(signal && signal.flag === 'story:zone_lab', '救援前门厅应接上「信号重现」');
+  w.grant('kanami');
+  w.flags.add('story:kanami'); // 救援节拍在真实流程中已消费
+  assert.equal(storyBeatFor('lab_gate', w, false), null, '救出后信号节拍不应再响起');
 });
