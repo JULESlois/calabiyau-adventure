@@ -54,6 +54,8 @@ export interface PlayerHost extends WorldApi {
   isIceAt(c: number, r: number): boolean;
   isWaterAt(c: number, r: number): boolean;
   isChainAt(c: number, r: number): boolean;
+  /** 玩家偏好:弦化是否为切换式(设置菜单) */
+  readonly paperToggleMode: boolean;
   deployTurret(x: number, y: number): void;
   throwSonarDart(x: number, y: number, dir: number): void;
 }

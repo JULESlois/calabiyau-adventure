@@ -2,6 +2,7 @@ import { AudioSys } from './Audio';
 import { DT, VIEW_H, VIEW_W } from './constants';
 import { Input } from './Input';
 import { clearWorldSave, loadWorldSave, storeWorldSave } from './save';
+import { loadSettings, storeSettings, type GameSettings } from './settings';
 import { PlayState, type EntryInfo } from './states/PlayState';
 import { BeaconTransferState } from './states/BeaconTransferState';
 import { RoomTransitionState } from './states/RoomTransitionState';
@@ -20,6 +21,7 @@ export class Engine {
   input = new Input();
   audio = new AudioSys();
   world = new WorldState();
+  settings: GameSettings = loadSettings();
   state: GameState | null = null;
 
   private raf = 0;
@@ -33,6 +35,7 @@ export class Engine {
     if (!ctx) throw new Error('Canvas 2D context unavailable');
     this.ctx = ctx;
     this.ctx.imageSmoothingEnabled = false;
+    this.audio.applyVolumePrefs(this.settings.musicVol, this.settings.sfxVol, this.settings.muted);
     this.input.onAnyKey = () => this.audio.unlock();
   }
 
@@ -195,6 +198,12 @@ export class Engine {
     storeWorldSave(this.world.serialize());
   }
 
+  /** 设置菜单改动后统一走这里:应用 + 落盘。 */
+  applySettings(): void {
+    this.audio.applyVolumePrefs(this.settings.musicVol, this.settings.sfxVol, this.settings.muted);
+    storeSettings(this.settings);
+  }
+
   private loop = (now: number): void => {
     if (!this.running) return;
     this.raf = requestAnimationFrame(this.loop);
@@ -206,7 +215,10 @@ export class Engine {
     let steps = 0;
     while (this.acc >= DT && steps < 6) {
       this.input.pollGamepad();
-      if (this.input.pressed('mute')) this.audio.toggleMute();
+      if (this.input.pressed('mute')) {
+        this.settings.muted = this.audio.toggleMute();
+        storeSettings(this.settings);
+      }
       this.state?.update(DT);
       this.input.endFrame();
       this.acc -= DT;

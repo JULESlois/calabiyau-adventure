@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { Engine } from '../src/game/Engine';
 import { Enemy } from '../src/game/entities/enemies';
 import { T_EMPTY, T_MEMBRANE, T_SOLID } from '../src/game/levels/levels';
+import { PAUSE_ITEMS } from '../src/game/render/overlays';
 import { PlayState, type EntryInfo } from '../src/game/states/PlayState';
 import type { MusicCue, MusicIntensity } from '../src/game/music';
 import { ABILITY_INFO, ROOM_LIST, type Ability } from '../src/game/world/world';
@@ -32,6 +33,8 @@ function makePlayState(
 ): PlayState {
   const engine = {
     world: new WorldState(),
+    settings: { musicVol: 0.8, sfxVol: 0.8, shake: 1, paperToggle: false, muted: false },
+    applySettings: () => undefined,
     input: {
       pressed: (action: string) => interact && action === 'interact',
       down: () => false,
@@ -50,6 +53,8 @@ function makePlayStateWithInput(
 ): PlayState {
   const engine = {
     world: new WorldState(),
+    settings: { musicVol: 0.8, sfxVol: 0.8, shake: 1, paperToggle: false, muted: false },
+    applySettings: () => undefined,
     input: { pressed, down: () => false, lastDevice: 'keyboard' as const },
     audio: silentAudio(),
     persistWorld: () => undefined,
@@ -349,10 +354,11 @@ test('pause never fires a destructive action without confirmation', () => {
   assert.equal(state.overlay, 'pause');
 
   // 走到「回到信标」并确认一次:只进入确认态,不执行。
+  const benchIdx = PAUSE_ITEMS.findIndex((item) => item.action === 'bench');
   pressed.clear(); pressed.add('down');
+  while (state.pauseSel !== benchIdx) state.update(1 / 60);
+  pressed.clear();
   state.update(1 / 60);
-  state.update(1 / 60);
-  assert.equal(state.pauseSel, 2);
   pressed.clear(); pressed.add('confirm');
   state.update(1 / 60);
   assert.equal(state.pauseConfirm, 'bench');
@@ -374,9 +380,9 @@ test('pause can back out of a confirmation without losing progress', () => {
   );
   pressed.clear(); pressed.add('pause');
   state.update(1 / 60);
+  const benchIdx2 = PAUSE_ITEMS.findIndex((item) => item.action === 'bench');
   pressed.clear(); pressed.add('down');
-  state.update(1 / 60);
-  state.update(1 / 60);
+  while (state.pauseSel !== benchIdx2) state.update(1 / 60);
   pressed.clear(); pressed.add('confirm');
   state.update(1 / 60);
   assert.equal(state.pauseConfirm, 'bench');
@@ -463,6 +469,8 @@ test('skystep grants a third jump that consumes a timed charge', () => {
   const held = new Set<string>();
   const engine = {
     world: new WorldState(),
+    settings: { musicVol: 0.8, sfxVol: 0.8, shake: 1, paperToggle: false, muted: false },
+    applySettings: () => undefined,
     input: {
       pressed: (a: string) => pressed.has(a),
       down: (a: string) => held.has(a),
@@ -514,6 +522,8 @@ test('without the skystep ability the third jump never fires', () => {
   const pressed = new Set<string>();
   const engine = {
     world: new WorldState(),
+    settings: { musicVol: 0.8, sfxVol: 0.8, shake: 1, paperToggle: false, muted: false },
+    applySettings: () => undefined,
     input: {
       pressed: (a: string) => pressed.has(a),
       down: () => false,
@@ -812,4 +822,50 @@ test('defeating the gambit unseals the crystal vault without ending the game', (
   assert.ok(state.world.flags.has('boss:gambit'));
   assert.equal(state.tileAt(41, 12), T_EMPTY, '屏障应解封');
   assert.equal(state.world.cleared, false);
+});
+
+// ---------------- 设置菜单 ----------------
+
+test('settings parse clamps hostile values and snaps shake to three steps', async () => {
+  const { parseSettings, DEFAULT_SETTINGS } = await import('../src/game/settings');
+  assert.deepEqual(parseSettings(null), DEFAULT_SETTINGS);
+  const parsed = parseSettings({ musicVol: 99, sfxVol: -3, shake: 0.6, paperToggle: 1, muted: 'yes' });
+  assert.equal(parsed.musicVol, 1);
+  assert.equal(parsed.sfxVol, 0);
+  assert.equal(parsed.shake, 0.5, '0.6 应吸附到 0.5 档');
+  assert.equal(parsed.paperToggle, false, '非严格 true 不开启切换模式');
+  assert.equal(parsed.muted, false);
+});
+
+test('shake respects the player preference including full suppression', () => {
+  const state = makePlayState('coast_start');
+  state.engine.settings.shake = 0;
+  state.shake(8);
+  assert.equal(state.shakeMag, 0, '关闭档不应产生任何震动');
+  state.engine.settings.shake = 0.5;
+  state.shake(8);
+  assert.equal(state.shakeMag, 4, '减半档应缩放震动强度');
+});
+
+test('paper toggle mode latches on press instead of requiring hold', () => {
+  const pressed = new Set<string>();
+  const state = makePlayStateWithInput('coast_start', (a) => pressed.has(a));
+  state.engine.settings.paperToggle = true;
+  state.world.grant('paper');
+  const p = state.player;
+  p.x = 100; p.y = 224; p.vy = 0; p.onGround = true;
+
+  // 按一下(不按住):进入地面弦化
+  pressed.clear(); pressed.add('paper');
+  state.update(1 / 60);
+  pressed.clear();
+  for (let i = 0; i < 20; i++) state.update(1 / 60);
+  assert.equal(p.stringMode, 'ground', '切换模式下松开 Shift 应保持弦化');
+
+  // 再按一下:退出
+  pressed.add('paper');
+  state.update(1 / 60);
+  pressed.clear();
+  state.update(1 / 60);
+  assert.equal(p.stringMode, 'normal', '再按一次应退出弦化');
 });

@@ -16,12 +16,14 @@ import {
 } from '../world/world';
 import { nodiRemark } from '../npc';
 import { completionReport, type CompletionEntry } from '../world/WorldState';
+import type { GameSettings } from '../settings';
 import type { WorldState } from '../world/WorldState';
 
 export type Overlay =
   | 'none'
   | 'pause'
   | 'controls'
+  | 'settings'
   | 'dead'
   | 'ability'
   | 'victory'
@@ -31,10 +33,11 @@ export type Overlay =
   | 'dialogue';
 
 /** 暂停菜单项;破坏性操作需要二次确认。 */
-export type PauseAction = 'resume' | 'controls' | 'bench' | 'title';
+export type PauseAction = 'resume' | 'controls' | 'settings' | 'bench' | 'title';
 export const PAUSE_ITEMS: readonly { action: PauseAction; label: string; danger: boolean }[] = [
   { action: 'resume', label: '继续冒险', danger: false },
   { action: 'controls', label: '操作说明', danger: false },
+  { action: 'settings', label: '设置', danger: false },
   { action: 'bench', label: '回到信标', danger: true },
   { action: 'title', label: '返回标题', danger: true },
 ];
@@ -72,6 +75,9 @@ export interface OverlayView {
   /** 暂停菜单光标与二次确认目标。 */
   pauseSel: number;
   pauseConfirm: PauseAction | null;
+  /** 设置菜单:当前偏好快照与光标。 */
+  settings: GameSettings;
+  settingsSel: number;
   /** 结算屏光标:0 = 继续探索,1 = 返回标题。 */
   victorySel: number;
 }
@@ -179,6 +185,12 @@ function drawOverlay(ctx: CanvasRenderingContext2D, view: OverlayView): void {
   }
   if (view.overlay === 'fast_travel') {
     drawFastTravel(ctx, view);
+    return;
+  }
+  if (view.overlay === 'settings') {
+    ctx.fillStyle = 'rgba(4, 3, 10, 0.72)';
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    drawSettings(ctx, view);
     return;
   }
   // 对话框由 PlayState 单独绘制:dialogue.ts 复用了本模块的 ornateFrame,
@@ -306,6 +318,69 @@ function drawPause(ctx: CanvasRenderingContext2D, view: OverlayView): void {
       top + h - 16,
     );
   }
+  ctx.textAlign = 'left';
+}
+
+/** 设置菜单的行定义;PlayState 的输入处理与这里的顺序一一对应。 */
+export const SETTINGS_ROWS = ['musicVol', 'sfxVol', 'shake', 'paperToggle', 'muted'] as const;
+export type SettingsRow = (typeof SETTINGS_ROWS)[number];
+
+function settingsValueText(row: SettingsRow, s: GameSettings): string {
+  switch (row) {
+    case 'musicVol': return `${Math.round(s.musicVol * 10) * 10}%`;
+    case 'sfxVol': return `${Math.round(s.sfxVol * 10) * 10}%`;
+    case 'shake': return s.shake >= 1 ? '全开' : s.shake > 0 ? '减半' : '关闭';
+    case 'paperToggle': return s.paperToggle ? '切换式' : '按住式';
+    case 'muted': return s.muted ? '已静音' : '开启';
+  }
+}
+
+const SETTINGS_LABEL: Record<SettingsRow, string> = {
+  musicVol: '音乐音量',
+  sfxVol: '音效音量',
+  shake: '屏幕震动',
+  paperToggle: '弦化方式',
+  muted: '声音',
+};
+
+function drawSettings(ctx: CanvasRenderingContext2D, view: OverlayView): void {
+  const rowH = 20;
+  const h = 74 + SETTINGS_ROWS.length * rowH;
+  const top = Math.round((VIEW_H - h) / 2);
+  ornateFrame(ctx, VIEW_W / 2 - 110, top, 220, h);
+
+  ctx.textAlign = 'center';
+  ctx.font = F_BIG;
+  ctx.fillStyle = '#e8d8a8';
+  ctx.fillText('设 置', VIEW_W / 2, top + 26);
+
+  SETTINGS_ROWS.forEach((row, i) => {
+    const y = top + 50 + i * rowH;
+    const sel = i === view.settingsSel;
+    if (sel) {
+      ctx.fillStyle = 'rgba(168,130,60,0.18)';
+      ctx.fillRect(VIEW_W / 2 - 96, y - 12, 192, 17);
+    }
+    ctx.font = F_MID;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = sel ? '#f0e0b0' : '#b8accc';
+    ctx.fillText(SETTINGS_LABEL[row], VIEW_W / 2 - 88, y);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = sel ? '#8ee8f4' : '#7a7090';
+    const value = settingsValueText(row, view.settings);
+    ctx.fillText(sel ? `◀ ${value} ▶` : value, VIEW_W / 2 + 88, y);
+  });
+
+  ctx.textAlign = 'center';
+  ctx.font = F_SMALL;
+  ctx.fillStyle = '#8a7a98';
+  ctx.fillText(
+    `${actionLabel('up', view.device)}/${actionLabel('down', view.device)} 选择 · ` +
+      `${actionLabel('left', view.device)}/${actionLabel('right', view.device)} 调整 · ` +
+      `${actionLabel('pause', view.device)} 返回`,
+    VIEW_W / 2,
+    top + h - 14,
+  );
   ctx.textAlign = 'left';
 }
 

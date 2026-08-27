@@ -56,6 +56,8 @@ import { CONTROLS_PAGE_COUNT, drawControlsPanel } from '../render/controlsPanel'
 import {
   drawOverlays,
   PAUSE_ITEMS,
+  SETTINGS_ROWS,
+  type SettingsRow,
   type Overlay,
   type OverlayView,
   type PauseAction,
@@ -63,6 +65,7 @@ import {
 import type { BossLike, GadgetHost, PlayerHost, StringMode, WorldApi } from '../types';
 import { clamp, lerp, rectsOverlap, type Rect } from '../utils';
 import type { Engine, GameState } from '../Engine';
+import { DEFAULT_SETTINGS } from '../settings';
 import {
   ABILITY_INFO,
   CRYSTAL_MILESTONES,
@@ -236,6 +239,7 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   fastTravelIndex = 0;
   pauseSel = 0;
   pauseConfirm: PauseAction | null = null;
+  settingsSel = 0;
   controlsPage = 0;
   /** 由 Engine 在首次进入房间时置位,用来报一次房间名。 */
   announceRoomName = false;
@@ -542,8 +546,15 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
   }
 
   shake(n: number): void {
+    // 屏震强度走玩家偏好(0/0.5/1);设为 0 时连计时都不启动。
+    const scaled = n * (this.engine.settings?.shake ?? 1);
+    if (scaled <= 0) return;
     this.shakeT = 0.35;
-    this.shakeMag = Math.max(this.shakeMag, n);
+    this.shakeMag = Math.max(this.shakeMag, scaled);
+  }
+
+  get paperToggleMode(): boolean {
+    return this.engine.settings?.paperToggle ?? false;
   }
 
   toast(msg: string): void {
@@ -805,6 +816,29 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         this.sfx('ui');
         return;
       }
+    }
+
+    if (this.overlay === 'settings') {
+      this.time += dt * 0.2;
+      const rows = SETTINGS_ROWS;
+      if (input.pressed('up')) {
+        this.settingsSel = (this.settingsSel - 1 + rows.length) % rows.length;
+        this.sfx('ui');
+      }
+      if (input.pressed('down')) {
+        this.settingsSel = (this.settingsSel + 1) % rows.length;
+        this.sfx('ui');
+      }
+      const dir = (input.pressed('right') ? 1 : 0) - (input.pressed('left') ? 1 : 0);
+      if (dir !== 0) {
+        this.adjustSetting(rows[this.settingsSel], dir);
+        this.sfx('ui');
+      }
+      if (input.pressed('pause') || input.pressed('map')) {
+        this.overlay = 'pause';
+        this.sfx('ui');
+      }
+      return;
     }
 
     if (this.overlay === 'controls') {
@@ -1079,6 +1113,31 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
     this.persistRuntime();
   }
 
+  /** 设置菜单的左右调整;每次改动立即生效并落盘,离开菜单不再有"保存"步骤。 */
+  private adjustSetting(row: SettingsRow, dir: number): void {
+    const s = this.engine.settings;
+    switch (row) {
+      case 'musicVol':
+        s.musicVol = clamp(Math.round((s.musicVol + dir * 0.1) * 10) / 10, 0, 1);
+        break;
+      case 'sfxVol':
+        s.sfxVol = clamp(Math.round((s.sfxVol + dir * 0.1) * 10) / 10, 0, 1);
+        break;
+      case 'shake':
+        s.shake = s.shake >= 1 ? (dir > 0 ? 0 : 0.5) : s.shake > 0 ? (dir > 0 ? 1 : 0) : (dir > 0 ? 0.5 : 1);
+        break;
+      case 'paperToggle':
+        s.paperToggle = !s.paperToggle;
+        break;
+      case 'muted':
+        s.muted = !s.muted;
+        break;
+      default:
+        break;
+    }
+    this.engine.applySettings();
+  }
+
   private runPauseAction(action: PauseAction): void {
     this.pauseConfirm = null;
     switch (action) {
@@ -1088,6 +1147,10 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       case 'controls':
         this.overlay = 'controls';
         this.controlsPage = 0;
+        break;
+      case 'settings':
+        this.overlay = 'settings';
+        this.settingsSel = 0;
         break;
       case 'bench':
         this.engine.respawnAtBench();
@@ -2629,6 +2692,8 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
       device: this.engine.input.lastDevice,
       pauseSel: this.pauseSel,
       pauseConfirm: this.pauseConfirm,
+      settings: this.engine.settings ?? DEFAULT_SETTINGS,
+      settingsSel: this.settingsSel,
     };
   }
 

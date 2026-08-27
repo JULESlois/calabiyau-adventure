@@ -97,6 +97,8 @@ export class Player {
   skystepCdT = 0;
   /** 雷行电容:移动蓄电 0..1,满充后攻击导能节点可放电 */
   kineticCharge = 0;
+  /** 弦化切换模式的锁存:按一下进入、再按退出(设置里开启后生效) */
+  paperLatch = false;
   /** 香奈美·谢幕曲蓄力(秒,满蓄 0.7) */
   chargeT = 0;
   charging = false;
@@ -352,7 +354,15 @@ export class Player {
     // ---- 弦化形态：地面 Shift 弦化、空中 Shift 飘飞，E 贴墙 ----
     const hasPaper = ps.world.has('paper');
     const hasCling = ps.world.has('cling');
-    const holdPaper = input.down('paper');
+    // 切换模式(无障碍选项):Shift 按一下进入弦化、再按退出,不必长按。
+    // 弦能耗尽或受击强制回 3D 时锁存同步清零,避免下一帧又自动弦化。
+    if (ps.paperToggleMode) {
+      if (input.pressed('paper')) this.paperLatch = !this.paperLatch;
+      if (this.energy <= 1) this.paperLatch = false;
+    } else {
+      this.paperLatch = false;
+    }
+    const holdPaper = ps.paperToggleMode ? this.paperLatch : input.down('paper');
     const pressPaper = input.pressed('paper');
     const pressWall = input.pressed('wall');
 

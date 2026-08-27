@@ -63,6 +63,9 @@ export class AudioSys {
   private desiredCue: MusicCue | null = null;
   private mix: MusicMix = { intensity: 0, ducked: false };
   muted = false;
+  /** 玩家偏好的音乐/音效倍率(0..1),乘在既有的 duck/强度逻辑之上 */
+  private musicVolPref = 0.8;
+  private sfxVolPref = 0.8;
 
   unlock(): void {
     if (this.ctx) {
@@ -84,11 +87,11 @@ export class AudioSys {
       this.limiter.connect(this.ctx.destination);
 
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.value = this.mix.ducked ? DUCKED_MUSIC_VOL : TARGET_MUSIC_VOL;
+      this.musicGain.gain.value = (this.mix.ducked ? DUCKED_MUSIC_VOL : TARGET_MUSIC_VOL) * this.musicVolPref;
       this.musicGain.connect(this.master);
 
       this.sfxGain = this.ctx.createGain();
-      this.sfxGain.gain.value = 1;
+      this.sfxGain.gain.value = this.sfxVolPref;
       this.sfxGain.connect(this.master);
       this.noiseBuffer = this.createNoiseBuffer();
 
@@ -100,6 +103,31 @@ export class AudioSys {
       this.limiter = null;
       this.musicGain = null;
       this.sfxGain = null;
+    }
+  }
+
+  /** 应用玩家偏好(设置菜单与启动时调用)。 */
+  applyVolumePrefs(musicVol: number, sfxVol: number, muted: boolean): void {
+    this.musicVolPref = musicVol;
+    this.sfxVolPref = sfxVol;
+    this.muted = muted;
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (this.master) {
+      this.master.gain.cancelScheduledValues(now);
+      this.master.gain.setValueAtTime(this.master.gain.value, now);
+      this.master.gain.linearRampToValueAtTime(muted ? 0 : 0.5, now + 0.04);
+    }
+    if (this.musicGain) {
+      const target = (this.mix.ducked ? DUCKED_MUSIC_VOL : TARGET_MUSIC_VOL) * musicVol;
+      this.musicGain.gain.cancelScheduledValues(now);
+      this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, now);
+      this.musicGain.gain.linearRampToValueAtTime(target, now + 0.06);
+    }
+    if (this.sfxGain) {
+      this.sfxGain.gain.cancelScheduledValues(now);
+      this.sfxGain.gain.setValueAtTime(this.sfxGain.gain.value, now);
+      this.sfxGain.gain.linearRampToValueAtTime(sfxVol, now + 0.06);
     }
   }
 
@@ -120,7 +148,7 @@ export class AudioSys {
     this.mix = { intensity, ducked: mix.ducked };
     if (this.musicGain && this.ctx) {
       const now = this.ctx.currentTime;
-      const target = mix.ducked ? DUCKED_MUSIC_VOL : TARGET_MUSIC_VOL;
+      const target = (mix.ducked ? DUCKED_MUSIC_VOL : TARGET_MUSIC_VOL) * this.musicVolPref;
       this.musicGain.gain.cancelScheduledValues(now);
       this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, now);
       this.musicGain.gain.linearRampToValueAtTime(target, now + 0.18);
