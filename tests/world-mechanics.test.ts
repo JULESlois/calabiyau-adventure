@@ -897,3 +897,25 @@ test('every corrupted variant keeps its beacon so respawn anchors never break', 
     assert.equal(cvBench, baseBench, `${room.id} 侵蚀变体的信标状态漂移`);
   }
 });
+
+// ---------------- 主线叙事节拍 ----------------
+
+test('the opening beat plays once on a fresh save and never again', () => {
+  const state = makePlayState('coast_start');
+  for (let i = 0; i < 200 && state.overlay === 'none'; i++) state.update(1 / 60);
+  assert.equal(state.overlay, 'dialogue', '白板存档进入起点应触发开场独白');
+  assert.ok(state.world.flags.has('story:opening'), '触发即写旗标');
+
+  // 已看过:重建房间不再触发
+  const again = new PlayState(state.engine, 'coast_start', { kind: 'start' });
+  for (let i = 0; i < 60; i++) again.update(1 / 60);
+  assert.notEqual(again.overlay, 'dialogue', '开场独白不应重复');
+});
+
+test('boss-room beats gate on their flags and fire before the fight', () => {
+  const state = makePlayState('sky_wing');
+  state.engine.world.grantAll?.call?.(state.engine.world);
+  for (let i = 0; i < 240 && state.overlay === 'none'; i++) state.update(1 / 60);
+  assert.equal(state.overlay, 'dialogue', '首入弦翼圣所应有前文台词');
+  assert.ok(state.world.flags.has('story:pre_warden'));
+});

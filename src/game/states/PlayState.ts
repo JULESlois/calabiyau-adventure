@@ -86,6 +86,7 @@ import {
 } from '../world/world';
 import type { WorldState } from '../world/WorldState';
 import { moverDisplacement, RegionMechanics, type MechanicsHost } from './regionMechanics';
+import { storyBeatFor } from '../story';
 
 export { moverDisplacement };
 
@@ -1009,6 +1010,17 @@ export class PlayState implements GameState, WorldApi, MechanicsHost, PlayerHost
         }
       }
       return;
+    }
+
+    // 主线叙事节拍:一次性,触发即写旗标并存档。
+    if (this.introT <= 0 && !this.player.dead) {
+      const beat = storyBeatFor(this.roomId, this.world);
+      if (beat) {
+        this.world.flags.add(beat.flag);
+        this.engine.persistWorld();
+        this.startDialogue(beat.npc);
+        return;
+      }
     }
 
     // 移动平台
