@@ -914,7 +914,6 @@ test('the opening beat plays once on a fresh save and never again', () => {
 
 test('boss-room beats gate on their flags and fire before the fight', () => {
   const state = makePlayState('sky_wing');
-  state.engine.world.grantAll?.call?.(state.engine.world);
   for (let i = 0; i < 240 && state.overlay === 'none'; i++) state.update(1 / 60);
   assert.equal(state.overlay, 'dialogue', '首入弦翼圣所应有前文台词');
   assert.ok(state.world.flags.has('story:pre_warden'));
